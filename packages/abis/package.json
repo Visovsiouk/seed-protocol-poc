@@ -1,0 +1,7 @@
+{
+  "name": "@seed-protocol-poc/abis",
+  "version": "0.0.0",
+  "private": true,
+  "main": "./generated/index.ts",
+  "types": "./generated/index.ts"
+}

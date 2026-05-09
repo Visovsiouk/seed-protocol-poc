@@ -1,0 +1,39 @@
+@import "tailwindcss";
+@import "@rainbow-me/rainbowkit/styles.css";
+
+@theme {
+  --color-bg: #0b0b0f;
+  --color-fg: #ececf1;
+  --color-accent: #7c5cff;
+
+  /* per-preset palette tokens; presets toggle these via [data-preset] on <body> */
+  --color-preset-bg: var(--color-bg);
+  --color-preset-fg: var(--color-fg);
+  --color-preset-accent: var(--color-accent);
+}
+
+[data-preset="fantasy"] {
+  --color-preset-bg: #1a120b;
+  --color-preset-fg: #f3e8c8;
+  --color-preset-accent: #c9a14a;
+}
+
+[data-preset="scifi"] {
+  --color-preset-bg: #050912;
+  --color-preset-fg: #d6e6ff;
+  --color-preset-accent: #4ad8ff;
+}
+
+[data-preset="cyberpunk"] {
+  --color-preset-bg: #0a0212;
+  --color-preset-fg: #ffe2f9;
+  --color-preset-accent: #ff2ea6;
+}
+
+html, body {
+  background: var(--color-preset-bg);
+  color: var(--color-preset-fg);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+* { box-sizing: border-box; }

@@ -1,0 +1,42 @@
+# dependencies
+node_modules/
+.pnpm-store/
+
+# next.js
+.next/
+out/
+.vercel/
+
+# build outputs
+dist/
+build/
+*.tsbuildinfo
+
+# env
+.env
+.env.local
+.env.*.local
+
+# logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# IDE / tooling
+.idea/
+.vscode/
+.claude/
+.specify/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# generated abis (regenerated via wagmi cli)
+packages/abis/generated/
+
+# test artifacts
+coverage/
+playwright-report/
+test-results/
