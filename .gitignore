@@ -40,3 +40,6 @@ packages/abis/generated/
 coverage/
 playwright-report/
 test-results/
+
+# reference docs
+docs/
