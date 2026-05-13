@@ -1,0 +1,143 @@
+import { describe, expect, it } from "vitest";
+import { createRng } from "./rng";
+import { pickSlot, rollLoot, type RealmSchemas } from "./loot";
+
+const seedHex = (i: number) => ("0x" + i.toString(16).padStart(64, "0")) as `0x${string}`;
+const SEED = seedHex(0x123456);
+
+const canonical: RealmSchemas = {
+  weapon: { schemaId: 1, catalogEffects: [] },
+  armor: { schemaId: 2, catalogEffects: [] },
+};
+
+const signatureLifesteal: RealmSchemas = {
+  weapon: { schemaId: 100, catalogEffects: ["lifesteal", "crit_chance"] },
+  armor: { schemaId: 101, catalogEffects: ["regen", "thorns"] },
+};
+
+describe("pickSlot", () => {
+  it("rolls weapon or armor, ~50/50", () => {
+    let weapons = 0;
+    for (let i = 1; i <= 2000; i++) {
+      if (pickSlot(createRng(seedHex(i))) === "weapon") weapons++;
+    }
+    expect(weapons / 2000).toBeGreaterThan(0.45);
+    expect(weapons / 2000).toBeLessThan(0.55);
+  });
+});
+
+describe("rollLoot", () => {
+  it("weapon roll has damageDie + attackBonus, no armor fields", () => {
+    const l = rollLoot({
+      rng: createRng(SEED),
+      difficulty: "standard",
+      slot: "weapon",
+      schemas: canonical,
+    });
+    expect(l.slot).toBe("weapon");
+    expect(l.damageDie).toBeDefined();
+    expect(l.attackBonus).toBeDefined();
+    expect(l.acBonus).toBeUndefined();
+    expect(l.hpBonus).toBeUndefined();
+  });
+
+  it("armor roll has acBonus + hpBonus, no weapon fields", () => {
+    const l = rollLoot({
+      rng: createRng(SEED),
+      difficulty: "standard",
+      slot: "armor",
+      schemas: canonical,
+    });
+    expect(l.acBonus).toBeDefined();
+    expect(l.hpBonus).toBeDefined();
+    expect(l.damageDie).toBeUndefined();
+    expect(l.attackBonus).toBeUndefined();
+  });
+
+  it("uses canonical schemaId when no signature catalog effects", () => {
+    const l = rollLoot({
+      rng: createRng(SEED),
+      difficulty: "standard",
+      slot: "weapon",
+      schemas: canonical,
+    });
+    expect(l.schemaId).toBe(1);
+    expect(l.catalogEffects).toEqual([]);
+  });
+
+  it("uses signature schemaId and rolls declared catalog effects", () => {
+    const l = rollLoot({
+      rng: createRng(SEED),
+      difficulty: "standard",
+      slot: "weapon",
+      schemas: signatureLifesteal,
+    });
+    expect(l.schemaId).toBe(100);
+    expect(l.catalogEffects.map((e) => e.name)).toEqual(["lifesteal", "crit_chance"]);
+    for (const e of l.catalogEffects) {
+      expect(e.value).toBeGreaterThan(0);
+    }
+  });
+
+  it("same seed → same LootRoll", () => {
+    const a = rollLoot({
+      rng: createRng(SEED),
+      difficulty: "standard",
+      slot: "weapon",
+      schemas: signatureLifesteal,
+    });
+    const b = rollLoot({
+      rng: createRng(SEED),
+      difficulty: "standard",
+      slot: "weapon",
+      schemas: signatureLifesteal,
+    });
+    expect(a).toEqual(b);
+  });
+
+  it("different seeds → different nameSeed at least sometimes", () => {
+    const set = new Set<string>();
+    for (let i = 1; i <= 20; i++) {
+      const l = rollLoot({
+        rng: createRng(seedHex(i)),
+        difficulty: "standard",
+        slot: "weapon",
+        schemas: canonical,
+      });
+      set.add(l.nameSeed.toString());
+    }
+    expect(set.size).toBeGreaterThan(15);
+  });
+
+  it("boss difficulty pulls higher tiers than standard", () => {
+    let stdTotal = 0;
+    let bossTotal = 0;
+    for (let i = 1; i <= 1000; i++) {
+      stdTotal += rollLoot({
+        rng: createRng(seedHex(i)),
+        difficulty: "standard",
+        slot: "weapon",
+        schemas: canonical,
+      }).tier;
+      bossTotal += rollLoot({
+        rng: createRng(seedHex(i + 100000)),
+        difficulty: "boss",
+        slot: "weapon",
+        schemas: canonical,
+      }).tier;
+    }
+    expect(bossTotal).toBeGreaterThan(stdTotal);
+  });
+
+  it("nameSeed is a 256-bit positive bigint", () => {
+    const l = rollLoot({
+      rng: createRng(SEED),
+      difficulty: "standard",
+      slot: "weapon",
+      schemas: canonical,
+    });
+    expect(typeof l.nameSeed).toBe("bigint");
+    expect(l.nameSeed).toBeGreaterThanOrEqual(0n);
+    expect(l.nameSeed).toBeLessThan(1n << 256n);
+  });
+});
