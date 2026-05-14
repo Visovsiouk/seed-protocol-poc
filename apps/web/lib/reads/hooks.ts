@@ -4,8 +4,10 @@ import { useQuery } from "@tanstack/react-query";
 import { fetchActiveListings, fetchRecentSales } from "./listings";
 import { fetchAssetSummaries } from "./provenance";
 import { fetchInventory, type InventoryEntry } from "./inventory";
+import { fetchInventoryCards } from "./inventory-cards";
 import { queryKeys, defaultReadQueryOptions } from "./cache";
 import type { ListingSummary, SaleSummary, AssetSummary } from "./types";
+import type { AssetCard } from "@/lib/engine/types";
 
 /**
  * Client-side wrappers around the lib/reads/* fetchers, plus their React
@@ -37,6 +39,22 @@ export function useInventory(player: `0x${string}` | undefined) {
   return useQuery<InventoryEntry[]>({
     queryKey: player ? queryKeys.inventory(player) : ["inventory", "none"],
     queryFn: () => fetchInventory(player!),
+    enabled: !!player,
+    ...defaultReadQueryOptions,
+  });
+}
+
+/**
+ * Hydrated inventory — `AssetCard[]` rather than `InventoryEntry[]`. Lets
+ * the play route's drawer + HUD render real on-chain holdings without the
+ * page needing to know about metadata decoding.
+ */
+export function useInventoryCards(player: `0x${string}` | undefined) {
+  return useQuery<AssetCard[]>({
+    queryKey: player
+      ? queryKeys.inventoryCards(player)
+      : ["inventory-cards", "none"],
+    queryFn: () => fetchInventoryCards(player!),
     enabled: !!player,
     ...defaultReadQueryOptions,
   });

@@ -1,0 +1,135 @@
+import { describe, it, expect } from "vitest";
+import { buildAssetCardFromMetadata } from "./asset-card";
+
+function b64(s: string): string {
+  return Buffer.from(s, "utf8").toString("base64");
+}
+
+const SVG = '<svg xmlns="http://www.w3.org/2000/svg"><rect/></svg>';
+
+function jsonUri(payload: Record<string, unknown>): string {
+  return `data:application/json;base64,${b64(JSON.stringify(payload))}`;
+}
+
+function basePayload(extra: { attributes: { trait_type: string; value: string | number }[]; name?: string }) {
+  return {
+    name: extra.name ?? "Hag's Tooth",
+    description: "...",
+    image: `data:image/svg+xml;base64,${b64(SVG)}`,
+    attributes: extra.attributes,
+    seed_protocol: {
+      schemaId: 1,
+      tier: 2,
+      minted_by_realm_label: "Greenwood Vale",
+    },
+  };
+}
+
+describe("buildAssetCardFromMetadata", () => {
+  it("decodes weapon stats and catalog effects from the renderer URI", () => {
+    const uri = jsonUri(
+      basePayload({
+        attributes: [
+          { trait_type: "damage_die", value: 8 },
+          { trait_type: "attack_bonus", value: 2 },
+          { trait_type: "lifesteal", value: 15 },
+          { trait_type: "Faction", value: "Crypt" },
+        ],
+      }),
+    );
+
+    const card = buildAssetCardFromMetadata({
+      tokenId: 1n,
+      tier: 2,
+      schemaId: 101,
+      metadataURI: uri,
+      mintedByRealm: "0x0000000000000000000000000000000000000a01",
+    });
+
+    expect(card.name).toBe("Hag's Tooth");
+    expect(card.realmName).toBe("Greenwood Vale");
+    expect(card.slot).toBe("weapon");
+    expect(card.damageDie).toBe(8);
+    expect(card.attackBonus).toBe(2);
+    expect(card.catalogEffects).toEqual([{ name: "lifesteal", value: 15 }]);
+    expect(card.extraFields).toEqual({ Faction: "Crypt" });
+  });
+
+  it("infers armor slot from ac_bonus/hp_bonus presence", () => {
+    const uri = jsonUri(
+      basePayload({
+        name: "Iron Plate",
+        attributes: [
+          { trait_type: "ac_bonus", value: 1 },
+          { trait_type: "hp_bonus", value: 5 },
+          { trait_type: "regen", value: 2 },
+        ],
+      }),
+    );
+
+    const card = buildAssetCardFromMetadata({
+      tokenId: 2n,
+      tier: 3,
+      schemaId: 102,
+      metadataURI: uri,
+      mintedByRealm: "0x0000000000000000000000000000000000000a01",
+    });
+
+    expect(card.slot).toBe("armor");
+    expect(card.acBonus).toBe(1);
+    expect(card.hpBonus).toBe(5);
+    expect(card.catalogEffects).toEqual([{ name: "regen", value: 2 }]);
+    expect(card.damageDie).toBeUndefined();
+  });
+
+  it("falls back to schemaId parity when no slot signal is present", () => {
+    const uri = jsonUri(basePayload({ attributes: [] }));
+
+    const weapon = buildAssetCardFromMetadata({
+      tokenId: 3n,
+      tier: 1,
+      schemaId: 301,
+      metadataURI: uri,
+      mintedByRealm: "0x0000000000000000000000000000000000000a03",
+    });
+    expect(weapon.slot).toBe("weapon");
+
+    const armor = buildAssetCardFromMetadata({
+      tokenId: 4n,
+      tier: 1,
+      schemaId: 302,
+      metadataURI: uri,
+      mintedByRealm: "0x0000000000000000000000000000000000000a03",
+    });
+    expect(armor.slot).toBe("armor");
+  });
+
+  it("tolerates a malformed metadata URI", () => {
+    const card = buildAssetCardFromMetadata({
+      tokenId: 5n,
+      tier: 1,
+      schemaId: 101,
+      metadataURI: "https://cdn.example/x.png",
+      mintedByRealm: "0x0000000000000000000000000000000000000a01",
+    });
+    expect(card.name).toBe("Asset #5");
+    expect(card.slot).toBe("weapon"); // parity fallback
+    expect(card.catalogEffects).toEqual([]);
+  });
+
+  it("ignores invalid damage_die values", () => {
+    const uri = jsonUri(
+      basePayload({
+        attributes: [{ trait_type: "damage_die", value: 7 }],
+      }),
+    );
+    const card = buildAssetCardFromMetadata({
+      tokenId: 6n,
+      tier: 1,
+      schemaId: 101,
+      metadataURI: uri,
+      mintedByRealm: "0x0000000000000000000000000000000000000a01",
+    });
+    expect(card.damageDie).toBeUndefined();
+  });
+});

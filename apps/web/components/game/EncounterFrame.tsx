@@ -59,10 +59,12 @@ type Props = {
   onEvent?: (event: EngineEvent) => void;
   /**
    * Fires when the player commits the pendingLoot via the Mint button (i.e.
-   * NOT on Skip). uses this to grow the local inventory;
-   * will dispatch the on-chain mint and let the wagmi receipt reconcile.
+   * NOT on Skip). May be async — if the handler returns a rejected promise
+   * the engine-side commit is skipped, leaving the prompt up for retry.
+   *  uses this to grow the local inventory; dispatches
+   * the on-chain mint and lets the wagmi receipt reconcile.
    */
-  onLootMinted?: (loot: LootRoll) => void;
+  onLootMinted?: (loot: LootRoll) => Promise<void> | void;
 };
 
 /**
@@ -142,15 +144,29 @@ export function EncounterFrame({
   );
 
   const handleMint = useCallback(async () => {
-    //: replace with the real on-chain mint. The engine-side
-    // commit happens regardless so the UI advances.
     const loot = state.pendingLoot;
+    if (!loot) return;
+    // Run the caller's mint handler first — if it throws (tx revert,
+    // wallet rejection, network drop), leave `pendingLoot` intact so the
+    // player can retry without losing the drop.
+    if (onLootMinted) {
+      try {
+        await onLootMinted(loot);
+      } catch (err) {
+        appendLines([
+          {
+            text: `Mint failed: ${(err as Error).message ?? "unknown error"}`,
+            emphasis: "damage",
+          },
+        ]);
+        return;
+      }
+    }
     const next = engineCommitLoot(state);
     appendLines([
       { text: "Loot stowed in your pack.", emphasis: "heal" },
     ]);
     setState(next);
-    if (loot) onLootMinted?.(loot);
   }, [appendLines, onLootMinted, state]);
 
   const handleSkip = useCallback(() => {

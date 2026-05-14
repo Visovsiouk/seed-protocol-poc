@@ -3,16 +3,24 @@
 /**
  * `/play/[preset]` — the run room.
  *
- *: everything below is in-memory. The engine drives the run, the
- * tutorial overlay uses `emptyTutorialProgress()` until the BossCleared
- * event-reader lands in 2C, and `pendingLoot` is converted to a mock
- * `AssetCard` and stashed in local state so the inventory drawer has
- * something to show. will swap:
- *   - The hardcoded `STARTER_REALM_BY_PRESET` table for a
- *     RealmRegistry read.
- *   - The empty tutorial progress for the on-chain BossCleared union.
- *   - The local inventory accumulator for `fetchInventory()` against the
- *     player's address.
+ * Two operating modes, switched by wallet connection:
+ *
+ *   **Disconnected (fallback):** everything is in-memory. The
+ *     engine drives the run, the tutorial overlay uses
+ *     `emptyTutorialProgress()`, and `pendingLoot` is converted to a
+ *     mock `AssetCard` and stashed in local state so the drawer has
+ *     something to show.
+ *
+ *   **Connected:** the inventory drawer reads on-chain via
+ *     `useInventoryCards(player)`, and Mint dispatches a real
+ *     `EcosystemTemplate.mintAsset` tx through `useMintLoot`. The query
+ *     invalidation reconciles the drawer.
+ *
+ * Still TODO for full 2C (deferred to later slices):
+ *   - `STARTER_REALM_BY_PRESET` → `RealmRegistry.listRealms()` read.
+ *   - `emptyTutorialProgress()` → on-chain BossCleared event union.
+ *   - `fallbackSeed()` → `keccak256(playerAddr ‖ blockhash ‖ id)` commit.
+ *   - Seed SBT claim wired to the tutorial overlay's CTA.
  *
  * `data-preset` is set on the document body via effect so Tailwind's
  * per-preset CSS variables (see globals.css) kick in. We restore the
@@ -23,6 +31,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { notFound, useParams } from "next/navigation";
+import { useAccount } from "wagmi";
 import type {
   AssetCard as AssetCardType,
   LootRoll,
@@ -37,8 +46,16 @@ import { InventoryDrawer } from "@/components/inventory/InventoryDrawer";
 import { TutorialOverlay } from "@/components/tutorial/TutorialOverlay";
 import { ConnectButton } from "@/components/wallet/ConnectButton";
 import { emptyTutorialProgress } from "@/lib/tutorial/progress";
+import { useInventoryCards } from "@/lib/reads/hooks";
+import { useMintLoot } from "@/lib/contracts/loot";
 
 const VALID_PRESETS: ReadonlySet<Preset> = new Set(["fantasy", "scifi", "cyberpunk"]);
+
+const PRESET_LABEL: Record<Preset, string> = {
+  fantasy: "The Hollow Reach",
+  scifi: "Drift Station Ker-7",
+  cyberpunk: "Black Ice District",
+};
 
 const STARTER_REALM_BY_PRESET: Record<Preset, { realm: `0x${string}`; bossId: string }> = {
   //: the dev-deployed `EcosystemTemplate` for each preset will
@@ -89,12 +106,7 @@ function lootRollToMockCard(
     tokenId: nextMockTokenId++,
     schemaId: loot.schemaId,
     realm,
-    realmName:
-      preset === "fantasy"
-        ? "The Hollow Reach"
-        : preset === "scifi"
-          ? "Drift Station Ker-7"
-          : "Black Ice District",
+    realmName: PRESET_LABEL[preset],
     slot: loot.slot,
     tier: loot.tier,
     name: assembleLootName(bank, loot.slot as "weapon" | "armor", loot.nameSeed),
@@ -115,6 +127,9 @@ export default function PlayPage() {
   if (!VALID_PRESETS.has(preset)) notFound();
 
   const cfg = STARTER_REALM_BY_PRESET[preset];
+  const { address } = useAccount();
+  const { mintLoot, walletConnected } = useMintLoot();
+  const onchain = useInventoryCards(address);
 
   // Effect-only body palette toggle — keeps SSR pristine.
   useEffect(() => {
@@ -140,7 +155,10 @@ export default function PlayPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [preset]);
 
-  const [inventory, setInventory] = useState<AssetCardType[]>([]);
+  // Local inventory used in disconnected mode. When connected we read
+  // from the chain via `onchain.data`; keeping the local accumulator
+  // around lets the player play offline without losing drops.
+  const [localInventory, setLocalInventory] = useState<AssetCardType[]>([]);
   const [equipped, setEquipped] = useState<{
     weapon?: AssetCardType;
     armor?: AssetCardType;
@@ -150,9 +168,27 @@ export default function PlayPage() {
 
   const tutorial = emptyTutorialProgress();
 
-  const handleLootMinted = (loot: LootRoll) => {
-    const card = lootRollToMockCard(loot, preset, cfg.realm);
-    setInventory((prev) => [...prev, card]);
+  const inventory: readonly AssetCardType[] = walletConnected
+    ? (onchain.data ?? [])
+    : localInventory;
+
+  const handleLootMinted = async (loot: LootRoll) => {
+    if (walletConnected) {
+      // Real path — fire the tx and let the inventory query reconcile.
+      // `useMintLoot` invalidates `inventoryCards(player)` on success.
+      await mintLoot({
+        realm: cfg.realm,
+        preset,
+        runSeed: initial.state.rngSeed,
+        depth: initial.state.depth,
+        loot,
+        realmLabel: PRESET_LABEL[preset],
+      });
+    } else {
+      // Disconnected mode — keep the 2B local accumulator alive.
+      const card = lootRollToMockCard(loot, preset, cfg.realm);
+      setLocalInventory((prev) => [...prev, card]);
+    }
     // Auto-equip nothing — equipping is a deliberate UI action.
   };
 
@@ -180,11 +216,7 @@ export default function PlayPage() {
           ← Realms
         </Link>
         <h1 className="text-2xl font-semibold tracking-tight">
-          {preset === "fantasy"
-            ? "The Hollow Reach"
-            : preset === "scifi"
-              ? "Drift Station Ker-7"
-              : "Black Ice District"}
+          {PRESET_LABEL[preset]}
         </h1>
         <div className="flex items-center gap-3">
           <button

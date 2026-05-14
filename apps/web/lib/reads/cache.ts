@@ -10,6 +10,7 @@ export const queryKeys = {
   listings: () => ["listings"] as const,
   recentSales: () => ["recent-sales"] as const,
   inventory: (player: `0x${string}`) => ["inventory", player] as const,
+  inventoryCards: (player: `0x${string}`) => ["inventory-cards", player] as const,
   mintedBy: (tokenId: bigint) => ["mintedBy", tokenId.toString()] as const,
   attrs: (tokenId: bigint) => ["attrs", tokenId.toString()] as const,
   schema: (schemaId: number) => ["schema", schemaId] as const,
