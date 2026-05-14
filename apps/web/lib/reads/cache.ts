@@ -17,6 +17,7 @@ export const queryKeys = {
   adoption: () => ["adoption"] as const,
   realms: () => ["realms"] as const,
   realmMeta: (addr: `0x${string}`) => ["realm-meta", addr] as const,
+  starterRealm: (preset: string) => ["starter-realm", preset] as const,
   budget: (addr: `0x${string}`) => ["budget", addr] as const,
   activity: (addr: `0x${string}`) => ["activity", addr] as const,
   bossClears: (player: `0x${string}`) => ["boss-clears", player] as const,

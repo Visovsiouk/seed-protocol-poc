@@ -5,9 +5,19 @@ import { fetchActiveListings, fetchRecentSales } from "./listings";
 import { fetchAssetSummaries } from "./provenance";
 import { fetchInventory, type InventoryEntry } from "./inventory";
 import { fetchInventoryCards } from "./inventory-cards";
+import {
+  fetchRealms,
+  fetchStarterRealmResolution,
+  type StarterRealmResolution,
+} from "./realms";
 import { queryKeys, defaultReadQueryOptions } from "./cache";
-import type { ListingSummary, SaleSummary, AssetSummary } from "./types";
-import type { AssetCard } from "@/lib/engine/types";
+import type {
+  ListingSummary,
+  SaleSummary,
+  AssetSummary,
+  RealmSummary,
+} from "./types";
+import type { AssetCard, Preset } from "@/lib/engine/types";
 
 /**
  * Client-side wrappers around the lib/reads/* fetchers, plus their React
@@ -56,6 +66,35 @@ export function useInventoryCards(player: `0x${string}` | undefined) {
       : ["inventory-cards", "none"],
     queryFn: () => fetchInventoryCards(player!),
     enabled: !!player,
+    ...defaultReadQueryOptions,
+  });
+}
+
+/**
+ * Snapshot of every realm in the `EcosystemRegistry`. Useful for a
+ * future "Realms" picker on the landing page; today the play route only
+ * needs `useStarterRealm` (below), which delegates here internally so
+ * the registry list is fetched at most once per stale window.
+ */
+export function useRealms() {
+  return useQuery<RealmSummary[]>({
+    queryKey: queryKeys.realms(),
+    queryFn: fetchRealms,
+    ...defaultReadQueryOptions,
+  });
+}
+
+/**
+ * Resolves the configured starter realm for a preset against the live
+ * registry. Returns the configured address, bossId, deployment state,
+ * and the on-chain summary if registered. The play route uses this to
+ * decide between (a) running the on-chain mint path and (b) showing the
+ * "Realm not deployed yet" panel.
+ */
+export function useStarterRealm(preset: Preset) {
+  return useQuery<StarterRealmResolution>({
+    queryKey: queryKeys.starterRealm(preset),
+    queryFn: () => fetchStarterRealmResolution(preset),
     ...defaultReadQueryOptions,
   });
 }

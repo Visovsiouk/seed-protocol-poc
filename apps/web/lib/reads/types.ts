@@ -42,3 +42,16 @@ export type SaleSummary = {
   blockNumber: bigint;
   txHash: `0x${string}`;
 };
+
+/**
+ * On-chain summary of a registered ecosystem ("realm" in PoC terms). The
+ * registry stores no name or preset, so the UI joins this against the
+ * off-chain `starterRealms` table to identify which preset a given realm
+ * is configured as.
+ */
+export type RealmSummary = {
+  address: `0x${string}`;
+  owner: `0x${string}`;
+  createdAt: bigint;
+  active: boolean;
+};

@@ -46,8 +46,9 @@ import { InventoryDrawer } from "@/components/inventory/InventoryDrawer";
 import { TutorialOverlay } from "@/components/tutorial/TutorialOverlay";
 import { ConnectButton } from "@/components/wallet/ConnectButton";
 import { emptyTutorialProgress } from "@/lib/tutorial/progress";
-import { useInventoryCards } from "@/lib/reads/hooks";
+import { useInventoryCards, useStarterRealm } from "@/lib/reads/hooks";
 import { useMintLoot } from "@/lib/contracts/loot";
+import { getStarterRealm } from "@/lib/contracts/starter-realms";
 
 const VALID_PRESETS: ReadonlySet<Preset> = new Set(["fantasy", "scifi", "cyberpunk"]);
 
@@ -55,15 +56,6 @@ const PRESET_LABEL: Record<Preset, string> = {
   fantasy: "The Hollow Reach",
   scifi: "Drift Station Ker-7",
   cyberpunk: "Black Ice District",
-};
-
-const STARTER_REALM_BY_PRESET: Record<Preset, { realm: `0x${string}`; bossId: string }> = {
-  //: the dev-deployed `EcosystemTemplate` for each preset will
-  // replace these zero addresses; the bossId lives on-chain as part of the
-  // realm's metadata.
-  fantasy: { realm: "0x0000000000000000000000000000000000000a01", bossId: "forest_hag" },
-  scifi: { realm: "0x0000000000000000000000000000000000000a02", bossId: "ai_core" },
-  cyberpunk: { realm: "0x0000000000000000000000000000000000000a03", bossId: "black_ice" },
 };
 
 // PoC: canonical schema ids per preset. Real schemas come from the realm
@@ -126,10 +118,14 @@ export default function PlayPage() {
   const preset = params.preset as Preset;
   if (!VALID_PRESETS.has(preset)) notFound();
 
-  const cfg = STARTER_REALM_BY_PRESET[preset];
+  // Starter realm address + bossId come from per-chain config
+  // (`lib/contracts/starter-realms.ts`); deploy state + active flag come
+  // from the on-chain registry via `useStarterRealm` below.
+  const cfg = getStarterRealm(preset);
   const { address } = useAccount();
   const { mintLoot, walletConnected } = useMintLoot();
   const onchain = useInventoryCards(address);
+  const starter = useStarterRealm(preset);
 
   // Effect-only body palette toggle — keeps SSR pristine.
   useEffect(() => {
@@ -168,12 +164,28 @@ export default function PlayPage() {
 
   const tutorial = emptyTutorialProgress();
 
-  const inventory: readonly AssetCardType[] = walletConnected
+  // Real on-chain mint requires both a wallet AND a deployed+active
+  // starter realm. Until the starter-realm deploy
+  // lands, `starter.data.ready` is false and we transparently fall back
+  // to the disconnected-mode local accumulator so the player can still
+  // collect drops within the session.
+  const realmReady = starter.data?.ready === true;
+  const chainMintAvailable = walletConnected && realmReady;
+  const showRealmNotDeployedNotice =
+    walletConnected && starter.isSuccess && !realmReady;
+
+  // When the chain path is live, the drawer is the on-chain truth. When
+  // we're falling back (disconnected OR connected-but-realm-not-ready)
+  // we surface the in-session accumulator on top of whatever on-chain
+  // holdings the player already has, so they keep visibility into both.
+  const inventory: readonly AssetCardType[] = chainMintAvailable
     ? (onchain.data ?? [])
-    : localInventory;
+    : walletConnected
+      ? [...(onchain.data ?? []), ...localInventory]
+      : localInventory;
 
   const handleLootMinted = async (loot: LootRoll) => {
-    if (walletConnected) {
+    if (chainMintAvailable) {
       // Real path — fire the tx and let the inventory query reconcile.
       // `useMintLoot` invalidates `inventoryCards(player)` on success.
       await mintLoot({
@@ -185,7 +197,7 @@ export default function PlayPage() {
         realmLabel: PRESET_LABEL[preset],
       });
     } else {
-      // Disconnected mode — keep the 2B local accumulator alive.
+      // Disconnected OR realm-not-ready — keep the local accumulator alive.
       const card = lootRollToMockCard(loot, preset, cfg.realm);
       setLocalInventory((prev) => [...prev, card]);
     }
@@ -240,6 +252,23 @@ export default function PlayPage() {
           dismissed={tutorialDismissed}
           onDismiss={() => setTutorialDismissed((v) => !v)}
         />
+        {showRealmNotDeployedNotice && (
+          <aside
+            aria-label="Realm not yet deployed"
+            className="rounded-md p-3 text-sm"
+            style={{
+              background: "rgba(255,196,0,0.08)",
+              border: "1px solid rgba(255,196,0,0.35)",
+            }}
+          >
+            <strong>Heads up:</strong>{" "}
+            {starter.data?.deployed === false
+              ? "The starter realm for this preset isn't deployed on this chain yet."
+              : "The starter realm isn't active in the registry yet."}{" "}
+            Drops will accumulate in this session only and won&apos;t be
+            minted on-chain.
+          </aside>
+        )}
         <EncounterFrame
           initialState={initialStateWithEquipped}
           initialLines={initial.lines}
