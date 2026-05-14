@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { ListingsGrid } from "@/components/bazaar/ListingsGrid";
 import { RecentSalesFeed } from "@/components/bazaar/RecentSalesFeed";
 import { ListButton } from "@/components/bazaar/ListButton";
@@ -15,9 +16,9 @@ export default function BazaarPage() {
   return (
     <main className="min-h-screen px-6 py-10">
       <header className="mx-auto mb-10 flex max-w-6xl items-center justify-between">
-        <a href="/" className="text-sm opacity-70 hover:opacity-100">
+        <Link href="/" className="text-sm opacity-70 hover:opacity-100">
           ← Home
-        </a>
+        </Link>
         <h1 className="text-2xl font-semibold tracking-tight">Bazaar</h1>
         <div className="flex items-center gap-3">
           <ListButton />

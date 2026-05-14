@@ -273,7 +273,7 @@ export function step(state: RunState, choice: ActionChoice): StepResult {
     const result = resolveRound(enc.combat, choice, equipped, rng);
     let combat = result.state;
     const lines = [...result.lines];
-    let monsterDefeated = result.monsterDefeated;
+    const monsterDefeated = result.monsterDefeated;
 
     // Phase transition for bosses.
     if (!monsterDefeated && state.depth >= BOSS_DEPTH) {
