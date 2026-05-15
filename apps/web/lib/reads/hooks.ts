@@ -14,6 +14,7 @@ import { fetchBossClears, fetchHasSeed } from "./boss-clears";
 import {
   deriveTutorialProgress,
   type TutorialProgress,
+  type BossClearEvent,
 } from "@/lib/tutorial/progress";
 import { queryKeys, defaultReadQueryOptions } from "./cache";
 import type {
@@ -100,6 +101,23 @@ export function useStarterRealm(preset: Preset) {
   return useQuery<StarterRealmResolution>({
     queryKey: queryKeys.starterRealm(preset),
     queryFn: () => fetchStarterRealmResolution(preset),
+    ...defaultReadQueryOptions,
+  });
+}
+
+/**
+ * Raw BossCleared event union for a player, across every deployed
+ * starter realm. The claim-seed flow consumes these directly to build
+ * the on-chain `ContributionProof`; the tutorial overlay only needs the
+ * derived progress (see `useTutorialProgress`).
+ */
+export function useBossClears(player: `0x${string}` | undefined) {
+  return useQuery<BossClearEvent[]>({
+    queryKey: queryKeys.bossClears(
+      player ?? ("0x0000000000000000000000000000000000000000" as const),
+    ),
+    enabled: !!player,
+    queryFn: () => (player ? fetchBossClears(player) : Promise.resolve([])),
     ...defaultReadQueryOptions,
   });
 }

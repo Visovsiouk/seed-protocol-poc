@@ -50,8 +50,10 @@ import {
   useInventoryCards,
   useStarterRealm,
   useTutorialProgress,
+  useBossClears,
 } from "@/lib/reads/hooks";
 import { useMintLoot } from "@/lib/contracts/loot";
+import { useClaimSeed } from "@/lib/contracts/seed-claim";
 import { getStarterRealm } from "@/lib/contracts/starter-realms";
 
 const VALID_PRESETS: ReadonlySet<Preset> = new Set(["fantasy", "scifi", "cyberpunk"]);
@@ -131,6 +133,8 @@ export default function PlayPage() {
   const onchain = useInventoryCards(address);
   const starter = useStarterRealm(preset);
   const tutorialQuery = useTutorialProgress(address);
+  const bossClears = useBossClears(address);
+  const { claimSeed, isPending: claimPending } = useClaimSeed();
 
   // Effect-only body palette toggle — keeps SSR pristine.
   useEffect(() => {
@@ -219,6 +223,29 @@ export default function PlayPage() {
     setEquipped((prev) => ({ ...prev, [slot]: card }));
   };
 
+  // Act-4 Claim CTA wiring. The overlay only renders the button when
+  // `progress.eligibleForSeed && onClaimSeed` are both set, so we leave
+  // `onClaimSeed` undefined whenever the events aren't available yet —
+  // the button hides cleanly instead of being un-clickable.
+  const canClaim =
+    walletConnected &&
+    tutorial.eligibleForSeed &&
+    (bossClears.data?.length ?? 0) > 0 &&
+    !claimPending;
+
+  const handleClaimSeed = canClaim
+    ? async () => {
+        try {
+          await claimSeed({ events: bossClears.data ?? [] });
+        } catch (err) {
+          // Surface the revert verbatim; the author
+          // needs the raw text to debug proof-shape mismatches.
+          // eslint-disable-next-line no-console
+          console.error("claimSeed failed", err);
+        }
+      }
+    : undefined;
+
   // EncounterFrame keeps its own RunState; we hand off `equipped` only at
   // run-start. A re-equip during a run won't retroactively change the
   // active CombatState.
@@ -259,6 +286,7 @@ export default function PlayPage() {
           progress={tutorial}
           dismissed={tutorialDismissed}
           onDismiss={() => setTutorialDismissed((v) => !v)}
+          onClaimSeed={handleClaimSeed}
         />
         {showRealmNotDeployedNotice && (
           <aside
