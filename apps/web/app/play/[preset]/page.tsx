@@ -46,7 +46,11 @@ import { InventoryDrawer } from "@/components/inventory/InventoryDrawer";
 import { TutorialOverlay } from "@/components/tutorial/TutorialOverlay";
 import { ConnectButton } from "@/components/wallet/ConnectButton";
 import { emptyTutorialProgress } from "@/lib/tutorial/progress";
-import { useInventoryCards, useStarterRealm } from "@/lib/reads/hooks";
+import {
+  useInventoryCards,
+  useStarterRealm,
+  useTutorialProgress,
+} from "@/lib/reads/hooks";
 import { useMintLoot } from "@/lib/contracts/loot";
 import { getStarterRealm } from "@/lib/contracts/starter-realms";
 
@@ -126,6 +130,7 @@ export default function PlayPage() {
   const { mintLoot, walletConnected } = useMintLoot();
   const onchain = useInventoryCards(address);
   const starter = useStarterRealm(preset);
+  const tutorialQuery = useTutorialProgress(address);
 
   // Effect-only body palette toggle — keeps SSR pristine.
   useEffect(() => {
@@ -162,7 +167,10 @@ export default function PlayPage() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [tutorialDismissed, setTutorialDismissed] = useState(false);
 
-  const tutorial = emptyTutorialProgress();
+  // Until a wallet's connected (or the query is mid-flight) we render
+  // the empty Act 1 progress — the overlay handles that fine and copy
+  // doesn't reference any wallet state.
+  const tutorial = tutorialQuery.data ?? emptyTutorialProgress();
 
   // Real on-chain mint requires both a wallet AND a deployed+active
   // starter realm. Until the starter-realm deploy

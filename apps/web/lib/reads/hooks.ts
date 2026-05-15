@@ -10,6 +10,11 @@ import {
   fetchStarterRealmResolution,
   type StarterRealmResolution,
 } from "./realms";
+import { fetchBossClears, fetchHasSeed } from "./boss-clears";
+import {
+  deriveTutorialProgress,
+  type TutorialProgress,
+} from "@/lib/tutorial/progress";
 import { queryKeys, defaultReadQueryOptions } from "./cache";
 import type {
   ListingSummary,
@@ -95,6 +100,36 @@ export function useStarterRealm(preset: Preset) {
   return useQuery<StarterRealmResolution>({
     queryKey: queryKeys.starterRealm(preset),
     queryFn: () => fetchStarterRealmResolution(preset),
+    ...defaultReadQueryOptions,
+  });
+}
+
+/**
+ * Composite tutorial-progress hook. Combines the per-
+ * realm `BossCleared` event scan with `SeedSBT.balanceOf(player)` and
+ * runs the result through the (pure, tested) `deriveTutorialProgress`.
+ *
+ * Returns `emptyTutorialProgress`-shaped data while `player` is
+ * undefined so the overlay can render against a stable shape during the
+ * pre-connect render pass. Caller should treat the query's `isLoading`
+ * as the source of truth for spinners.
+ */
+export function useTutorialProgress(player: `0x${string}` | undefined) {
+  return useQuery<TutorialProgress>({
+    queryKey: queryKeys.tutorialProgress(
+      player ?? ("0x0000000000000000000000000000000000000000" as const),
+    ),
+    enabled: !!player,
+    queryFn: async () => {
+      if (!player) {
+        return deriveTutorialProgress({ hasSeed: false, events: [] });
+      }
+      const [events, hasSeed] = await Promise.all([
+        fetchBossClears(player),
+        fetchHasSeed(player),
+      ]);
+      return deriveTutorialProgress({ hasSeed, events });
+    },
     ...defaultReadQueryOptions,
   });
 }

@@ -21,6 +21,9 @@ export const queryKeys = {
   budget: (addr: `0x${string}`) => ["budget", addr] as const,
   activity: (addr: `0x${string}`) => ["activity", addr] as const,
   bossClears: (player: `0x${string}`) => ["boss-clears", player] as const,
+  hasSeed: (player: `0x${string}`) => ["has-seed", player] as const,
+  tutorialProgress: (player: `0x${string}`) =>
+    ["tutorial-progress", player] as const,
   bossLeaderboard: (realm: `0x${string}`) =>
     ["boss-leaderboard", realm] as const,
   adapters: (schemaId: number) => ["adapters", schemaId] as const,
