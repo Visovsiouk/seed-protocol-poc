@@ -54,6 +54,7 @@ import {
 } from "@/lib/reads/hooks";
 import { useMintLoot } from "@/lib/contracts/loot";
 import { useClaimSeed } from "@/lib/contracts/seed-claim";
+import { useRunSeedCommitment } from "@/lib/contracts/run-seed";
 import { getStarterRealm } from "@/lib/contracts/starter-realms";
 
 const VALID_PRESETS: ReadonlySet<Preset> = new Set(["fantasy", "scifi", "cyberpunk"]);
@@ -136,6 +137,22 @@ export default function PlayPage() {
   const bossClears = useBossClears(address);
   const { claimSeed, isPending: claimPending } = useClaimSeed();
 
+  // Run-start nonce (ms since epoch). Stable across re-renders so the
+  // `useRunSeedCommitment` query key doesn't shift; bump via remount to
+  // restart with a fresh commitment.
+  const [runNonce] = useState<bigint>(() => BigInt(Date.now()));
+  const commitment = useRunSeedCommitment(runNonce);
+
+  // CSPRNG fallback for disconnected play. Pinned in state so the seed
+  // doesn't change on re-render. `useState(() => …)` evaluates lazily —
+  // critical, since `crypto.getRandomValues` would otherwise re-fire.
+  const [csprngSeed] = useState<`0x${string}`>(() => fallbackSeed());
+
+  // The seed actually fed to `startRun` below. When connected, prefer
+  // the on-chain commitment so the run is verifiable; while it's still
+  // resolving, fall back to CSPRNG so play isn't blocked.
+  const rngSeed: `0x${string}` = commitment.data?.seed ?? csprngSeed;
+
   // Effect-only body palette toggle — keeps SSR pristine.
   useEffect(() => {
     const prev = document.body.getAttribute("data-preset");
@@ -146,19 +163,26 @@ export default function PlayPage() {
     };
   }, [preset]);
 
-  // startRun is deterministic from the seed — derive once and keep stable
-  // across re-renders. A "Restart" button could bump a key to re-roll.
+  // startRun is deterministic from the seed. While connected and the
+  // on-chain commitment is still resolving, we gate the EncounterFrame
+  // (see render below) so the seed only ever swaps once — at the
+  // moment commitment lands — and the player never sees a re-rolled
+  // run mid-play.
   const initial = useMemo(() => {
     return startRun({
       preset,
       realm: cfg.realm,
-      rngSeed: fallbackSeed(),
+      rngSeed,
       equipped: {},
       bossId: cfg.bossId,
       schemas: CANONICAL_SCHEMAS[preset],
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [preset]);
+  }, [preset, rngSeed]);
+
+  // Connected players wait briefly while we pin the run to a blockhash;
+  // disconnected players go straight to the CSPRNG path.
+  const seedReady = !walletConnected || !!commitment.data;
 
   // Local inventory used in disconnected mode. When connected we read
   // from the chain via `onchain.data`; keeping the local accumulator
@@ -305,12 +329,33 @@ export default function PlayPage() {
             minted on-chain.
           </aside>
         )}
-        <EncounterFrame
-          initialState={initialStateWithEquipped}
-          initialLines={initial.lines}
-          bossId={cfg.bossId}
-          onLootMinted={handleLootMinted}
-        />
+        {seedReady ? (
+          <>
+            <EncounterFrame
+              initialState={initialStateWithEquipped}
+              initialLines={initial.lines}
+              bossId={cfg.bossId}
+              onLootMinted={handleLootMinted}
+            />
+            {commitment.data && (
+              <p className="text-[11px] opacity-50 font-mono break-all">
+                Run committed against block {commitment.data.blockNumber.toString()}{" "}
+                · seed {commitment.data.seed.slice(0, 10)}…
+              </p>
+            )}
+          </>
+        ) : (
+          <aside
+            aria-label="Pinning run to chain"
+            className="rounded-md p-4 text-sm opacity-80"
+            style={{
+              background: "rgba(255,255,255,0.04)",
+              border: "1px solid rgba(255,255,255,0.08)",
+            }}
+          >
+            Pinning run seed to the latest block…
+          </aside>
+        )}
       </section>
 
       <InventoryDrawer
