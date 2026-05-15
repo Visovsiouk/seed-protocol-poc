@@ -34,6 +34,7 @@ import { notFound, useParams } from "next/navigation";
 import { useAccount } from "wagmi";
 import type {
   AssetCard as AssetCardType,
+  EngineEvent,
   LootRoll,
   Preset,
   RunState,
@@ -53,17 +54,57 @@ import {
   useBossClears,
 } from "@/lib/reads/hooks";
 import { useMintLoot } from "@/lib/contracts/loot";
+import { useMintClearReceipt } from "@/lib/contracts/boss-cleared";
 import { useClaimSeed } from "@/lib/contracts/seed-claim";
 import { useRunSeedCommitment } from "@/lib/contracts/run-seed";
 import { getStarterRealm } from "@/lib/contracts/starter-realms";
 
 const VALID_PRESETS: ReadonlySet<Preset> = new Set(["fantasy", "scifi", "cyberpunk"]);
 
-const PRESET_LABEL: Record<Preset, string> = {
-  fantasy: "The Hollow Reach",
-  scifi: "Drift Station Ker-7",
-  cyberpunk: "Black Ice District",
-};
+// Starter weapon/armor handed to the player at run start. These are
+// in-memory cards (tokenId 0n, empty metadataURI) — not real on-chain
+// assets — so the first encounter is winnable out of the box. Stats are
+// modest so loot drops still feel like an upgrade: d6 + 1 attack vs.
+// bare-handed, and +5 HP / +1 AC vs. base 25 HP / AC 10.
+function makeStarterGear(
+  preset: Preset,
+  realm: `0x${string}`,
+  realmName: string,
+): { weapon: AssetCardType; armor: AssetCardType } {
+  const names: Record<Preset, { weapon: string; armor: string }> = {
+    fantasy: { weapon: "Rusted Shortsword", armor: "Patched Leather" },
+    scifi: { weapon: "Service Sidearm", armor: "Crew Coveralls" },
+    cyberpunk: { weapon: "Stun Baton", armor: "Scuffed Jacket" },
+  };
+  const base = {
+    tokenId: 0n,
+    realm,
+    realmName,
+    tier: 1 as const,
+    catalogEffects: [],
+    extraFields: {},
+    metadataURI: "",
+    preseed: false,
+  };
+  return {
+    weapon: {
+      ...base,
+      schemaId: 0,
+      slot: "weapon",
+      name: names[preset].weapon,
+      damageDie: 6,
+      attackBonus: 1,
+    },
+    armor: {
+      ...base,
+      schemaId: 0,
+      slot: "armor",
+      name: names[preset].armor,
+      acBonus: 1,
+      hpBonus: 5,
+    },
+  };
+}
 
 // PoC: canonical schema ids per preset. Real schemas come from the realm
 // contract; the engine only needs (schemaId, declared catalog effects).
@@ -105,7 +146,7 @@ function lootRollToMockCard(
     tokenId: nextMockTokenId++,
     schemaId: loot.schemaId,
     realm,
-    realmName: PRESET_LABEL[preset],
+    realmName: getStarterRealm(preset).name,
     slot: loot.slot,
     tier: loot.tier,
     name: assembleLootName(bank, loot.slot as "weapon" | "armor", loot.nameSeed),
@@ -131,6 +172,7 @@ export default function PlayPage() {
   const cfg = getStarterRealm(preset);
   const { address } = useAccount();
   const { mintLoot, walletConnected } = useMintLoot();
+  const { mintClearReceipt } = useMintClearReceipt();
   const onchain = useInventoryCards(address);
   const starter = useStarterRealm(preset);
   const tutorialQuery = useTutorialProgress(address);
@@ -143,15 +185,26 @@ export default function PlayPage() {
   const [runNonce] = useState<bigint>(() => BigInt(Date.now()));
   const commitment = useRunSeedCommitment(runNonce);
 
-  // CSPRNG fallback for disconnected play. Pinned in state so the seed
-  // doesn't change on re-render. `useState(() => …)` evaluates lazily —
-  // critical, since `crypto.getRandomValues` would otherwise re-fire.
-  const [csprngSeed] = useState<`0x${string}`>(() => fallbackSeed());
+  // CSPRNG fallback for disconnected play. We *cannot* generate the seed
+  // during initial render (lazy `useState` initialiser runs on both SSR
+  // and hydration, with different `crypto.getRandomValues` results — the
+  // monster pick diverges and React throws a hydration mismatch). Instead
+  // initialise to null and fill in via effect after mount; render gates
+  // on `mounted` so SSR + first-paint produce the same DOM.
+  const [csprngSeed, setCsprngSeed] = useState<`0x${string}` | null>(null);
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    if (csprngSeed === null) setCsprngSeed(fallbackSeed());
+    setMounted(true);
+  }, [csprngSeed]);
 
   // The seed actually fed to `startRun` below. When connected, prefer
   // the on-chain commitment so the run is verifiable; while it's still
-  // resolving, fall back to CSPRNG so play isn't blocked.
-  const rngSeed: `0x${string}` = commitment.data?.seed ?? csprngSeed;
+  // resolving, fall back to CSPRNG so play isn't blocked. May be null
+  // during SSR / first paint — the EncounterFrame is gated on `seedReady`
+  // so `startRun` is only invoked once we have a real seed.
+  const rngSeed: `0x${string}` | null =
+    commitment.data?.seed ?? csprngSeed ?? null;
 
   // Effect-only body palette toggle — keeps SSR pristine.
   useEffect(() => {
@@ -168,12 +221,18 @@ export default function PlayPage() {
   // (see render below) so the seed only ever swaps once — at the
   // moment commitment lands — and the player never sees a re-rolled
   // run mid-play.
+  const starterGear = useMemo(
+    () => makeStarterGear(preset, cfg.realm, cfg.name),
+    [preset, cfg.realm],
+  );
+
   const initial = useMemo(() => {
+    if (!rngSeed) return null;
     return startRun({
       preset,
       realm: cfg.realm,
       rngSeed,
-      equipped: {},
+      equipped: { weapon: starterGear.weapon, armor: starterGear.armor },
       bossId: cfg.bossId,
       schemas: CANONICAL_SCHEMAS[preset],
     });
@@ -181,17 +240,22 @@ export default function PlayPage() {
   }, [preset, rngSeed]);
 
   // Connected players wait briefly while we pin the run to a blockhash;
-  // disconnected players go straight to the CSPRNG path.
-  const seedReady = !walletConnected || !!commitment.data;
+  // disconnected players go straight to the CSPRNG path. `mounted` keeps
+  // SSR + first-paint inert so the hydration DOM matches.
+  const seedReady =
+    mounted && !!initial && (!walletConnected || !!commitment.data);
 
   // Local inventory used in disconnected mode. When connected we read
   // from the chain via `onchain.data`; keeping the local accumulator
   // around lets the player play offline without losing drops.
   const [localInventory, setLocalInventory] = useState<AssetCardType[]>([]);
+  // Starter gear is preselected so the drawer reflects what the engine
+  // is actually using for combat. Players can swap to looted gear via
+  // `handleEquip` once drops land.
   const [equipped, setEquipped] = useState<{
     weapon?: AssetCardType;
     armor?: AssetCardType;
-  }>({});
+  }>({ weapon: starterGear.weapon, armor: starterGear.armor });
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [tutorialDismissed, setTutorialDismissed] = useState(false);
 
@@ -220,17 +284,19 @@ export default function PlayPage() {
       ? [...(onchain.data ?? []), ...localInventory]
       : localInventory;
 
-  const handleLootMinted = async (loot: LootRoll) => {
-    if (chainMintAvailable) {
+  const handleLootMinted = async (loot: LootRoll, ctx: { depth: number }) => {
+    if (chainMintAvailable && initial) {
       // Real path — fire the tx and let the inventory query reconcile.
       // `useMintLoot` invalidates `inventoryCards(player)` on success.
+      // `ctx.depth` is the live engine depth (the page only sees the
+      // frozen `initial.state.depth` of 1 from `startRun`).
       await mintLoot({
         realm: cfg.realm,
         preset,
         runSeed: initial.state.rngSeed,
-        depth: initial.state.depth,
+        depth: ctx.depth,
         loot,
-        realmLabel: PRESET_LABEL[preset],
+        realmLabel: cfg.name,
       });
     } else {
       // Disconnected OR realm-not-ready — keep the local accumulator alive.
@@ -247,6 +313,54 @@ export default function PlayPage() {
     setEquipped((prev) => ({ ...prev, [slot]: card }));
   };
 
+  // Status of the clearReceipt mint that fires when the engine emits
+  // BossCleared. The run-over panel in `<EncounterFrame/>` reads this
+  // to render real on-chain feedback instead of a placeholder.
+  const [clearReceipt, setClearReceipt] = useState<
+    | { status: "pending" }
+    | { status: "minted"; txHash: `0x${string}`; tokenId: bigint }
+    | { status: "failed"; error: string }
+    | { status: "skipped"; reason: string }
+    | undefined
+  >(undefined);
+
+  // Mint the on-chain clearReceipt the moment the engine emits
+  // BossCleared. Disconnected / realm-not-ready runs surface a
+  // "skipped" state — the tutorial overlay will simply not advance
+  // past Act 3 until the player plays a connected run on a deployed
+  // starter realm.
+  const handleEngineEvent = (event: EngineEvent) => {
+    if (event.type !== "BossCleared") return;
+    if (!initial) return;
+    if (!chainMintAvailable) {
+      setClearReceipt({
+        status: "skipped",
+        reason: walletConnected
+          ? "Starter realm not yet deployed on this chain — receipt not minted."
+          : "Wallet not connected — receipt not minted.",
+      });
+      return;
+    }
+    setClearReceipt({ status: "pending" });
+    mintClearReceipt({
+      preset,
+      runSeed: initial.state.rngSeed,
+      bossId: cfg.bossId,
+      turns: event.turns,
+      finalHp: event.finalHp,
+      realmLabel: cfg.name,
+    })
+      .then(({ tokenId, txHash }) => {
+        setClearReceipt({ status: "minted", tokenId, txHash });
+      })
+      .catch((err: unknown) => {
+        const message = err instanceof Error ? err.message : String(err);
+        setClearReceipt({ status: "failed", error: message });
+        // eslint-disable-next-line no-console
+        console.error("mintClearReceipt failed", err);
+      });
+  };
+
   // Act-4 Claim CTA wiring. The overlay only renders the button when
   // `progress.eligibleForSeed && onClaimSeed` are both set, so we leave
   // `onClaimSeed` undefined whenever the events aren't available yet —
@@ -260,7 +374,9 @@ export default function PlayPage() {
   const handleClaimSeed = canClaim
     ? async () => {
         try {
-          await claimSeed({ events: bossClears.data ?? [] });
+          // Server independently rebuilds the proof from on-chain
+          // events — we only pass identity via the wallet.
+          await claimSeed();
         } catch (err) {
           // Surface the revert verbatim; the author
           // needs the raw text to debug proof-shape mismatches.
@@ -270,15 +386,13 @@ export default function PlayPage() {
       }
     : undefined;
 
-  // EncounterFrame keeps its own RunState; we hand off `equipped` only at
-  // run-start. A re-equip during a run won't retroactively change the
-  // active CombatState.
-  const initialStateWithEquipped: RunState = useMemo(
-    () => ({ ...initial.state, equipped: { ...initial.state.equipped, ...equipped } }),
-    // We intentionally do NOT depend on `equipped` here — see comment above.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [initial.state],
-  );
+  // EncounterFrame keeps its own RunState; we hand off the run state as
+  // produced by `startRun` (which already has starter gear baked into
+  // `equipped`). A re-equip during a run can't retroactively change the
+  // active CombatState, and we
+  // must pass the *exact* object `startRun` returned so the engine's
+  // SCHEMA_STORE WeakMap lookup in `step()` resolves.
+  const initialState: RunState | null = initial?.state ?? null;
 
   return (
     <main className="min-h-screen px-6 py-8">
@@ -287,7 +401,7 @@ export default function PlayPage() {
           ← Realms
         </Link>
         <h1 className="text-2xl font-semibold tracking-tight">
-          {PRESET_LABEL[preset]}
+          {cfg.name}
         </h1>
         <div className="flex items-center gap-3">
           <button
@@ -329,13 +443,16 @@ export default function PlayPage() {
             minted on-chain.
           </aside>
         )}
-        {seedReady ? (
+        {seedReady && initialState && initial ? (
           <>
             <EncounterFrame
-              initialState={initialStateWithEquipped}
+              initialState={initialState}
               initialLines={initial.lines}
               bossId={cfg.bossId}
+              equipped={equipped}
+              onEvent={handleEngineEvent}
               onLootMinted={handleLootMinted}
+              clearReceipt={clearReceipt}
             />
             {commitment.data && (
               <p className="text-[11px] opacity-50 font-mono break-all">

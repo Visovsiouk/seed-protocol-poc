@@ -12,16 +12,42 @@ import { getSeededRealm } from "./seeded-realms";
  *   - `bossId` lives here — bosses are an engine catalog concept (see
  *     `lib/engine/boss.ts`) and the realm contract has no opinion about
  *     who its final boss is at the PoC stage.
+ *   - `name`/`tagline` live here — these are the display labels the
+ *     selector and play-page header render. Single source so the two
+ *     surfaces can't drift apart.
  *
  * A zero `realm` signals "not seeded yet"; the play route surfaces that
  * to the user instead of throwing.
  */
-export type StarterRealm = { realm: `0x${string}`; bossId: string };
+export type StarterRealm = {
+  realm: `0x${string}`;
+  bossId: string;
+  name: string;
+  tagline: string;
+};
 
 const BOSS_ID_BY_PRESET: Record<Preset, string> = {
   fantasy: "forest_hag",
   scifi: "ai_core",
   cyberpunk: "black_ice",
+};
+
+const STARTER_DISPLAY_BY_PRESET: Record<Preset, { name: string; tagline: string }> = {
+  fantasy: {
+    name: "The Hollow Reach",
+    tagline:
+      "Wet stone, oil-rust banners, and the Forest Hag's wet laughter from somewhere ahead.",
+  },
+  scifi: {
+    name: "Drift Station Ker-7",
+    tagline:
+      "A dead colony ship adrift on a long elliptical. Something rebooted the core last cycle.",
+  },
+  cyberpunk: {
+    name: "Black Ice District",
+    tagline:
+      "Neon over wet concrete. The ICE has names. The contract on your head has a quota.",
+  },
 };
 
 const PRESETS: readonly Preset[] = ["fantasy", "scifi", "cyberpunk"];
@@ -35,6 +61,8 @@ export function getStarterRealm(preset: Preset): StarterRealm {
   return {
     realm: getSeededRealm(preset),
     bossId: BOSS_ID_BY_PRESET[preset],
+    name: STARTER_DISPLAY_BY_PRESET[preset].name,
+    tagline: STARTER_DISPLAY_BY_PRESET[preset].tagline,
   };
 }
 
@@ -43,11 +71,13 @@ export function getStarterRealm(preset: Preset): StarterRealm {
  * fan-out reads across all three realms (boss-clear scan, mint-loot
  * resolver, etc.) use this instead of hand-rolling the preset list.
  */
-export function listStarterRealms(): { preset: Preset; realm: `0x${string}`; bossId: string }[] {
-  return PRESETS.map((preset) => {
-    const { realm, bossId } = getStarterRealm(preset);
-    return { preset, realm, bossId };
-  });
+export function listStarterRealms(): StarterRealmEntry[] {
+  return PRESETS.map((preset) => ({
+    preset,
+    ...getStarterRealm(preset),
+  }));
 }
+
+export type StarterRealmEntry = StarterRealm & { preset: Preset };
 
 export { isStarterRealmDeployed };

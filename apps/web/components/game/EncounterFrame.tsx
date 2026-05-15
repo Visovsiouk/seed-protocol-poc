@@ -27,9 +27,10 @@
  * `<BossPhaseBanner/>` for ~4 seconds.
  */
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   ActionChoice,
+  AssetCard,
   EngineEvent,
   LootRoll,
   NarrationLine,
@@ -38,6 +39,7 @@ import type {
 import {
   advance as engineAdvance,
   commitLootMint as engineCommitLoot,
+  equipItem as engineEquipItem,
   step as engineStep,
 } from "@/lib/engine";
 import { getFlavorBank } from "@/lib/flavor";
@@ -55,16 +57,40 @@ type Props = {
   initialLines: readonly NarrationLine[];
   /** Boss id required by `advance()` once the run reaches BOSS_DEPTH. */
   bossId: string;
+  /**
+   * Controlled equipped slots. Parent (the play page) owns this so the
+   * `<InventoryDrawer/>` can update it; we mirror it into the engine
+   * `RunState` via `equipItem` on every change. Per the
+   * active combat stats stay frozen — the new gear takes effect on the
+   * next room.
+   */
+  equipped?: { weapon?: AssetCard; armor?: AssetCard };
   /** Optional hook so the parent can react to LootDropped/RoomCleared/BossCleared. */
   onEvent?: (event: EngineEvent) => void;
+  /**
+   * Status of the clearReceipt mint, surfaced in the run-over panel.
+   * Driven by the parent (the play page) which handles BossCleared on
+   * `onEvent` and dispatches the on-chain mint. Undefined while the
+   * boss is still alive.
+   */
+  clearReceipt?:
+    | { status: "pending" }
+    | { status: "minted"; txHash: `0x${string}`; tokenId: bigint }
+    | { status: "failed"; error: string }
+    | { status: "skipped"; reason: string };
   /**
    * Fires when the player commits the pendingLoot via the Mint button (i.e.
    * NOT on Skip). May be async — if the handler returns a rejected promise
    * the engine-side commit is skipped, leaving the prompt up for retry.
    *  uses this to grow the local inventory; dispatches
    * the on-chain mint and lets the wagmi receipt reconcile.
+   *
+   * The `ctx.depth` snapshot is the current room depth at the moment of
+   * drop — the parent's `initialState.depth` is frozen at 1 from
+   * `startRun`, so callers needing the *real* depth (e.g. for the
+   * server-side tier-vs-difficulty bounds check) must read it from here.
    */
-  onLootMinted?: (loot: LootRoll) => Promise<void> | void;
+  onLootMinted?: (loot: LootRoll, ctx: { depth: number }) => Promise<void> | void;
 };
 
 /**
@@ -84,8 +110,10 @@ export function EncounterFrame({
   initialState,
   initialLines,
   bossId,
+  equipped,
   onEvent,
   onLootMinted,
+  clearReceipt,
 }: Props) {
   const initialSplit = useMemo(() => splitIntro(initialLines), [initialLines]);
 
@@ -99,6 +127,26 @@ export function EncounterFrame({
   // transition so the banner doesn't blink if the parent advances rooms
   // mid-fade.
   const phaseBannerNameRef = useRef<string>("");
+
+  // Mirror controlled `equipped` prop into engine RunState. Per spec
+  // active combat stats are frozen until the next room, so we just
+  // swap `state.equipped` — `playerStartHp` will pick the new gear up
+  // on the next `advance()` call. Comparing by reference is enough: the
+  // page only allocates a fresh `equipped` object when a slot actually
+  // changes (it goes through `setEquipped`).
+  useEffect(() => {
+    if (!equipped) return;
+    setState((prev) => {
+      let next = prev;
+      if (equipped.weapon && equipped.weapon !== prev.equipped.weapon) {
+        next = engineEquipItem(next, "weapon", equipped.weapon);
+      }
+      if (equipped.armor && equipped.armor !== prev.equipped.armor) {
+        next = engineEquipItem(next, "armor", equipped.armor);
+      }
+      return next;
+    });
+  }, [equipped]);
 
   const bank = useMemo(() => getFlavorBank(state.preset), [state.preset]);
   const combat =
@@ -151,7 +199,7 @@ export function EncounterFrame({
     // player can retry without losing the drop.
     if (onLootMinted) {
       try {
-        await onLootMinted(loot);
+        await onLootMinted(loot, { depth: state.depth });
       } catch (err) {
         appendLines([
           {
@@ -231,16 +279,51 @@ export function EncounterFrame({
       ) : runOver ? (
         <section
           aria-label="Run complete"
-          className="flex flex-col gap-2 p-5 rounded-md"
+          className="flex flex-col gap-3 p-5 rounded-md"
           style={{
             background: "rgba(255,255,255,0.04)",
             border: "1px solid var(--color-preset-accent)",
           }}
         >
           <h3 className="text-lg font-semibold">The realm is cleared.</h3>
-          <p className="text-sm opacity-70">
-            Phase 2C will surface the on-chain BossCleared receipt here.
-          </p>
+          {state.bossClearedTurns !== undefined && (
+            <p className="text-sm opacity-80 tabular-nums">
+              Cleared in {state.bossClearedTurns} turn
+              {state.bossClearedTurns === 1 ? "" : "s"}.
+            </p>
+          )}
+          {!clearReceipt && (
+            <p className="text-sm opacity-60">
+              Clear receipt: queued…
+            </p>
+          )}
+          {clearReceipt?.status === "pending" && (
+            <p className="text-sm opacity-80">
+              Minting clear receipt on-chain…
+            </p>
+          )}
+          {clearReceipt?.status === "minted" && (
+            <div className="flex flex-col gap-1 text-sm">
+              <p className="opacity-90">
+                Clear receipt minted.
+              </p>
+              <p className="opacity-60 font-mono break-all text-[11px]">
+                tokenId 0x{clearReceipt.tokenId.toString(16).slice(0, 16)}… · tx{" "}
+                {clearReceipt.txHash.slice(0, 10)}…
+              </p>
+            </div>
+          )}
+          {clearReceipt?.status === "failed" && (
+            <div className="flex flex-col gap-1 text-sm">
+              <p style={{ color: "#f77" }}>Mint failed.</p>
+              <p className="opacity-60 text-[11px] break-all">
+                {clearReceipt.error}
+              </p>
+            </div>
+          )}
+          {clearReceipt?.status === "skipped" && (
+            <p className="text-sm opacity-60">{clearReceipt.reason}</p>
+          )}
         </section>
       ) : (
         <div className="flex">

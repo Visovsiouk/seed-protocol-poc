@@ -24,15 +24,41 @@
  *     (`EmissionController.isPreseed(tokenId)`) isn't wired yet.
  */
 
-import type { AssetCard } from "@/lib/engine/types";
+import type { AssetCard, Preset } from "@/lib/engine/types";
 import { buildAssetCardFromMetadata } from "@/lib/metadata/asset-card";
+import {
+  getSeededRealm,
+  getSeededSchemaIds,
+} from "@/lib/contracts/seeded-realms";
 import { fetchInventory } from "./inventory";
 import { fetchAssetSummary } from "./provenance";
 
 /**
+ * Build the set of `(realm, schemaId)` keys that identify clearReceipt
+ * assets across every seeded preset. clearReceipts have no slot/stats,
+ * so `buildAssetCardFromMetadata` falls back to the schemaId-parity
+ * heuristic and routes them into weapon/armor — surfacing them as
+ * phantom "d0 / +0 attack" entries in the drawer. The receipt tokens
+ * are already tracked separately via `useBossClears`, so the inventory
+ * hydration must drop them entirely.
+ */
+function buildClearReceiptFilter(): ReadonlySet<string> {
+  const keys = new Set<string>();
+  const presets: readonly Preset[] = ["fantasy", "scifi", "cyberpunk"];
+  for (const preset of presets) {
+    const realm = getSeededRealm(preset).toLowerCase();
+    const schemaId = getSeededSchemaIds(preset).clearReceipt;
+    if (schemaId === 0n) continue;
+    keys.add(`${realm}:${schemaId.toString()}`);
+  }
+  return keys;
+}
+
+/**
  * Hydrates the player's inventory into engine-shaped cards. Skips
  * accessory-slot assets — the PoC engine equips weapon/armor only, and
- * the drawer's tabbed UI doesn't have a third slot anyway.
+ * the drawer's tabbed UI doesn't have a third slot anyway. Also drops
+ * clearReceipts (see `buildClearReceiptFilter`).
  */
 export async function fetchInventoryCards(
   player: `0x${string}`,
@@ -44,8 +70,12 @@ export async function fetchInventoryCards(
     balances.map((b) => fetchAssetSummary(b.tokenId)),
   );
 
+  const receiptKeys = buildClearReceiptFilter();
+
   const cards: AssetCard[] = [];
   for (const summary of summaries) {
+    const key = `${summary.mintedByRealm.toLowerCase()}:${summary.schemaId.toString()}`;
+    if (receiptKeys.has(key)) continue;
     const card = buildAssetCardFromMetadata({
       tokenId: summary.tokenId,
       tier: summary.tier,

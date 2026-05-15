@@ -1,7 +1,9 @@
-import { seedSbtAbi } from "@abis/generated";
+import { ecosystemTemplateAbi, seedSbtAbi } from "@abis/generated";
 import { getReadClient } from "./client";
+import { fetchAssetSummary } from "./provenance";
+import { decodeMetadataURI } from "@/lib/metadata/decode";
 import { getAddress } from "@/lib/contracts/addresses";
-import { bossClearedEventAbi } from "@/lib/contracts/boss-cleared-abi";
+import { getSeededSchemaIds } from "@/lib/contracts/seeded-realms";
 import {
   listStarterRealms,
   isStarterRealmDeployed,
@@ -14,22 +16,20 @@ import type { BossClearEvent } from "@/lib/tutorial/progress";
  *
  * Two on-chain reads back the tutorial overlay:
  *
- *   1. `fetchBossClears(player)` — scans `BossCleared(player, finalHp,
- *      turns)` on each *deployed* starter-realm template, tags each log
- *      with the preset it came from (we know the address→preset mapping
- *      because the starter-realms config is what we're scanning), and
- *      returns the union sorted by block.
+ *   1. `fetchBossClears(player)` — scans `AssetMinted(tokenId, recipient,
+ *      amount)` on each *deployed* starter-realm template, hydrates each
+ *      tokenId's attributes to filter down to the per-realm clearReceipt
+ *      schemaId, and decodes the metadata data URI to surface the
+ *      `turns` + `final_hp` recorded by the realm-owner mint.
  *
- *   2. `fetchHasSeed(player)` — `SeedSBT.balanceOf(player) > 0`. The SBT
- *      is non-transferable so balance ≥ 1 means the player owns it.
+ *   2. `fetchHasSeed(player)` — `SeedSBT.balanceOf(player) > 0`.
  *
- * Both are passed to `deriveTutorialProgress` (already pure and unit-
- * tested) to compute the Act + `eligibleForSeed` state.
+ * Both feed `deriveTutorialProgress` to compute Act + `eligibleForSeed`.
  *
- * Starter-realm gating: realms whose configured address is zero are
- * silently skipped — the play page already surfaces a "not deployed yet"
- * notice via `useStarterRealm`. Querying a zero address would return no
- * events anyway but viem would still issue the RPC call.
+ * Note on schemaId scoping: every realm clone registers its own
+ * (clearReceipt, loot) pair against the global SchemaRegistry, so the
+ * id is per-preset. We resolve it via `getSeededSchemaIds(preset)`.
+ * Zero means "schema not seeded yet" on this chain — we skip the realm.
  */
 
 type StarterRealmEntry = { preset: Preset; realm: `0x${string}` };
@@ -38,6 +38,21 @@ function deployedStarterRealms(): StarterRealmEntry[] {
   return listStarterRealms()
     .filter(({ realm }) => isStarterRealmDeployed(realm))
     .map(({ preset, realm }) => ({ preset, realm }));
+}
+
+/**
+ * Pull a numeric attribute out of the decoded metadata. The mint route
+ * writes integers but downstream decoders surface them as `string |
+ * number`; we accept either and clamp the result.
+ */
+function readNumericAttr(
+  attrs: { trait_type: string; value: string | number }[],
+  key: string,
+): number {
+  const found = attrs.find((a) => a.trait_type === key);
+  if (!found) return 0;
+  const n = typeof found.value === "number" ? found.value : Number(found.value);
+  return Number.isFinite(n) ? n : 0;
 }
 
 export async function fetchBossClears(
@@ -50,27 +65,71 @@ export async function fetchBossClears(
 
   const perRealm = await Promise.all(
     realms.map(async ({ realm, preset }) => {
+      const clearReceiptSchemaId = getSeededSchemaIds(preset).clearReceipt;
+      if (clearReceiptSchemaId === 0n) return [] as BossClearEvent[];
+
+      // AssetMinted is emitted on the realm clone itself when the owner
+      // calls `mintAsset`. Filter by `recipient` (indexed) so we only
+      // pull this player's mints — across both loot and clearReceipt
+      // mints, which we disambiguate below by schemaId.
       const events = await client.getContractEvents({
         address: realm,
-        abi: bossClearedEventAbi,
-        eventName: "BossCleared",
-        args: { player },
+        abi: ecosystemTemplateAbi,
+        eventName: "AssetMinted",
+        args: { recipient: player },
         fromBlock: 0n,
         toBlock: "latest",
       });
-      return events.map<BossClearEvent>((ev) => ({
-        realm,
-        preset,
-        finalHp: Number(ev.args.finalHp ?? 0),
-        turns: Number(ev.args.turns ?? 0),
-        // viem's log objects don't carry the block timestamp; we use
-        // blockNumber as the ordinal "ts" since the deriver only sorts
-        // by it. Real timestamps are a separate `getBlock` per log,
-        // which isn't worth the round trip at PoC scale.
-        ts: Number(ev.blockNumber),
-        blockNumber: ev.blockNumber,
-        logIndex: ev.logIndex,
-      }));
+      if (events.length === 0) return [] as BossClearEvent[];
+
+      const wantedSchemaId = Number(clearReceiptSchemaId);
+
+      // Resolve each minted tokenId to (schemaId, metadataURI) so we
+      // can keep only the clearReceipt mints and decode the receipt
+      // body. fetchAssetSummary reads UniversalAsset, which is the
+      // canonical attribute store — the realm clone doesn't hold its
+      // own copy.
+      const hydrated = await Promise.all(
+        events.map(async (ev) => {
+          const tokenId = (ev.args as { tokenId?: bigint }).tokenId;
+          if (tokenId === undefined) return null;
+          try {
+            const summary = await fetchAssetSummary(tokenId);
+            if (summary.schemaId !== wantedSchemaId) return null;
+            const decoded = decodeMetadataURI(summary.metadataURI);
+            return {
+              tokenId,
+              attrs: decoded.json.attributes,
+              blockNumber: ev.blockNumber,
+              logIndex: ev.logIndex,
+            };
+          } catch {
+            // Either the read failed, the asset has no metadata yet, or
+            // the metadata isn't our base64-JSON shape (e.g. an
+            // externally-minted asset). Either way it isn't a
+            // clearReceipt we can read — drop it.
+            return null;
+          }
+        }),
+      );
+
+      const out: BossClearEvent[] = [];
+      for (const h of hydrated) {
+        if (!h) continue;
+        out.push({
+          realm,
+          preset,
+          finalHp: readNumericAttr(h.attrs, "final_hp"),
+          turns: readNumericAttr(h.attrs, "turns"),
+          // blockNumber doubles as the ordering "ts" — deriver only
+          // sorts, doesn't compare to a wall clock. Real timestamps
+          // would require a getBlock per log, not worth it at PoC scale.
+          ts: Number(h.blockNumber),
+          blockNumber: h.blockNumber,
+          logIndex: h.logIndex,
+        });
+      }
+      return out;
     }),
   );
 

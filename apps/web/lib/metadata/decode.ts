@@ -41,9 +41,18 @@ const JSON_PREFIX = "data:application/json;base64,";
 const SVG_PREFIX = "data:image/svg+xml;base64,";
 
 function decodeBase64(input: string): string {
-  if (typeof atob !== "undefined") return atob(input);
-  // Node fallback (server components, route handlers).
-  return Buffer.from(input, "base64").toString("utf8");
+  // Prefer Node's Buffer (server). `atob` exists in Node 16+ but produces
+  // a Latin-1 string — the renderer's payload is UTF-8 (em dashes,
+  // accented realm labels), so we must round-trip through bytes.
+  if (typeof Buffer !== "undefined") {
+    return Buffer.from(input, "base64").toString("utf8");
+  }
+  // Browser path: `atob` returns a Latin-1 string. Reinterpret the
+  // chars as raw bytes and decode them as UTF-8.
+  const binary = atob(input);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return new TextDecoder("utf-8").decode(bytes);
 }
 
 export function decodeMetadataURI(uri: string): DecodedMetadata {

@@ -429,6 +429,32 @@ export function advance(
   return { state: out, lines: gen.lines };
 }
 
+/**
+ * Swap one of the player's equipped slots. Returns a new RunState with
+ * the new card in `equipped[slot]`, preserves the SCHEMA_STORE binding,
+ * and — per — leaves the active `CombatState` untouched
+ * (stats lock for the duration of the room). The new gear takes effect
+ * the next time `playerStartHp` is invoked (i.e. on the next encounter
+ * generated via `advance`).
+ *
+ * The HUD's `SlotChip` reads from `state.equipped` directly, so the
+ * weapon/armor name + tier badges update immediately even while the
+ * current room's HP/AC stay frozen.
+ */
+export function equipItem(
+  state: RunState,
+  slot: "weapon" | "armor" | "accessory",
+  card: AssetCard,
+): RunState {
+  const next: RunState = {
+    ...state,
+    equipped: { ...state.equipped, [slot]: card },
+  };
+  const schemas = SCHEMA_STORE.get(state);
+  if (schemas) SCHEMA_STORE.set(next, schemas);
+  return next;
+}
+
 /** Clear `pendingLoot` after the on-chain mint settles. */
 export function commitLootMint(state: RunState): RunState {
   const { pendingLoot: _drop, ...rest } = state;

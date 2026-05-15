@@ -1,49 +1,42 @@
-import { ConnectButton } from "@/components/wallet/ConnectButton";
+import Link from "next/link";
 import { RealmSelector } from "@/components/game/RealmSelector";
+import { ConnectButton } from "@/components/wallet/ConnectButton";
 
 /**
- * Landing page. Surfaces the three starter realms via
- * `<RealmSelector/>` plus the bazaar entry. polishes this with
- * the `<HeroIntro/>` + `<IntroReel/>` treatment; for now the picker is
- * the primary CTA.
+ * Landing page — preset/realm picker plus the connect surface.
+ *
+ * The selector pulls live data from `EcosystemRegistry` via `useRealms()`
+ * and overlays per-preset starter metadata. Starter cards link straight
+ * into `/play/[preset]`; creator-deployed realms surface as
+ * address-tagged placeholders until a `/realm/[address]` route lands.
  */
 export default function HomePage() {
   return (
-    <main className="min-h-screen flex flex-col items-center gap-10 px-6 py-16">
-      <header className="absolute top-6 right-6">
-        <ConnectButton />
+    <main className="min-h-screen px-6 py-10">
+      <header className="mx-auto mb-10 flex max-w-5xl items-center justify-between">
+        <div className="flex flex-col gap-1">
+          <h1 className="text-3xl font-semibold tracking-tight">Realms</h1>
+          <p className="text-sm opacity-70">
+            A Seed Protocol PoC — pick a realm, clear its boss, claim a Seed.
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          <Link
+            href="/bazaar"
+            className="rounded-md px-3 py-1.5 text-sm transition"
+            style={{
+              background: "rgba(255,255,255,0.06)",
+              border: "1px solid rgba(255,255,255,0.1)",
+            }}
+          >
+            Bazaar
+          </Link>
+          <ConnectButton />
+        </div>
       </header>
-      <section className="max-w-2xl flex flex-col items-center gap-4 text-center">
-        <h1 className="text-5xl font-semibold tracking-tight">Realms</h1>
-        <p className="text-lg opacity-80">
-          A reference application for the Seed Protocol — universal assets,
-          adoptable schemas, and provenance-bound royalties, demonstrated through
-          a dice-driven text RPG.
-        </p>
-      </section>
-
-      <section className="w-full flex flex-col items-center gap-4">
-        <h2 className="text-sm font-medium uppercase tracking-widest opacity-60">
-          Choose a realm
-        </h2>
+      <div className="mx-auto flex max-w-5xl flex-col items-center">
         <RealmSelector />
-      </section>
-
-      <a
-        href="/bazaar"
-        className="rounded-md px-6 py-3 font-medium transition"
-        style={{
-          background: "transparent",
-          border: "1px solid rgba(255,255,255,0.2)",
-          color: "var(--color-preset-fg)",
-        }}
-      >
-        Visit the Bazaar →
-      </a>
-
-      <p className="text-sm opacity-50">
-        Phase 2 in progress — the engine runs locally; on-chain mints arrive in 2C.
-      </p>
+      </div>
     </main>
   );
 }
