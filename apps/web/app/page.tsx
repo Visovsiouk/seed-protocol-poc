@@ -22,6 +22,16 @@ export default function HomePage() {
         </div>
         <div className="flex items-center gap-3">
           <Link
+            href="/create"
+            className="rounded-md px-3 py-1.5 text-sm transition"
+            style={{
+              background: "rgba(255,255,255,0.06)",
+              border: "1px solid rgba(255,255,255,0.1)",
+            }}
+          >
+            Create realm
+          </Link>
+          <Link
             href="/bazaar"
             className="rounded-md px-3 py-1.5 text-sm transition"
             style={{
