@@ -26,8 +26,12 @@ const serverSchema = z.object({
   TRADER_FLOAT_MIN_WEI: z.string().regex(/^\d+$/),
   TRADER_MAX_BUY_WEI: z.string().regex(/^\d+$/).default("200000000000000000"),
   TRADER_RATE_LIMIT_PER_IP_PER_10MIN: z.coerce.number().int().positive().default(10),
-  ENGINE_SIGNER_PRIVATE_KEY: z.string().regex(/^0x[0-9a-fA-F]{64}$/),
-  ENGINE_SIGNER_RPC_URL: z.string().url(),
+  // Realm signer keyring. One BIP-39 mnemonic; admin@m/44'/60'/0'/0/0,
+  // realm owners at indices 1/2/3 (one per preset — each owner's Seed is spent
+  // when they call `createEcosystem`, enforcing the 1 Seed = 1 Ecosystem
+  // invariant). See `lib/server/realm-signer.ts`.
+  REALM_SIGNER_MNEMONIC: z.string().min(1),
+  REALM_SIGNER_RPC_URL: z.string().url(),
 });
 
 export const publicEnv = publicSchema.parse({

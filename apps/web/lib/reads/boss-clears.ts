@@ -3,7 +3,7 @@ import { getReadClient } from "./client";
 import { getAddress } from "@/lib/contracts/addresses";
 import { bossClearedEventAbi } from "@/lib/contracts/boss-cleared-abi";
 import {
-  starterRealms,
+  listStarterRealms,
   isStarterRealmDeployed,
 } from "@/lib/contracts/starter-realms";
 import type { Preset } from "@/lib/engine/types";
@@ -35,16 +35,9 @@ import type { BossClearEvent } from "@/lib/tutorial/progress";
 type StarterRealmEntry = { preset: Preset; realm: `0x${string}` };
 
 function deployedStarterRealms(): StarterRealmEntry[] {
-  const out: StarterRealmEntry[] = [];
-  for (const [preset, cfg] of Object.entries(starterRealms) as [
-    Preset,
-    { realm: `0x${string}`; bossId: string },
-  ][]) {
-    if (isStarterRealmDeployed(cfg.realm)) {
-      out.push({ preset, realm: cfg.realm });
-    }
-  }
-  return out;
+  return listStarterRealms()
+    .filter(({ realm }) => isStarterRealmDeployed(realm))
+    .map(({ preset, realm }) => ({ preset, realm }));
 }
 
 export async function fetchBossClears(

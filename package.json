@@ -10,7 +10,8 @@
     "lint": "pnpm --filter web lint",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",
-    "wagmi:gen": "pnpm --filter web wagmi:gen"
+    "wagmi:gen": "pnpm --filter web wagmi:gen",
+    "seed": "pnpm --filter web seed"
   },
   "engines": {
     "node": ">=20"

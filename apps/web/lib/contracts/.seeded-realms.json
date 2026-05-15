@@ -1,0 +1,47 @@
+{
+  "31337": {
+    "realms": {
+      "fantasy": "0x8dAF17A20c9DBA35f005b6324F493785D239719d",
+      "scifi": "0x3Ca8f9C04c7e3E1624Ac2008F92f6F366A869444",
+      "cyberpunk": "0x7e2d5FCC5E02cBF2b9f860052C0226104E23F9c7"
+    },
+    "schemas": {
+      "fantasy": {
+        "clearReceipt": "1",
+        "loot": "2"
+      },
+      "scifi": {
+        "clearReceipt": "3",
+        "loot": "4"
+      },
+      "cyberpunk": {
+        "clearReceipt": "5",
+        "loot": "6"
+      }
+    },
+    "seededAt": "2026-05-15T12:15:28.352Z"
+  },
+  "84532": {
+    "realms": {
+      "fantasy": "0x0000000000000000000000000000000000000000",
+      "scifi": "0x0000000000000000000000000000000000000000",
+      "cyberpunk": "0x0000000000000000000000000000000000000000"
+    },
+    "schemas": {
+      "fantasy": {
+        "clearReceipt": "0",
+        "loot": "0"
+      },
+      "scifi": {
+        "clearReceipt": "0",
+        "loot": "0"
+      },
+      "cyberpunk": {
+        "clearReceipt": "0",
+        "loot": "0"
+      }
+    },
+    "seededAt": null
+  },
+  "$schema": "Per-chainId map of seeded realm addresses + per-preset schema IDs, written by `pnpm seed`. Placeholder zeros until the seeder runs."
+}
