@@ -134,9 +134,14 @@ function CreatorCard({
 }: {
   card: Extract<RealmDisplay, { kind: "creator" }>;
 }) {
+  // Creator realms enter via /play/realm/[address] in trial mode —
+  // see the route header for why we default flavor + bossId until
+  // creators can stamp those on-chain via /create.
   return (
-    <div
-      className="flex flex-col gap-3 p-5 rounded-md opacity-80"
+    <Link
+      href={`/play/realm/${card.address}`}
+      data-realm={card.address}
+      className="flex flex-col gap-3 p-5 rounded-md transition hover:scale-[1.02] focus:outline-none focus:ring"
       style={{
         background: "rgba(255,255,255,0.03)",
         border: "1px dashed rgba(255,255,255,0.18)",
@@ -149,13 +154,22 @@ function CreatorCard({
         <StatusPill label={card.active ? "Active" : "Inactive"} tone={card.active ? "ok" : "muted"} />
       </header>
       <p className="text-sm opacity-70 leading-relaxed">
-        Creator-deployed ecosystem. Owner {shortAddress(card.owner)}. Browsing
-        and play for non-starter realms lands in a later slice.
+        Creator-deployed ecosystem. Owner {shortAddress(card.owner)}. Runs
+        in trial mode (fantasy flavor, no on-chain mints) until the
+        realm carries its own preset metadata.
       </p>
-      <p className="text-[11px] opacity-50 font-mono">
-        Created at block {card.createdAt.toString()}
-      </p>
-    </div>
+      <footer className="mt-auto flex items-center justify-between gap-2 pt-2">
+        <p className="text-[11px] opacity-50 font-mono">
+          Block {card.createdAt.toString()}
+        </p>
+        <span
+          className="text-xs uppercase tracking-widest"
+          style={{ color: "var(--color-preset-accent)" }}
+        >
+          Trial →
+        </span>
+      </footer>
+    </Link>
   );
 }
 

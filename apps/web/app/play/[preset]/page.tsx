@@ -40,8 +40,13 @@ import type {
   RunState,
 } from "@/lib/engine/types";
 import { startRun } from "@/lib/engine";
-import type { RealmSchemas } from "@/lib/engine/loot";
-import { assembleLootName, getFlavorBank } from "@/lib/flavor";
+import {
+  CANONICAL_SCHEMAS,
+  VALID_PRESETS,
+  fallbackSeed,
+  lootRollToMockCard,
+  makeStarterGear,
+} from "@/lib/engine/runtime";
 import { EncounterFrame } from "@/components/game/EncounterFrame";
 import { InventoryDrawer } from "@/components/inventory/InventoryDrawer";
 import { TutorialOverlay } from "@/components/tutorial/TutorialOverlay";
@@ -58,108 +63,6 @@ import { useMintClearReceipt } from "@/lib/contracts/boss-cleared";
 import { useClaimSeed } from "@/lib/contracts/seed-claim";
 import { useRunSeedCommitment } from "@/lib/contracts/run-seed";
 import { getStarterRealm } from "@/lib/contracts/starter-realms";
-
-const VALID_PRESETS: ReadonlySet<Preset> = new Set(["fantasy", "scifi", "cyberpunk"]);
-
-// Starter weapon/armor handed to the player at run start. These are
-// in-memory cards (tokenId 0n, empty metadataURI) — not real on-chain
-// assets — so the first encounter is winnable out of the box. Stats are
-// modest so loot drops still feel like an upgrade: d6 + 1 attack vs.
-// bare-handed, and +5 HP / +1 AC vs. base 25 HP / AC 10.
-function makeStarterGear(
-  preset: Preset,
-  realm: `0x${string}`,
-  realmName: string,
-): { weapon: AssetCardType; armor: AssetCardType } {
-  const names: Record<Preset, { weapon: string; armor: string }> = {
-    fantasy: { weapon: "Rusted Shortsword", armor: "Patched Leather" },
-    scifi: { weapon: "Service Sidearm", armor: "Crew Coveralls" },
-    cyberpunk: { weapon: "Stun Baton", armor: "Scuffed Jacket" },
-  };
-  const base = {
-    tokenId: 0n,
-    realm,
-    realmName,
-    tier: 1 as const,
-    catalogEffects: [],
-    extraFields: {},
-    metadataURI: "",
-    preseed: false,
-  };
-  return {
-    weapon: {
-      ...base,
-      schemaId: 0,
-      slot: "weapon",
-      name: names[preset].weapon,
-      damageDie: 6,
-      attackBonus: 1,
-    },
-    armor: {
-      ...base,
-      schemaId: 0,
-      slot: "armor",
-      name: names[preset].armor,
-      acBonus: 1,
-      hpBonus: 5,
-    },
-  };
-}
-
-// PoC: canonical schema ids per preset. Real schemas come from the realm
-// contract; the engine only needs (schemaId, declared catalog effects).
-const CANONICAL_SCHEMAS: Record<Preset, RealmSchemas> = {
-  fantasy: {
-    weapon: { schemaId: 101, catalogEffects: [] },
-    armor: { schemaId: 102, catalogEffects: [] },
-  },
-  scifi: {
-    weapon: { schemaId: 201, catalogEffects: [] },
-    armor: { schemaId: 202, catalogEffects: [] },
-  },
-  cyberpunk: {
-    weapon: { schemaId: 301, catalogEffects: [] },
-    armor: { schemaId: 302, catalogEffects: [] },
-  },
-};
-
-/**
- * Draw a 256-bit hex seed from the browser's CSPRNG. replaces this
- * with the on-chain commitment `keccak256(playerAddr ‖ blockhash ‖ id)`.
- */
-function fallbackSeed(): `0x${string}` {
-  const bytes = new Uint8Array(32);
-  crypto.getRandomValues(bytes);
-  return ("0x" +
-    Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("")) as `0x${string}`;
-}
-
-/** Mock AssetCard built from a LootRoll, used to populate the local 2B inventory. */
-let nextMockTokenId = 1n;
-function lootRollToMockCard(
-  loot: LootRoll,
-  preset: Preset,
-  realm: `0x${string}`,
-): AssetCardType {
-  const bank = getFlavorBank(preset);
-  return {
-    tokenId: nextMockTokenId++,
-    schemaId: loot.schemaId,
-    realm,
-    realmName: getStarterRealm(preset).name,
-    slot: loot.slot,
-    tier: loot.tier,
-    name: assembleLootName(bank, loot.slot as "weapon" | "armor", loot.nameSeed),
-    damageDie: loot.damageDie,
-    attackBonus: loot.attackBonus,
-    acBonus: loot.acBonus,
-    hpBonus: loot.hpBonus,
-    catalogEffects: loot.catalogEffects,
-    extraFields: loot.extraFields,
-    metadataURI: "",
-    preseed: false,
-  };
-}
 
 export default function PlayPage() {
   const params = useParams<{ preset: string }>();
@@ -300,7 +203,7 @@ export default function PlayPage() {
       });
     } else {
       // Disconnected OR realm-not-ready — keep the local accumulator alive.
-      const card = lootRollToMockCard(loot, preset, cfg.realm);
+      const card = lootRollToMockCard(loot, preset, cfg.realm, cfg.name);
       setLocalInventory((prev) => [...prev, card]);
     }
     // Auto-equip nothing — equipping is a deliberate UI action.
