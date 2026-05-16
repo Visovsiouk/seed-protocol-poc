@@ -1,0 +1,42 @@
+{
+  "31337": {
+    "adapters": {
+      "weapon": {
+        "fantasy": {
+          "fantasy": "0x0000000000000000000000000000000000000000",
+          "scifi": "0xc6e7df5e7b4f2a278906862b61205850344d4e7d",
+          "cyberpunk": "0x4ed7c70f96b99c776995fb64377f0d4ab3b0e1c1"
+        },
+        "scifi": {
+          "fantasy": "0xa85233c63b9ee964add6f2cffe00fd84eb32338f",
+          "scifi": "0x0000000000000000000000000000000000000000",
+          "cyberpunk": "0x7a2088a1bfc9d81c55368ae168c2c02570cb814f"
+        },
+        "cyberpunk": {
+          "fantasy": "0xc5a5c42992decbae36851359345fe25997f5c42d",
+          "scifi": "0xe6e340d132b5f46d1e472debcd681b2abc16e57e",
+          "cyberpunk": "0x0000000000000000000000000000000000000000"
+        }
+      },
+      "armor": {
+        "fantasy": {
+          "fantasy": "0x0000000000000000000000000000000000000000",
+          "scifi": "0x84ea74d481ee0a5332c457a4d796187f6ba67feb",
+          "cyberpunk": "0xa82ff9afd8f496c3d6ac40e2a0f282e47488cfc9"
+        },
+        "scifi": {
+          "fantasy": "0x851356ae760d987e095750cceb3bc6014560891c",
+          "scifi": "0x0000000000000000000000000000000000000000",
+          "cyberpunk": "0x95401dc811bb5740090279ba06cfa8fcf6113778"
+        },
+        "cyberpunk": {
+          "fantasy": "0x70e0ba845a1a0f2da3359c97e0285013525ffc49",
+          "scifi": "0x99bba657f2bbc93c02d617f8ba121cb8fc104acf",
+          "cyberpunk": "0x0000000000000000000000000000000000000000"
+        }
+      }
+    },
+    "seededAt": "2026-05-16T17:49:01.179Z"
+  },
+  "$schema": "Per-chainId map of deployed adapter addresses keyed by (slot, sourcePreset, targetPreset), written by `pnpm seed:adapters`."
+}
