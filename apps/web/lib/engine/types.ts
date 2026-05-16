@@ -48,6 +48,41 @@ export const COMBAT_ELEMENTS: readonly Exclude<Element, "none">[] = [
   "unholy",
 ] as const;
 
+/**
+ * Per-preset display labels for the canonical element enum. Mirrors the
+ * `Element` type docblock above — the numeric value is shared across
+ * presets, but each preset renders it under its own flavour name. The
+ * inventory drawer + translation strip read from here so a fantasy-
+ * minted holy weapon shows as "laser" when the player is standing in a
+ * cyberpunk realm. Pure data; no engine logic branches on this map.
+ */
+export const ELEMENT_LABELS: Record<
+  Preset,
+  Record<Exclude<Element, "none">, string>
+> = {
+  fantasy: {
+    fire: "fire",
+    ice: "ice",
+    shock: "shock",
+    holy: "holy",
+    unholy: "unholy",
+  },
+  scifi: {
+    fire: "plasma",
+    ice: "cryo",
+    shock: "ion",
+    holy: "photon",
+    unholy: "void",
+  },
+  cyberpunk: {
+    fire: "incendiary",
+    ice: "cryogenic",
+    shock: "emp",
+    holy: "laser",
+    unholy: "nano",
+  },
+};
+
 export type CatalogEffectName =
   // weapon-slot effects
   | "lifesteal"

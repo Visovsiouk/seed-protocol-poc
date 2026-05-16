@@ -14,7 +14,12 @@
  * parent (`<InventoryDrawer/>`).
  */
 
-import type { AssetCard as AssetCardType, Element } from "@/lib/engine/types";
+import type {
+  AssetCard as AssetCardType,
+  Element,
+  Preset,
+} from "@/lib/engine/types";
+import { ELEMENT_LABELS } from "@/lib/engine/types";
 import {
   presetForRealm,
   useTranslatedCard,
@@ -58,11 +63,20 @@ const ELEMENT_COLOR: Record<Exclude<Element, "none">, { bg: string; fg: string }
 function ElementChip({
   element,
   kind,
+  preset,
 }: {
   element: Exclude<Element, "none">;
   kind: "damage" | "resist";
+  /**
+   * The preset whose vocabulary should label the element. Maps the
+   * canonical enum onto the preset's local name (e.g. holy → "laser"
+   * in cyberpunk). Colour stays element-keyed so the player still
+   * reads the same hue across realms.
+   */
+  preset: Preset;
 }) {
   const c = ELEMENT_COLOR[element];
+  const label = ELEMENT_LABELS[preset][element];
   return (
     <span
       className="text-[10px] px-1.5 py-0.5 rounded uppercase tracking-wider font-semibold"
@@ -72,7 +86,7 @@ function ElementChip({
         border: `1px solid ${c.fg}55`,
       }}
     >
-      {kind === "damage" ? `${element} dmg` : `resists ${element}`}
+      {kind === "damage" ? `${label} dmg` : `resists ${label}`}
     </span>
   );
 }
@@ -111,6 +125,15 @@ function TranslationStrip({
   const isWeapon = card.slot === "weapon";
   const tr = translated && translated !== card ? translated : null;
 
+  const translatedDamageElement =
+    isWeapon && tr?.element && tr.element !== "none"
+      ? (tr.element as Exclude<Element, "none">)
+      : null;
+  const translatedResistElement =
+    !isWeapon && tr?.resistElement && tr.resistElement !== "none"
+      ? (tr.resistElement as Exclude<Element, "none">)
+      : null;
+
   return (
     <div
       className="mt-1 rounded-sm p-2 flex flex-col gap-1"
@@ -146,19 +169,39 @@ function TranslationStrip({
           {isFetching ? "Translating…" : "Awaiting adapter read."}
         </span>
       ) : (
-        <div className="text-xs tabular-nums opacity-90">
-          {isWeapon ? (
-            <>
-              d{tr.damageDie}
-              {tr.damageBonus ? `+${tr.damageBonus}` : ""} damage · +
-              {tr.attackBonus ?? 0} attack
-            </>
-          ) : (
-            <>
-              +{tr.acBonus ?? 0} AC · +{tr.hpBonus ?? 0} HP
-            </>
+        <>
+          <div className="text-xs tabular-nums opacity-90">
+            {isWeapon ? (
+              <>
+                d{tr.damageDie}
+                {tr.damageBonus ? `+${tr.damageBonus}` : ""} damage · +
+                {tr.attackBonus ?? 0} attack
+              </>
+            ) : (
+              <>
+                +{tr.acBonus ?? 0} AC · +{tr.hpBonus ?? 0} HP
+              </>
+            )}
+          </div>
+          {(translatedDamageElement || translatedResistElement) && (
+            <div className="flex flex-wrap gap-1">
+              {translatedDamageElement && (
+                <ElementChip
+                  element={translatedDamageElement}
+                  kind="damage"
+                  preset={targetPreset}
+                />
+              )}
+              {translatedResistElement && (
+                <ElementChip
+                  element={translatedResistElement}
+                  kind="resist"
+                  preset={targetPreset}
+                />
+              )}
+            </div>
           )}
-        </div>
+        </>
       )}
     </div>
   );
@@ -172,6 +215,17 @@ export function AssetCard({
   targetRealm,
 }: Props) {
   const isWeapon = card.slot === "weapon";
+  // Display preset for the element chips on the native stats row. The
+  // canonical enum is shared across presets — only the label flavor
+  // changes — so we prefer the active realm's vocabulary when we know
+  // it (the player is "in" that realm and shouldn't see "holy" in a
+  // cyberpunk drawer). Fall back to the card's source preset, and
+  // finally to "fantasy" if neither resolves (e.g. starter gear from
+  // an unseeded realm).
+  const labelPreset: Preset =
+    (targetRealm && presetForRealm(targetRealm)) ||
+    presetForRealm(card.realm) ||
+    "fantasy";
   return (
     <button
       type="button"
@@ -223,12 +277,17 @@ export function AssetCard({
         card.catalogEffects.length > 0) && (
         <div className="flex flex-wrap gap-1">
           {isWeapon && card.element && card.element !== "none" && (
-            <ElementChip element={card.element as Exclude<Element, "none">} kind="damage" />
+            <ElementChip
+              element={card.element as Exclude<Element, "none">}
+              kind="damage"
+              preset={labelPreset}
+            />
           )}
           {!isWeapon && card.resistElement && card.resistElement !== "none" && (
             <ElementChip
               element={card.resistElement as Exclude<Element, "none">}
               kind="resist"
+              preset={labelPreset}
             />
           )}
           {card.catalogEffects.map((e) => (
