@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import {IAdapter} from "./interfaces/IAdapter.sol";
 import {SeedTypes} from "./SeedTypes.sol";
 import {PresetTypes} from "./PresetTypes.sol";
+import {PresetElementLabels} from "./PresetElementLabels.sol";
 
 /// @title  PresetArmorAdapter
 /// @notice Translates an armor asset from one preset's armor schema into
@@ -81,5 +82,17 @@ contract PresetArmorAdapter is IAdapter {
         });
 
         return (translatedAttrs, abi.encode(dst));
+    }
+
+    /// @notice On-chain element-label vocabulary lookup. See
+    ///         `PresetWeaponAdapter.elementLabel` — both adapters expose
+    ///         the same pure view so any adapter in the registry can
+    ///         answer label queries.
+    function elementLabel(PresetTypes.Preset preset, PresetTypes.Element element)
+        external
+        pure
+        returns (string memory)
+    {
+        return PresetElementLabels.label(preset, element);
     }
 }

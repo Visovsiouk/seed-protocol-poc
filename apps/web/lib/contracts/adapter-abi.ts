@@ -53,4 +53,14 @@ export const adapterAbi = [
       { name: "targetSchemaId", type: "uint256" },
     ],
   },
+  {
+    type: "function",
+    name: "elementLabel",
+    stateMutability: "pure",
+    inputs: [
+      { name: "preset", type: "uint8" },
+      { name: "element", type: "uint8" },
+    ],
+    outputs: [{ name: "label", type: "string" }],
+  },
 ] as const;

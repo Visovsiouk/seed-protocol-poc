@@ -382,11 +382,34 @@ async function main() {
           // Probe bytecode — handles the "Anvil restarted but JSON
           // survived" case where the cached address is now empty.
           const priorCode = await publicClient.getCode({ address: prior });
-          if (priorCode && priorCode !== "0x") {
-            console.log(`  skip ${label} — already at ${prior}`);
-            continue;
+          if (!priorCode || priorCode === "0x") {
+            console.log(`  stale ${label} at ${prior} (no code) — redeploying`);
+          } else {
+            // Probe `elementLabel` to detect outdated bytecode (the view
+            // was added after the first seed). If the call reverts the
+            // contract is from an older deploy and we redeploy in place.
+            // PresetTypes.Preset.Fantasy = 0, Element.None = 0; result
+            // must be the literal "none" per `PresetElementLabels`.
+            let outdated = false;
+            try {
+              const out = (await publicClient.readContract({
+                address: prior,
+                abi: artifacts[slot].abi,
+                functionName: "elementLabel",
+                args: [0, 0],
+              })) as string;
+              if (out !== "none") outdated = true;
+            } catch {
+              outdated = true;
+            }
+            if (!outdated) {
+              console.log(`  skip ${label} — already at ${prior}`);
+              continue;
+            }
+            console.log(
+              `  stale ${label} at ${prior} (missing elementLabel) — redeploying`,
+            );
           }
-          console.log(`  stale ${label} at ${prior} (no code) — redeploying`);
         }
         const sourceSchemaId = lootSchemas[src];
         const targetSchemaId = lootSchemas[tgt];

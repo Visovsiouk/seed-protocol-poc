@@ -86,57 +86,82 @@ const ONCHAIN_TO_ELEMENT: readonly Element[] = [
 ] as const;
 
 /**
- * Per-preset display labels for the canonical element enum (
- * element alias rename). The numeric on-chain value is shared
- * across presets, so this is the *off-chain* half of the adapter
- * contract: when a player crosses realms, the same element renders
- * under the destination preset's vocabulary (a holy axe reads as
- * "laser" inside a cyberpunk realm, "photon" inside a sci-fi one).
+ * Element vocabulary lookup.
  *
- * Lives here rather than in `lib/engine/types.ts` because the engine
- * never branches on labels — it operates on the canonical enum. Label
- * resolution is a translation/UI concern, which is exactly what the
- * adapter module is for.
+ * The on-chain source of truth lives in the adapter contracts: each
+ * `PresetWeaponAdapter` and `PresetArmorAdapter` exposes a pure
+ * `elementLabel(preset, element)` view backed by the shared
+ * `PresetElementLabels` library. Off-chain renders read labels from
+ * any deployed adapter via `useElementLabel` below.
+ *
+ * No client-side map. If the on-chain call hasn't resolved yet, the
+ * hook returns the canonical name (`"fire"`, `"holy"`, …) as a
+ * placeholder so the UI never blanks out.
  */
-export const ELEMENT_LABELS: Record<
-  Preset,
-  Record<Exclude<Element, "none">, string>
-> = {
-  fantasy: {
-    fire: "fire",
-    ice: "ice",
-    shock: "shock",
-    holy: "holy",
-    unholy: "unholy",
-  },
-  scifi: {
-    fire: "plasma",
-    ice: "cryo",
-    shock: "ion",
-    holy: "photon",
-    unholy: "void",
-  },
-  cyberpunk: {
-    fire: "incendiary",
-    ice: "cryogenic",
-    shock: "emp",
-    holy: "laser",
-    unholy: "nano",
-  },
-};
+
+/** Pick any deployed adapter as a label oracle — all adapters answer label queries identically (pure library call). */
+function anyDeployedAdapter(): `0x${string}` | null {
+  // Cheapest enumeration: walk slot/source/target until we hit a
+  // non-zero entry. Returns null when nothing has been seeded yet
+  // (callers fall through to canonical names).
+  const slots = ["weapon", "armor"] as const;
+  for (const slot of slots) {
+    for (const src of PRESETS) {
+      for (const tgt of PRESETS) {
+        if (src === tgt) continue;
+        const addr = getAdapterAddress(slot, src, tgt);
+        if (addr !== "0x0000000000000000000000000000000000000000") {
+          return addr;
+        }
+      }
+    }
+  }
+  return null;
+}
 
 /**
- * Resolves the preset-local label for an element, given the realm
- * vocabulary to render under. Returns the canonical name as a fallback
- * so callers that can't resolve a preset (foreign realm, starter gear)
- * still display something readable.
+ * Reads the on-chain label for `(preset, element)` from any deployed
+ * adapter. Result is cached forever via React Query — labels are a
+ * `pure` function so they never change without a redeploy. The hook
+ * returns `element` itself as a synchronous placeholder while the
+ * read resolves; UIs render that briefly and swap to the on-chain
+ * value once the query lands.
  */
-export function elementLabel(
-  element: Exclude<Element, "none">,
+export function useElementLabel(
+  element: Element,
   preset: Preset | null,
 ): string {
-  if (!preset) return element;
-  return ELEMENT_LABELS[preset][element];
+  const publicClient = usePublicClient();
+  const adapter = anyDeployedAdapter();
+  const presetIdx =
+    preset === null ? null : PRESET_TO_ONCHAIN[preset];
+  const elementIdx = ELEMENT_TO_ONCHAIN[element];
+
+  const query = useQuery<string>({
+    queryKey: [
+      "elementLabel",
+      adapter?.toLowerCase() ?? "none",
+      presetIdx ?? "none",
+      elementIdx,
+    ],
+    enabled: !!publicClient && !!adapter && presetIdx !== null,
+    staleTime: Infinity,
+    retry: false,
+    queryFn: async () => {
+      const label = (await publicClient!.readContract({
+        address: adapter!,
+        abi: adapterAbi,
+        functionName: "elementLabel",
+        args: [presetIdx!, elementIdx],
+      })) as string;
+      return label;
+    },
+  });
+
+  // Disconnected mode or pre-fetch: render the canonical name. It's
+  // the source preset's name under fantasy, so it's always a valid
+  // English word — never garbles the UI.
+  return query.data ?? element;
 }
 
 // DamageDie enum: 0=D4, 1=D6, 2=D8, 3=D10, 4=D12 (PresetTypes.sol).

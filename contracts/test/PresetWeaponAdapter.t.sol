@@ -190,6 +190,53 @@ contract PresetWeaponAdapterTest is Test {
     }
 
     // --------------------------------------------------------------
+    // elementLabel — on-chain vocabulary table (each preset's local
+    // name for the canonical element enum).
+    // --------------------------------------------------------------
+    function test_ElementLabel_FantasyVocabulary() public {
+        PresetWeaponAdapter a = new PresetWeaponAdapter(
+            FANTASY_WEAPON,
+            SCIFI_WEAPON,
+            PresetTypes.Preset.Fantasy,
+            PresetTypes.Preset.SciFi
+        );
+        assertEq(a.elementLabel(PresetTypes.Preset.Fantasy, PresetTypes.Element.Fire), "fire");
+        assertEq(a.elementLabel(PresetTypes.Preset.Fantasy, PresetTypes.Element.Ice), "ice");
+        assertEq(a.elementLabel(PresetTypes.Preset.Fantasy, PresetTypes.Element.Shock), "shock");
+        assertEq(a.elementLabel(PresetTypes.Preset.Fantasy, PresetTypes.Element.Holy), "holy");
+        assertEq(a.elementLabel(PresetTypes.Preset.Fantasy, PresetTypes.Element.Unholy), "unholy");
+        assertEq(a.elementLabel(PresetTypes.Preset.Fantasy, PresetTypes.Element.None), "none");
+    }
+
+    function test_ElementLabel_SciFiVocabulary() public {
+        PresetWeaponAdapter a = new PresetWeaponAdapter(
+            FANTASY_WEAPON,
+            SCIFI_WEAPON,
+            PresetTypes.Preset.Fantasy,
+            PresetTypes.Preset.SciFi
+        );
+        assertEq(a.elementLabel(PresetTypes.Preset.SciFi, PresetTypes.Element.Fire), "plasma");
+        assertEq(a.elementLabel(PresetTypes.Preset.SciFi, PresetTypes.Element.Ice), "cryo");
+        assertEq(a.elementLabel(PresetTypes.Preset.SciFi, PresetTypes.Element.Shock), "ion");
+        assertEq(a.elementLabel(PresetTypes.Preset.SciFi, PresetTypes.Element.Holy), "photon");
+        assertEq(a.elementLabel(PresetTypes.Preset.SciFi, PresetTypes.Element.Unholy), "void");
+    }
+
+    function test_ElementLabel_CyberpunkVocabulary() public {
+        PresetWeaponAdapter a = new PresetWeaponAdapter(
+            FANTASY_WEAPON,
+            SCIFI_WEAPON,
+            PresetTypes.Preset.Fantasy,
+            PresetTypes.Preset.SciFi
+        );
+        assertEq(a.elementLabel(PresetTypes.Preset.Cyberpunk, PresetTypes.Element.Fire), "incendiary");
+        assertEq(a.elementLabel(PresetTypes.Preset.Cyberpunk, PresetTypes.Element.Ice), "cryogenic");
+        assertEq(a.elementLabel(PresetTypes.Preset.Cyberpunk, PresetTypes.Element.Shock), "emp");
+        assertEq(a.elementLabel(PresetTypes.Preset.Cyberpunk, PresetTypes.Element.Holy), "laser");
+        assertEq(a.elementLabel(PresetTypes.Preset.Cyberpunk, PresetTypes.Element.Unholy), "nano");
+    }
+
+    // --------------------------------------------------------------
     // SciFi ↔ Cyberpunk: also exercises the cyberpunk delta.
     // --------------------------------------------------------------
     function test_ScifiToCyberpunk_AppliesDelta() public {

@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import {IAdapter} from "./interfaces/IAdapter.sol";
 import {SeedTypes} from "./SeedTypes.sol";
 import {PresetTypes} from "./PresetTypes.sol";
+import {PresetElementLabels} from "./PresetElementLabels.sol";
 
 /// @title  PresetWeaponAdapter
 /// @notice Translates a weapon asset from one preset's weapon schema into
@@ -101,6 +102,22 @@ contract PresetWeaponAdapter is IAdapter {
         });
 
         return (translatedAttrs, abi.encode(dst));
+    }
+
+    /// @notice On-chain element-label vocabulary lookup. Returns the
+    ///         preset-local name for a canonical element (e.g. (Cyberpunk,
+    ///         Holy) → "laser"). Pure, costs nothing to call, and is
+    ///         independent of this adapter's specific (source, target)
+    ///         pair — any deployed adapter can answer label queries for
+    ///         any preset. Off-chain consumers use this so the UI's
+    ///         vocabulary is sourced from the same on-chain truth as the
+    ///         stat translation.
+    function elementLabel(PresetTypes.Preset preset, PresetTypes.Element element)
+        external
+        pure
+        returns (string memory)
+    {
+        return PresetElementLabels.label(preset, element);
     }
 
     /// @dev D4 → D4 (clamp at floor). D6→D4, D8→D6, D10→D8, D12→D10.

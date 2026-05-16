@@ -20,8 +20,8 @@ import type {
   Preset,
 } from "@/lib/engine/types";
 import {
-  elementLabel,
   presetForRealm,
+  useElementLabel,
   useTranslatedCard,
 } from "@/lib/contracts/adapters";
 import { getAdapterAddress } from "@/lib/contracts/seeded-adapters";
@@ -77,7 +77,7 @@ function ElementChip({
   preset: Preset | null;
 }) {
   const c = ELEMENT_COLOR[element];
-  const label = elementLabel(element, preset);
+  const label = useElementLabel(element, preset);
   return (
     <span
       className="text-[10px] px-1.5 py-0.5 rounded uppercase tracking-wider font-semibold"
