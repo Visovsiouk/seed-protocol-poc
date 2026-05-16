@@ -34,6 +34,7 @@ const CATALOG_EFFECT_NAMES: readonly CatalogEffectName[] = [
 const CANONICAL_STAT_KEYS = new Set([
   "damage_die",
   "attack_bonus",
+  "damage_bonus",
   "ac_bonus",
   "hp_bonus",
   "slot",
@@ -84,6 +85,7 @@ export function buildAssetCardFromMetadata(args: {
   const extraFields: Record<string, string | number | boolean> = {};
   let damageDie: DamageDie | undefined;
   let attackBonus: number | undefined;
+  let damageBonus: number | undefined;
   let acBonus: number | undefined;
   let hpBonus: number | undefined;
   let attrSlot: string | undefined;
@@ -109,6 +111,10 @@ export function buildAssetCardFromMetadata(args: {
       }
       if (key === "attack_bonus" && numeric !== undefined) {
         attackBonus = numeric;
+        continue;
+      }
+      if (key === "damage_bonus" && numeric !== undefined) {
+        damageBonus = numeric;
         continue;
       }
       if (key === "ac_bonus" && numeric !== undefined) {
@@ -137,7 +143,10 @@ export function buildAssetCardFromMetadata(args: {
 
   const slot = inferSlot({
     attrSlot,
-    hasWeaponStats: damageDie !== undefined || attackBonus !== undefined,
+    hasWeaponStats:
+      damageDie !== undefined ||
+      attackBonus !== undefined ||
+      damageBonus !== undefined,
     hasArmorStats: acBonus !== undefined || hpBonus !== undefined,
     schemaId,
   });
@@ -152,6 +161,7 @@ export function buildAssetCardFromMetadata(args: {
     name,
     damageDie,
     attackBonus,
+    damageBonus,
     acBonus,
     hpBonus,
     catalogEffects,

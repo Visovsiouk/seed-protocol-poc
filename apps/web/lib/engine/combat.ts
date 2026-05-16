@@ -108,8 +108,10 @@ export type PlayerSwing = {
   targetAc: number;
   /** Damage die used (4/6/8/10/12 or 4 for unarmed). */
   damageDie: number;
-  /** Raw damage die roll before crit/element/flank multipliers. 0 on a miss. */
+  /** Raw damage die roll before crit/bonus/element/flank multipliers. 0 on a miss. */
   damageRoll: number;
+  /** Weapon damageBonus added to the damage die (post-crit, pre-element). */
+  damageBonus: number;
 };
 
 /**
@@ -126,11 +128,16 @@ export type PlayerSwing = {
  * Crit math:
  *   - nat-20 always crits.
  *   - Otherwise the `crit_chance` catalog effect rolls; one proc = crit.
- *   - Crit is a flat 2× damage multiplier on the rolled die. Stacking
- *     nat-20 with a crit_chance proc still caps at 2× (max, not multiply).
+ *   - Crit doubles the *die roll only*, not the flat `damageBonus`. This is
+ *     the D&D 5e convention — flat bonuses stay flat. Stacking nat-20 with a
+ *     crit_chance proc still caps the multiplier at 2×.
+ *
+ * Damage formula:
+ *   damage = floor((dieRoll × critMult + damageBonus) × elemMult × flankMult)
+ *   clamped to a minimum of 1 on a hit.
  *
  * Element math:
- *   - Multiplier applied to post-crit damage. See `elementMultiplier`.
+ *   - Multiplier applied to (post-crit + bonus) damage. See `elementMultiplier`.
  */
 function rollPlayerAttack(
   state: CombatState,
@@ -141,6 +148,7 @@ function rollPlayerAttack(
   const weapon = equipped.weapon;
   const damageDie = weapon?.damageDie ?? 4; // unarmed fallback: d4
   const attackBonus = weapon?.attackBonus ?? 0;
+  const damageBonus = weapon?.damageBonus ?? 0;
   const pierce = getActiveEffectValue(state, equipped, "armor_pierce") > 0;
   const monsterAc = pierce ? Math.max(10, state.monster.ac - 2) : state.monster.ac;
 
@@ -160,6 +168,7 @@ function rollPlayerAttack(
       targetAc: monsterAc,
       damageDie,
       damageRoll: 0,
+      damageBonus,
     };
   }
 
@@ -180,6 +189,7 @@ function rollPlayerAttack(
       targetAc: monsterAc,
       damageDie,
       damageRoll: 0,
+      damageBonus,
     };
   }
 
@@ -187,9 +197,10 @@ function rollPlayerAttack(
   const critChance = getActiveEffectValue(state, equipped, "crit_chance") / 100;
   const critProc = critChance > 0 && rng.chance(critChance);
   const crit = isNat20 || critProc;
-  let damage = crit ? baseDamage * 2 : baseDamage;
+  // Crit doubles the dice only; the flat damageBonus is added after.
+  let damage = (crit ? baseDamage * 2 : baseDamage) + damageBonus;
 
-  // Element multiplier (applied to post-crit damage).
+  // Element multiplier (applied to post-crit, post-bonus damage).
   const { mult: elemMult, tag: elementTag } = elementMultiplier(
     weapon?.element,
     state.monster,
@@ -213,6 +224,7 @@ function rollPlayerAttack(
     targetAc: monsterAc,
     damageDie,
     damageRoll: baseDamage,
+    damageBonus,
   };
 }
 
@@ -385,40 +397,60 @@ function isBoss(m: MonsterDef | BossDef): m is BossDef {
   return "bakedEffects" in m;
 }
 
+/** Renders "+N" or "-N" or "" depending on the sign and magnitude. */
+function bonusFragment(n: number): string {
+  if (n === 0) return "";
+  return n > 0 ? `+${n}` : `${n}`;
+}
+
 /**
- * Formats a player swing's roll math as a trailing tag, e.g.
- *   " [d20 14+2 vs AC 12 · d8: 5]"           (hit)
- *   " [d20 8+2 vs AC 12]"                    (miss)
- *   " [d20 1 — fumble]"                      (nat-1)
- *   " [d20 20 — auto-hit · d8: 5]"           (nat-20)
+ * Formats a player swing's roll math as a trailing tag. Labels are
+ * explicit ("hit:"/"dmg:") so the two halves aren't confusable, and
+ * each half shows the raw die roll, the flat bonus, and the resolved
+ * total in `X+Y=Z` form.
  *
- * Kept verbose-but-readable so players can see exactly what was rolled
- * and against what target. The base damage roll is reported before
- * crit/element/flank multipliers — the final damage on the result line
- * shows the post-multiplier number.
+ * Examples:
+ *   " [hit: d20 14+2=16 vs AC 12 · dmg: d6 3+1=4]"  (normal hit)
+ *   " [hit: d20 8+2=10 vs AC 12]"                   (miss — no damage was rolled)
+ *   " [hit: d20 1 — fumble]"                        (nat-1 miss)
+ *   " [hit: d20 20 — auto-hit · dmg: d8 5+2=7]"     (nat-20 — bypasses AC)
+ *   " [hit: d20 14 vs AC 12 · dmg: d4 3]"           (no attack/damage bonus on either side)
+ *
+ * The displayed `dmg` value is the raw die + bonus *before* crit and
+ * element multipliers — the final damage on the narration line ("You
+ * hit for N") shows the post-multiplier number. Crit doubles only the
+ * dice (per the formula in `rollPlayerAttack`).
  */
 function playerRollTag(swing: PlayerSwing): string {
-  if (swing.fumble) return ` [d20 1 — fumble]`;
-  const sign = swing.attackBonus >= 0 ? "+" : "";
-  const bonusStr =
-    swing.attackBonus === 0 ? "" : `${sign}${swing.attackBonus}`;
-  const d20Part =
+  if (swing.fumble) return ` [hit: d20 1 — fumble]`;
+  const atkBonus = bonusFragment(swing.attackBonus);
+  const atkTotal = swing.dieRoll + swing.attackBonus;
+  const hitPart =
     swing.dieRoll === 20
       ? `d20 20 — auto-hit`
-      : `d20 ${swing.dieRoll}${bonusStr} vs AC ${swing.targetAc}`;
-  if (!swing.hit) return ` [${d20Part}]`;
-  return ` [${d20Part} · d${swing.damageDie}: ${swing.damageRoll}]`;
+      : atkBonus
+        ? `d20 ${swing.dieRoll}${atkBonus}=${atkTotal} vs AC ${swing.targetAc}`
+        : `d20 ${swing.dieRoll} vs AC ${swing.targetAc}`;
+  if (!swing.hit) return ` [hit: ${hitPart}]`;
+
+  const dmgBonus = bonusFragment(swing.damageBonus);
+  const dmgRaw = swing.damageRoll;
+  const dmgTotal = dmgRaw + swing.damageBonus;
+  const dmgPart = dmgBonus
+    ? `d${swing.damageDie} ${dmgRaw}${dmgBonus}=${dmgTotal}`
+    : `d${swing.damageDie} ${dmgRaw}`;
+  return ` [hit: ${hitPart} · dmg: ${dmgPart}]`;
 }
 
 function monsterRollTag(swing: MonsterSwing): string {
   if (swing.dieRoll === undefined) return ""; // dodged — no swing was rolled
-  if (swing.fumble) return ` [d20 1 — fumble]`;
-  const d20Part =
+  if (swing.fumble) return ` [hit: d20 1 — fumble]`;
+  const hitPart =
     swing.dieRoll === 20
       ? `d20 20 — auto-hit`
       : `d20 ${swing.dieRoll} vs AC ${swing.targetAc}`;
-  if (!swing.hit) return ` [${d20Part}]`;
-  return ` [${d20Part} · d${swing.attackDie}: ${swing.damageRoll}]`;
+  if (!swing.hit) return ` [hit: ${hitPart}]`;
+  return ` [hit: ${hitPart} · dmg: d${swing.attackDie} ${swing.damageRoll}]`;
 }
 
 /**

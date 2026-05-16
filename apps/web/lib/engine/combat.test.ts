@@ -45,6 +45,7 @@ function card(
   hpBonus: number,
   effects: { name: CatalogEffectName; value: number }[] = [],
   element?: Element,
+  damageBonus = 0,
 ): AssetCard {
   return {
     tokenId: 1n,
@@ -56,6 +57,7 @@ function card(
     name: slot === "weapon" ? "Test Sword" : "Test Mail",
     damageDie: slot === "weapon" ? damageDie : undefined,
     attackBonus: slot === "weapon" ? attackBonus : undefined,
+    damageBonus: slot === "weapon" ? damageBonus : undefined,
     acBonus: slot === "armor" ? acBonus : undefined,
     hpBonus: slot === "armor" ? hpBonus : undefined,
     element: slot === "weapon" ? element : undefined,
@@ -513,8 +515,9 @@ describe("resolveRound — elements", () => {
 });
 
 describe("resolveRound — roll tags in narration", () => {
-  it("player hit lines show d20 roll + bonus and the damage die roll", () => {
-    const equipped = { weapon: card("weapon", 8, 4, 0, 0) };
+  it("player hit lines show labelled hit + dmg sections with both bonuses", () => {
+    // d8, +4 hit, +2 dmg → tag should include "hit:" and "dmg:" sections plus an "=N" total on each.
+    const equipped = { weapon: card("weapon", 8, 4, 0, 0, [], undefined, 2) };
     let saw = false;
     for (let i = 0; i < 30 && !saw; i++) {
       const seedHex = i.toString(16).padStart(64, "0");
@@ -526,15 +529,41 @@ describe("resolveRound — roll tags in narration", () => {
       );
       const hitLine = r.lines.find((l) => /You hit/.test(l.text));
       if (hitLine) {
-        // Must include "[d20 N+4 vs AC 12 · d8: M]" or the auto-hit nat-20 variant
-        expect(hitLine.text).toMatch(/\[d20 .* · d8: \d+\]/);
+        // Pattern: "[hit: d20 N+4=M vs AC 12 · dmg: d8 R+2=T]" OR nat-20 auto-hit variant.
+        expect(hitLine.text).toMatch(
+          /\[hit: (d20 \d+\+4=\d+ vs AC 12|d20 20 — auto-hit) · dmg: d8 \d+\+2=\d+\]/,
+        );
         saw = true;
       }
     }
     expect(saw).toBe(true);
   });
 
-  it("player miss lines show d20 roll + bonus vs AC without a damage tag", () => {
+  it("hit lines drop the bonus arithmetic when both bonuses are zero", () => {
+    // T1-like profile: d4, +0 hit, +0 dmg.
+    const equipped = { weapon: card("weapon", 4, 0, 0, 0) };
+    let saw = false;
+    for (let i = 0; i < 80 && !saw; i++) {
+      const seedHex = i.toString(16).padStart(64, "0");
+      const r = resolveRound(
+        makeState(),
+        strike,
+        equipped,
+        createRng(`0x${seedHex}` as `0x${string}`),
+      );
+      const hitLine = r.lines.find((l) => /You hit/.test(l.text));
+      if (hitLine) {
+        // No "+N=N" arithmetic should appear when both bonuses are 0.
+        expect(hitLine.text).toMatch(/\[hit: d20 \d+ vs AC 12 · dmg: d4 \d+\]/);
+        expect(hitLine.text).not.toMatch(/\+0/);
+        expect(hitLine.text).not.toMatch(/=/);
+        saw = true;
+      }
+    }
+    expect(saw).toBe(true);
+  });
+
+  it("player miss lines show the hit-side tag without a damage section", () => {
     const equipped = { weapon: card("weapon", 4, 0, 0, 0) };
     const hardMonster: MonsterDef = { ...baseMonster, ac: 19, hp: 999 };
     let saw = false;
@@ -548,15 +577,15 @@ describe("resolveRound — roll tags in narration", () => {
       );
       const missLine = r.lines.find((l) => /strike goes wide/.test(l.text));
       if (missLine) {
-        expect(missLine.text).toMatch(/\[d20 \d+ vs AC 19\]/);
-        expect(missLine.text).not.toMatch(/d4:/);
+        expect(missLine.text).toMatch(/\[hit: d20 \d+ vs AC 19\]/);
+        expect(missLine.text).not.toMatch(/dmg:/);
         saw = true;
       }
     }
     expect(saw).toBe(true);
   });
 
-  it("player fumble line shows '[d20 1 — fumble]'", () => {
+  it("player fumble line shows '[hit: d20 1 — fumble]'", () => {
     const equipped = { weapon: card("weapon", 6, 0, 0, 0) };
     let saw = false;
     for (let i = 0; i < 200 && !saw; i++) {
@@ -569,14 +598,14 @@ describe("resolveRound — roll tags in narration", () => {
       );
       const fumble = r.lines.find((l) => /You fumble/.test(l.text));
       if (fumble) {
-        expect(fumble.text).toMatch(/\[d20 1 — fumble\]/);
+        expect(fumble.text).toMatch(/\[hit: d20 1 — fumble\]/);
         saw = true;
       }
     }
     expect(saw).toBe(true);
   });
 
-  it("monster hit lines show d20 roll vs AC and the attack die roll", () => {
+  it("monster hit lines show labelled hit + dmg sections", () => {
     const equipped = { weapon: card("weapon", 4, 0, 0, 0) };
     let saw = false;
     for (let i = 0; i < 30 && !saw; i++) {
@@ -590,11 +619,81 @@ describe("resolveRound — roll tags in narration", () => {
       const hitLine = r.lines.find((l) => /Goblin hits you/.test(l.text));
       if (hitLine) {
         // Brace adds +2 AC → target 10
-        expect(hitLine.text).toMatch(/\[d20 .* vs AC 10 · d6: \d+\]/);
+        expect(hitLine.text).toMatch(/\[hit: d20 .* vs AC 10 · dmg: d6 \d+\]/);
         saw = true;
       }
     }
     expect(saw).toBe(true);
+  });
+});
+
+describe("resolveRound — damage formula", () => {
+  it("damageBonus is added as a flat amount on hit (no crit, no element)", () => {
+    // d4, +20 hit, +5 dmg. With +20 to-hit only a nat-1 misses, so almost all
+    // rounds produce a hit. Damage range without crit: [1+5, 4+5] = [6, 9].
+    const equipped = { weapon: card("weapon", 4, 20, 0, 0, [], undefined, 5) };
+    const damages: number[] = [];
+    for (let i = 0; i < 80; i++) {
+      const seedHex = i.toString(16).padStart(64, "0");
+      const r = resolveRound(
+        makeState({ monsterHp: 999 }),
+        strike,
+        equipped,
+        createRng(`0x${seedHex}` as `0x${string}`),
+      );
+      const hitLine = r.lines.find((l) => /You hit for (\d+)/.test(l.text));
+      if (hitLine) {
+        // Exclude crits — they double the dice, expanding the range.
+        if (/CRITICAL/.test(hitLine.text)) continue;
+        const m = hitLine.text.match(/You hit for (\d+)/);
+        if (m) damages.push(Number(m[1]));
+      }
+    }
+    expect(damages.length).toBeGreaterThan(20);
+    for (const d of damages) {
+      // Without crit: damage = dieRoll(1..4) + 5  → 6..9.
+      expect(d).toBeGreaterThanOrEqual(6);
+      expect(d).toBeLessThanOrEqual(9);
+    }
+  });
+
+  it("crit doubles the dice but NOT the flat damageBonus", () => {
+    // d4, +20 hit, +10 dmg, 100% crit_chance. Damage formula on crit:
+    //   damage = (dieRoll * 2) + damageBonus = (1..4)*2 + 10 = 12..18
+    // If the bug returned (dieRoll + bonus) * 2, the range would be 22..28
+    // and our upper-bound check would catch it.
+    const equipped = {
+      weapon: card(
+        "weapon",
+        4,
+        20,
+        0,
+        0,
+        [{ name: "crit_chance", value: 99 }],
+        undefined,
+        10,
+      ),
+    };
+    const damages: number[] = [];
+    for (let i = 0; i < 60; i++) {
+      const seedHex = i.toString(16).padStart(64, "0");
+      const r = resolveRound(
+        makeState({ monsterHp: 999 }),
+        strike,
+        equipped,
+        createRng(`0x${seedHex}` as `0x${string}`),
+      );
+      const crit = r.lines.find((l) => /CRITICAL/.test(l.text));
+      if (crit) {
+        const m = crit.text.match(/You hit for (\d+)/);
+        if (m) damages.push(Number(m[1]));
+      }
+    }
+    expect(damages.length).toBeGreaterThan(20);
+    for (const d of damages) {
+      expect(d).toBeGreaterThanOrEqual(12);
+      expect(d).toBeLessThanOrEqual(18);
+    }
   });
 });
 

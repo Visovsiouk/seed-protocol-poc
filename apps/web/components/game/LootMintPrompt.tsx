@@ -87,6 +87,9 @@ export function LootMintPrompt({ loot, bank, onMint, onSkip }: Props) {
         {loot.attackBonus !== undefined && (
           <StatRow label="Attack" value={`+${loot.attackBonus}`} />
         )}
+        {loot.damageBonus !== undefined && (
+          <StatRow label="Damage bonus" value={`+${loot.damageBonus}`} />
+        )}
         {loot.acBonus !== undefined && (
           <StatRow label="AC" value={`+${loot.acBonus}`} />
         )}

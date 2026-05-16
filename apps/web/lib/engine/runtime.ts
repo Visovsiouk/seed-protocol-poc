@@ -118,6 +118,7 @@ export function lootRollToMockCard(
     name: assembleLootName(bank, loot.slot as "weapon" | "armor", loot.nameSeed),
     damageDie: loot.damageDie,
     attackBonus: loot.attackBonus,
+    damageBonus: loot.damageBonus,
     acBonus: loot.acBonus,
     hpBonus: loot.hpBonus,
     catalogEffects: loot.catalogEffects,

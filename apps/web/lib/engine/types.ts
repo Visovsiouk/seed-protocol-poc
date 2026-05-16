@@ -79,7 +79,10 @@ export type AssetCard = {
   /** Assembled from the realm's flavor bank at mint time. */
   name: string;
   damageDie?: DamageDie;
+  /** Flat bonus added to the d20 to-hit roll. Weapon-slot only. */
   attackBonus?: number;
+  /** Flat bonus added to the damage die roll (after crit multiplier). Weapon-slot only. */
+  damageBonus?: number;
   acBonus?: number;
   hpBonus?: number;
   /**
@@ -203,6 +206,7 @@ export type LootRoll = {
   schemaId: number;
   damageDie?: DamageDie;
   attackBonus?: number;
+  damageBonus?: number;
   acBonus?: number;
   hpBonus?: number;
   /** Weapon-slot only: rolled element. "none" or omitted means mundane. */

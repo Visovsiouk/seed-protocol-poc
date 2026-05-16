@@ -8,11 +8,19 @@ const SEED =
 
 describe("tierStats", () => {
   it("returns the weapon table verbatim", () => {
-    expect(tierStats(1, "weapon")).toEqual({ damageDie: 4, attackBonus: 0 });
-    expect(tierStats(2, "weapon")).toEqual({ damageDie: 6, attackBonus: 1 });
-    expect(tierStats(3, "weapon")).toEqual({ damageDie: 8, attackBonus: 2 });
-    expect(tierStats(4, "weapon")).toEqual({ damageDie: 10, attackBonus: 3 });
-    expect(tierStats(5, "weapon")).toEqual({ damageDie: 12, attackBonus: 4 });
+    expect(tierStats(1, "weapon")).toEqual({ damageDie: 4, attackBonus: 0, damageBonus: 0 });
+    expect(tierStats(2, "weapon")).toEqual({ damageDie: 6, attackBonus: 1, damageBonus: 1 });
+    expect(tierStats(3, "weapon")).toEqual({ damageDie: 8, attackBonus: 2, damageBonus: 2 });
+    expect(tierStats(4, "weapon")).toEqual({ damageDie: 10, attackBonus: 3, damageBonus: 3 });
+    expect(tierStats(5, "weapon")).toEqual({ damageDie: 12, attackBonus: 4, damageBonus: 4 });
+  });
+
+  it("damageBonus and attackBonus scale together across tiers", () => {
+    for (let t = 1 as Tier; t <= 5; t = (t + 1) as Tier) {
+      const stats = tierStats(t, "weapon");
+      expect(stats.attackBonus).toBe(t - 1);
+      expect(stats.damageBonus).toBe(t - 1);
+    }
   });
 
   it("returns the armor table verbatim", () => {

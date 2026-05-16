@@ -9,6 +9,7 @@ function weaponT1(): LootRoll {
     schemaId: 101,
     damageDie: 4,
     attackBonus: 0,
+    damageBonus: 0,
     catalogEffects: [],
     nameSeed: 0n,
     extraFields: {},
@@ -82,8 +83,19 @@ describe("validateLootRoll", () => {
       tier: 3,
       damageDie: 8,
       attackBonus: 2,
+      damageBonus: 2,
     };
     expect(validateLootRoll(l, 6, true)).toBeNull();
+  });
+
+  it("rejects weapon with mismatched damageBonus", () => {
+    const l: LootRoll = { ...weaponT1(), damageBonus: 4 };
+    expect(validateLootRoll(l, 1, false)).toMatch(/damageBonus/);
+  });
+
+  it("rejects armor that carries a damageBonus weapon field", () => {
+    const l = { ...armorT2(), damageBonus: 1 } as unknown as LootRoll;
+    expect(validateLootRoll(l, 3, false)).toMatch(/weapon-slot fields/);
   });
 
   it("rejects T1 at boss depth (boss distribution starts at T2)", () => {

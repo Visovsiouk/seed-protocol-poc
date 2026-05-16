@@ -73,7 +73,11 @@ function SlotChip({
       {card && (
         <span className="opacity-60">
           T{card.tier}
-          {card.damageDie ? ` · d${card.damageDie}+${card.attackBonus ?? 0}` : ""}
+          {card.damageDie
+            ? ` · d${card.damageDie}` +
+              (card.attackBonus ? ` +${card.attackBonus} hit` : "") +
+              (card.damageBonus ? ` +${card.damageBonus} dmg` : "")
+            : ""}
           {card.acBonus !== undefined ? ` · AC+${card.acBonus} HP+${card.hpBonus ?? 0}` : ""}
         </span>
       )}

@@ -27,7 +27,7 @@ describe("pickSlot", () => {
 });
 
 describe("rollLoot", () => {
-  it("weapon roll has damageDie + attackBonus, no armor fields", () => {
+  it("weapon roll has damageDie + attackBonus + damageBonus, no armor fields", () => {
     const l = rollLoot({
       rng: createRng(SEED),
       difficulty: "standard",
@@ -37,6 +37,9 @@ describe("rollLoot", () => {
     expect(l.slot).toBe("weapon");
     expect(l.damageDie).toBeDefined();
     expect(l.attackBonus).toBeDefined();
+    expect(l.damageBonus).toBeDefined();
+    // T1–T3 (standard difficulty) → damageBonus matches the canonical mirror table.
+    expect(l.damageBonus).toBe(l.attackBonus);
     expect(l.acBonus).toBeUndefined();
     expect(l.hpBonus).toBeUndefined();
   });

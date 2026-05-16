@@ -70,7 +70,9 @@ export function AssetCard({ card, selected, onClick, compact }: Props) {
       <div className="text-xs opacity-80 tabular-nums">
         {isWeapon ? (
           <>
-            d{card.damageDie} damage · +{card.attackBonus ?? 0} attack
+            d{card.damageDie}
+            {card.damageBonus ? `+${card.damageBonus}` : ""} damage · +
+            {card.attackBonus ?? 0} attack
           </>
         ) : (
           <>

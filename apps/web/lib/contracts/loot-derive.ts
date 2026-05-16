@@ -77,6 +77,9 @@ export function buildLootMetadataURI(args: {
   if (loot.attackBonus !== undefined) {
     attributes.push({ trait_type: "attack_bonus", value: loot.attackBonus });
   }
+  if (loot.damageBonus !== undefined) {
+    attributes.push({ trait_type: "damage_bonus", value: loot.damageBonus });
+  }
   if (loot.acBonus !== undefined) {
     attributes.push({ trait_type: "ac_bonus", value: loot.acBonus });
   }

@@ -13,17 +13,30 @@ import type { Rng } from "./rng";
 export type TierStats = {
   damageDie?: DamageDie;
   attackBonus?: number;
+  damageBonus?: number;
   acBonus?: number;
   hpBonus?: number;
 };
 
-/** — Tier → mechanical power table. Slot determines which fields are set. */
-const WEAPON_STATS: Record<Tier, { damageDie: DamageDie; attackBonus: number }> = {
-  1: { damageDie: 4, attackBonus: 0 },
-  2: { damageDie: 6, attackBonus: 1 },
-  3: { damageDie: 8, attackBonus: 2 },
-  4: { damageDie: 10, attackBonus: 3 },
-  5: { damageDie: 12, attackBonus: 4 },
+/**
+ * Tier → mechanical power table. Slot determines which fields are set.
+ *
+ * Weapons get two independent flat bonuses, mirroring the D&D split:
+ *   - `attackBonus` is added to the d20 to-hit roll (gates *whether* you hit).
+ *   - `damageBonus` is added to the damage die roll (scales *how hard*).
+ *
+ * Crit doubles only the dice, not `damageBonus` (see combat.ts), so the flat
+ * bonus is a stable floor and doesn't blow up on a nat-20.
+ */
+const WEAPON_STATS: Record<
+  Tier,
+  { damageDie: DamageDie; attackBonus: number; damageBonus: number }
+> = {
+  1: { damageDie: 4, attackBonus: 0, damageBonus: 0 },
+  2: { damageDie: 6, attackBonus: 1, damageBonus: 1 },
+  3: { damageDie: 8, attackBonus: 2, damageBonus: 2 },
+  4: { damageDie: 10, attackBonus: 3, damageBonus: 3 },
+  5: { damageDie: 12, attackBonus: 4, damageBonus: 4 },
 };
 
 const ARMOR_STATS: Record<Tier, { acBonus: number; hpBonus: number }> = {

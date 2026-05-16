@@ -111,7 +111,12 @@ export function rollLoot(args: {
     nameSeed,
     extraFields: {},
     ...(slot === "weapon"
-      ? { damageDie: stats.damageDie, attackBonus: stats.attackBonus, element }
+      ? {
+          damageDie: stats.damageDie,
+          attackBonus: stats.attackBonus,
+          damageBonus: stats.damageBonus,
+          element,
+        }
       : { acBonus: stats.acBonus, hpBonus: stats.hpBonus, resistElement: element }),
   };
   return loot;

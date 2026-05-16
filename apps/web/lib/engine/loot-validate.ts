@@ -62,6 +62,9 @@ export function validateLootRoll(
     if (loot.attackBonus !== expected.attackBonus) {
       return `weapon attackBonus ${loot.attackBonus} != tier ${loot.tier} canonical +${expected.attackBonus}`;
     }
+    if (loot.damageBonus !== expected.damageBonus) {
+      return `weapon damageBonus ${loot.damageBonus} != tier ${loot.tier} canonical +${expected.damageBonus}`;
+    }
     if (loot.acBonus !== undefined || loot.hpBonus !== undefined) {
       return `weapon has armor-slot fields set`;
     }
@@ -78,7 +81,11 @@ export function validateLootRoll(
     if (loot.hpBonus !== expected.hpBonus) {
       return `armor hpBonus ${loot.hpBonus} != tier ${loot.tier} canonical +${expected.hpBonus}`;
     }
-    if (loot.damageDie !== undefined || loot.attackBonus !== undefined) {
+    if (
+      loot.damageDie !== undefined ||
+      loot.attackBonus !== undefined ||
+      loot.damageBonus !== undefined
+    ) {
       return `armor has weapon-slot fields set`;
     }
     if (loot.element !== undefined) {
