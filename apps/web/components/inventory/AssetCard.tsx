@@ -14,7 +14,7 @@
  * parent (`<InventoryDrawer/>`).
  */
 
-import type { AssetCard as AssetCardType } from "@/lib/engine/types";
+import type { AssetCard as AssetCardType, Element } from "@/lib/engine/types";
 
 type Props = {
   card: AssetCardType;
@@ -31,6 +31,39 @@ const TIER_LABEL: Record<number, string> = {
   4: "Epic",
   5: "Legendary",
 };
+
+/** Per-element accent colours for the inline element chip. Kept in this
+ * component (rather than globals.css) because the engine itself never
+ * needs to know about presentation — these are pure UI tokens. */
+const ELEMENT_COLOR: Record<Exclude<Element, "none">, { bg: string; fg: string }> = {
+  fire: { bg: "rgba(255,120,40,0.18)", fg: "#ffb38a" },
+  ice: { bg: "rgba(120,200,255,0.18)", fg: "#a8dcff" },
+  shock: { bg: "rgba(255,230,80,0.18)", fg: "#ffeb8a" },
+  holy: { bg: "rgba(255,220,140,0.18)", fg: "#ffd97a" },
+  unholy: { bg: "rgba(180,120,255,0.18)", fg: "#caa6ff" },
+};
+
+function ElementChip({
+  element,
+  kind,
+}: {
+  element: Exclude<Element, "none">;
+  kind: "damage" | "resist";
+}) {
+  const c = ELEMENT_COLOR[element];
+  return (
+    <span
+      className="text-[10px] px-1.5 py-0.5 rounded uppercase tracking-wider font-semibold"
+      style={{
+        background: c.bg,
+        color: c.fg,
+        border: `1px solid ${c.fg}55`,
+      }}
+    >
+      {kind === "damage" ? `${element} dmg` : `resists ${element}`}
+    </span>
+  );
+}
 
 export function AssetCard({ card, selected, onClick, compact }: Props) {
   const isWeapon = card.slot === "weapon";
@@ -73,21 +106,26 @@ export function AssetCard({ card, selected, onClick, compact }: Props) {
             d{card.damageDie}
             {card.damageBonus ? `+${card.damageBonus}` : ""} damage · +
             {card.attackBonus ?? 0} attack
-            {card.element && card.element !== "none"
-              ? ` · ${card.element}`
-              : ""}
           </>
         ) : (
           <>
             +{card.acBonus ?? 0} AC · +{card.hpBonus ?? 0} HP
-            {card.resistElement && card.resistElement !== "none"
-              ? ` · resists ${card.resistElement}`
-              : ""}
           </>
         )}
       </div>
-      {card.catalogEffects.length > 0 && (
+      {((isWeapon && card.element && card.element !== "none") ||
+        (!isWeapon && card.resistElement && card.resistElement !== "none") ||
+        card.catalogEffects.length > 0) && (
         <div className="flex flex-wrap gap-1">
+          {isWeapon && card.element && card.element !== "none" && (
+            <ElementChip element={card.element as Exclude<Element, "none">} kind="damage" />
+          )}
+          {!isWeapon && card.resistElement && card.resistElement !== "none" && (
+            <ElementChip
+              element={card.resistElement as Exclude<Element, "none">}
+              kind="resist"
+            />
+          )}
           {card.catalogEffects.map((e) => (
             <span
               key={e.name}

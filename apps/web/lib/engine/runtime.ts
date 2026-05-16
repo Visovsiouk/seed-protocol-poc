@@ -8,11 +8,22 @@
  *
  * Everything here is pure (no React, no `server-only`) and safe to
  * call from both client components and tests.
+ *
+ * Metadata-as-truth: every in-memory `AssetCard` produced here — starter
+ * gear, disconnected loot drops, locally-equipped fresh mints — is built
+ * by routing a LootRoll-shaped record through `buildLootMetadataURI` and
+ * back out through `buildAssetCardFromMetadata`. The engine therefore
+ * reads stats off the same place regardless of whether a card is
+ * synthetic or backed by an on-chain `mintAsset` call, which is the
+ * integration seam the adapter work plugs into (an adapter just
+ * rewrites the URI; the decoder handles the rest).
  */
 
 import type { AssetCard as AssetCardType, LootRoll, Preset } from "@/lib/engine/types";
 import type { RealmSchemas } from "@/lib/engine/loot";
 import { assembleLootName, getFlavorBank } from "@/lib/flavor";
+import { buildLootMetadataURI } from "@/lib/contracts/loot-derive";
+import { buildAssetCardFromMetadata } from "@/lib/metadata/asset-card";
 
 export const VALID_PRESETS: ReadonlySet<Preset> = new Set([
   "fantasy",
@@ -20,48 +31,97 @@ export const VALID_PRESETS: ReadonlySet<Preset> = new Set([
   "cyberpunk",
 ]);
 
+// Per-preset starter weapon/armor names. Stats live in `makeStarterGear`
+// below — modest on purpose so the first encounter is winnable bare-bones
+// and real loot still feels like an upgrade.
+const STARTER_NAMES: Record<Preset, { weapon: string; armor: string }> = {
+  fantasy: { weapon: "Rusted Shortsword", armor: "Patched Leather" },
+  scifi: { weapon: "Service Sidearm", armor: "Crew Coveralls" },
+  cyberpunk: { weapon: "Stun Baton", armor: "Scuffed Jacket" },
+};
+
+/**
+ * Single chokepoint for turning a `LootRoll` into an `AssetCard`. Builds the
+ * renderer-compatible metadata data URI from the loot, then immediately
+ * decodes it back through the same path on-chain assets use. The result is
+ * a card whose `metadataURI` is the canonical source of truth for every
+ * stat the engine reads — `damageDie`, `attackBonus`, `element`,
+ * catalog effects, and `extraFields` all flow through the URI rather than
+ * being synthesized into the card directly.
+ */
+function lootRoundtripToCard(args: {
+  loot: LootRoll;
+  preset: Preset;
+  realm: `0x${string}`;
+  realmName: string;
+  assembledName: string;
+  tokenId: bigint;
+}): AssetCardType {
+  const metadataURI = buildLootMetadataURI({
+    loot: args.loot,
+    preset: args.preset,
+    realmLabel: args.realmName,
+    assembledName: args.assembledName,
+  });
+  return buildAssetCardFromMetadata({
+    tokenId: args.tokenId,
+    tier: args.loot.tier,
+    schemaId: args.loot.schemaId,
+    metadataURI,
+    mintedByRealm: args.realm,
+  });
+}
+
 // Starter weapon/armor handed to the player at run start. These are
-// in-memory cards (tokenId 0n, empty metadataURI) — not real on-chain
-// assets — so the first encounter is winnable out of the box. Stats are
-// modest so loot drops still feel like an upgrade: d6 + 1 attack vs.
-// bare-handed, and +5 HP / +1 AC vs. base 25 HP / AC 10.
+// in-memory cards (tokenId 0n) — not real on-chain assets — so the first
+// encounter is winnable out of the box. Stats are modest so loot drops
+// still feel like an upgrade: d6 + 1 attack vs. bare-handed, and +5 HP /
+// +1 AC vs. base 25 HP / AC 10. The cards are produced by the same
+// metadata roundtrip every other card uses (see `lootRoundtripToCard`),
+// so the engine never has to special-case starter gear.
 export function makeStarterGear(
   preset: Preset,
   realm: `0x${string}`,
   realmName: string,
 ): { weapon: AssetCardType; armor: AssetCardType } {
-  const names: Record<Preset, { weapon: string; armor: string }> = {
-    fantasy: { weapon: "Rusted Shortsword", armor: "Patched Leather" },
-    scifi: { weapon: "Service Sidearm", armor: "Crew Coveralls" },
-    cyberpunk: { weapon: "Stun Baton", armor: "Scuffed Jacket" },
-  };
-  const base = {
-    tokenId: 0n,
-    realm,
-    realmName,
-    tier: 1 as const,
+  const names = STARTER_NAMES[preset];
+  const weaponLoot: LootRoll = {
+    tier: 1,
+    slot: "weapon",
+    schemaId: 0,
+    damageDie: 6,
+    attackBonus: 1,
     catalogEffects: [],
+    nameSeed: 0n,
     extraFields: {},
-    metadataURI: "",
-    preseed: false,
+  };
+  const armorLoot: LootRoll = {
+    tier: 1,
+    slot: "armor",
+    schemaId: 0,
+    acBonus: 1,
+    hpBonus: 5,
+    catalogEffects: [],
+    nameSeed: 0n,
+    extraFields: {},
   };
   return {
-    weapon: {
-      ...base,
-      schemaId: 0,
-      slot: "weapon",
-      name: names[preset].weapon,
-      damageDie: 6,
-      attackBonus: 1,
-    },
-    armor: {
-      ...base,
-      schemaId: 0,
-      slot: "armor",
-      name: names[preset].armor,
-      acBonus: 1,
-      hpBonus: 5,
-    },
+    weapon: lootRoundtripToCard({
+      loot: weaponLoot,
+      preset,
+      realm,
+      realmName,
+      assembledName: names.weapon,
+      tokenId: 0n,
+    }),
+    armor: lootRoundtripToCard({
+      loot: armorLoot,
+      preset,
+      realm,
+      realmName,
+      assembledName: names.armor,
+      tokenId: 0n,
+    }),
   };
 }
 
@@ -95,10 +155,14 @@ export function fallbackSeed(): `0x${string}` {
 }
 
 /**
- * Mock AssetCard built from a LootRoll, used to populate the local
- * disconnected / trial-mode inventory. The tokenId counter is module-
- * scoped so concurrently mounted play routes still produce unique
- * synthetic ids within a session.
+ * AssetCard built from a LootRoll, used to populate the local disconnected
+ * / trial-mode inventory and to auto-equip a freshly-minted drop without
+ * waiting for the on-chain inventory query to refetch.
+ *
+ * `tokenId` override: pass the value returned by `useMintLoot` so the
+ * locally-equipped card reconciles by id with the on-chain card once the
+ * inventoryCards query lands. Omit it in disconnected mode and the module-
+ * scoped counter assigns a unique synthetic id.
  */
 let nextMockTokenId = 1n;
 export function lootRollToMockCard(
@@ -106,26 +170,19 @@ export function lootRollToMockCard(
   preset: Preset,
   realm: `0x${string}`,
   realmName: string,
+  opts?: { tokenId?: bigint },
 ): AssetCardType {
   const bank = getFlavorBank(preset);
-  return {
-    tokenId: nextMockTokenId++,
-    schemaId: loot.schemaId,
+  return lootRoundtripToCard({
+    loot,
+    preset,
     realm,
     realmName,
-    slot: loot.slot,
-    tier: loot.tier,
-    name: assembleLootName(bank, loot.slot as "weapon" | "armor", loot.nameSeed),
-    damageDie: loot.damageDie,
-    attackBonus: loot.attackBonus,
-    damageBonus: loot.damageBonus,
-    acBonus: loot.acBonus,
-    hpBonus: loot.hpBonus,
-    element: loot.element,
-    resistElement: loot.resistElement,
-    catalogEffects: loot.catalogEffects,
-    extraFields: loot.extraFields,
-    metadataURI: "",
-    preseed: false,
-  };
+    assembledName: assembleLootName(
+      bank,
+      loot.slot as "weapon" | "armor",
+      loot.nameSeed,
+    ),
+    tokenId: opts?.tokenId ?? nextMockTokenId++,
+  });
 }

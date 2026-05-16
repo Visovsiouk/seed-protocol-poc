@@ -9,13 +9,50 @@
  * Action choices live in `<ActionChoices/>`.
  */
 
-import type { CombatState, EncounterState } from "@/lib/engine/types";
+import type { CombatState, Element, EncounterState } from "@/lib/engine/types";
+
+/** Per-element accent colours, kept local to this banner (mirror of the
+ * inventory AssetCard's palette). Engine doesn't know about presentation;
+ * these are pure UI tokens. */
+const ELEMENT_COLOR: Record<Exclude<Element, "none">, { bg: string; fg: string }> = {
+  fire: { bg: "rgba(255,120,40,0.18)", fg: "#ffb38a" },
+  ice: { bg: "rgba(120,200,255,0.18)", fg: "#a8dcff" },
+  shock: { bg: "rgba(255,230,80,0.18)", fg: "#ffeb8a" },
+  holy: { bg: "rgba(255,220,140,0.18)", fg: "#ffd97a" },
+  unholy: { bg: "rgba(180,120,255,0.18)", fg: "#caa6ff" },
+};
+
+function ElementTag({
+  element,
+  label,
+}: {
+  element: Exclude<Element, "none">;
+  label: string;
+}) {
+  const c = ELEMENT_COLOR[element];
+  return (
+    <span
+      className="text-[10px] px-1.5 py-0.5 rounded uppercase tracking-wider font-semibold"
+      style={{
+        background: c.bg,
+        color: c.fg,
+        border: `1px solid ${c.fg}55`,
+      }}
+    >
+      {label}: {element}
+    </span>
+  );
+}
 
 function MonsterBanner({ combat }: { combat: CombatState }) {
   const monster = combat.monster;
   const isBoss = "bakedEffects" in monster;
   const maxHp = isBoss ? monster.baseHp : monster.hp;
   const pct = Math.max(0, Math.round((combat.monsterHp / maxHp) * 100));
+  const element = monster.element && monster.element !== "none" ? monster.element : undefined;
+  const weakTo = monster.weakTo && monster.weakTo !== "none" ? monster.weakTo : undefined;
+  const resistTo = monster.resistTo && monster.resistTo !== "none" ? monster.resistTo : undefined;
+  const hasElementInfo = element || weakTo || resistTo;
   return (
     <div className="flex flex-col gap-1.5">
       <div className="flex items-baseline justify-between gap-3">
@@ -36,6 +73,13 @@ function MonsterBanner({ combat }: { combat: CombatState }) {
           }}
         />
       </div>
+      {hasElementInfo && (
+        <div className="flex flex-wrap gap-1.5 mt-1">
+          {element && <ElementTag element={element} label="attacks" />}
+          {weakTo && <ElementTag element={weakTo} label="weak" />}
+          {resistTo && <ElementTag element={resistTo} label="resists" />}
+        </div>
+      )}
     </div>
   );
 }

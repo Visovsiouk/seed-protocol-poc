@@ -78,6 +78,7 @@ const damageDieSchema = z.union([
   z.literal(10),
   z.literal(12),
 ]);
+const elementSchema = z.enum(["none", "fire", "ice", "shock", "holy", "unholy"]);
 
 const catalogEffectSchema = z.object({
   name: z.enum([
@@ -100,8 +101,11 @@ const lootRollSchema = z.object({
   schemaId: z.number().int().nonnegative(),
   damageDie: damageDieSchema.optional(),
   attackBonus: z.number().optional(),
+  damageBonus: z.number().optional(),
   acBonus: z.number().optional(),
   hpBonus: z.number().optional(),
+  element: elementSchema.optional(),
+  resistElement: elementSchema.optional(),
   catalogEffects: z.array(catalogEffectSchema),
   /** Wire form: decimal string (uint256). */
   nameSeed: bigintString,

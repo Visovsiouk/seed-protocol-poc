@@ -91,6 +91,12 @@ type Props = {
    * server-side tier-vs-difficulty bounds check) must read it from here.
    */
   onLootMinted?: (loot: LootRoll, ctx: { depth: number }) => Promise<void> | void;
+  /**
+   * Optional narrative beat rendered inside the run-over panel once the
+   * boss is down. Owned by the parent so it can supply post-clear
+   * tutorial progress and the Seed claim handler.
+   */
+  interstitial?: React.ReactNode;
 };
 
 /**
@@ -114,6 +120,7 @@ export function EncounterFrame({
   onEvent,
   onLootMinted,
   clearReceipt,
+  interstitial,
 }: Props) {
   const initialSplit = useMemo(() => splitIntro(initialLines), [initialLines]);
 
@@ -279,19 +286,22 @@ export function EncounterFrame({
       ) : runOver ? (
         <section
           aria-label="Run complete"
-          className="flex flex-col gap-3 p-5 rounded-md"
-          style={{
-            background: "rgba(255,255,255,0.04)",
-            border: "1px solid var(--color-preset-accent)",
-          }}
+          className="flex flex-col gap-3"
         >
-          <h3 className="text-lg font-semibold">The realm is cleared.</h3>
-          {state.bossClearedTurns !== undefined && (
-            <p className="text-sm opacity-80 tabular-nums">
-              Cleared in {state.bossClearedTurns} turn
-              {state.bossClearedTurns === 1 ? "" : "s"}.
-            </p>
-          )}
+          {interstitial}
+          <div
+            className="flex flex-col gap-2 p-4 rounded-md"
+            style={{
+              background: "rgba(255,255,255,0.03)",
+              border: "1px solid rgba(255,255,255,0.08)",
+            }}
+          >
+            {state.bossClearedTurns !== undefined && (
+              <p className="text-xs opacity-60 tabular-nums uppercase tracking-widest">
+                Cleared in {state.bossClearedTurns} turn
+                {state.bossClearedTurns === 1 ? "" : "s"}
+              </p>
+            )}
           {!clearReceipt && (
             <p className="text-sm opacity-60">
               Clear receipt: queued…
@@ -324,6 +334,7 @@ export function EncounterFrame({
           {clearReceipt?.status === "skipped" && (
             <p className="text-sm opacity-60">{clearReceipt.reason}</p>
           )}
+          </div>
         </section>
       ) : (
         <div className="flex">

@@ -17,7 +17,7 @@ export default function HomePage() {
         <div className="flex flex-col gap-1">
           <h1 className="text-3xl font-semibold tracking-tight">Realms</h1>
           <p className="text-sm opacity-70">
-            A Seed Protocol PoC — pick a realm, clear its boss, claim a Seed.
+            Genesis is fantasy. Two more realms wake when the Reach falls.
           </p>
         </div>
         <div className="flex items-center gap-3">

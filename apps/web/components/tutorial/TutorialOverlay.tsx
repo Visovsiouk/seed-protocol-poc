@@ -37,31 +37,39 @@ function copyFor(progress: TutorialProgress): ActCopy | null {
   switch (progress.act) {
     case 1:
       return {
-        eyebrow: "Act 1 · Welcome",
-        title: "Clear the realm, mint your loot.",
+        eyebrow: "Genesis · The Hollow Reach",
+        title: "Every world begins in a forest.",
         body:
-          "Every realm is a six-room descent ending at a boss. Each clear drops gear under that realm's schema — your loot is portable across every other realm in the protocol.",
+          "You wake in mud. A bell is tolling somewhere ahead, and the Hag is laughing. " +
+          "The Reach is Genesis — the first skin the Seed ever wore. Six rooms down, " +
+          "then her. Clear her and two more realms will open their eyes.",
       };
     case 2:
       return {
-        eyebrow: "Act 2 · The Seed",
-        title: "Two more realms unlock your Seed.",
+        eyebrow: "Act 2 · The Seed splits",
+        title: "Two skins woke when she fell. Pick one.",
         body:
-          "Clear three distinct realms and the protocol mints you a Seed SBT — a permanent badge of having proven the cross-realm loop. Your next stop is the Bazaar, or another realm.",
+          "A derelict station and a neon district both know your name now. Either door " +
+          "is yours — your loot crosses every threshold the protocol holds. Two more " +
+          "realms cleared and the Seed SBT is yours to claim.",
       };
     case 3:
       return {
-        eyebrow: "Act 3 · One to go",
-        title: "One more realm.",
+        eyebrow: "Act 3 · One skin remains",
+        title: "One last door.",
         body:
-          "Two realms cleared. One more boss and the Seed is yours — and with it, the keys to deploy your own realm under the protocol.",
+          "Two realms remember you. The third is humming behind glass. One more boss, " +
+          "one more receipt, and the Seed is whole — and with it, the keys to author " +
+          "your own realm under the protocol.",
       };
     case 4:
       return {
-        eyebrow: "Act 4 · Claim",
-        title: "Three realms cleared. Claim your Seed.",
+        eyebrow: "Act 4 · Claim the Seed",
+        title: "Three realms remember you. The Seed is whole.",
         body:
-          "You've proven the loop. Mint your Seed SBT to unlock realm authorship and the protocol's deeper surface.",
+          "Forest, station, district — every skin the Seed wore now knows your shape. " +
+          "Mint your Seed SBT to take the keys to realm authorship and the protocol's " +
+          "deeper surface.",
       };
     case 5:
       return null;

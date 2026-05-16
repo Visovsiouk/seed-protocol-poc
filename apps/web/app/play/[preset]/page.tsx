@@ -48,10 +48,11 @@ import {
   makeStarterGear,
 } from "@/lib/engine/runtime";
 import { EncounterFrame } from "@/components/game/EncounterFrame";
+import { RealmClearedInterstitial } from "@/components/game/RealmClearedInterstitial";
 import { InventoryDrawer } from "@/components/inventory/InventoryDrawer";
 import { TutorialOverlay } from "@/components/tutorial/TutorialOverlay";
 import { ConnectButton } from "@/components/wallet/ConnectButton";
-import { emptyTutorialProgress } from "@/lib/tutorial/progress";
+import { emptyTutorialProgress, type TutorialProgress } from "@/lib/tutorial/progress";
 import {
   useInventoryCards,
   useStarterRealm,
@@ -63,6 +64,7 @@ import { useMintClearReceipt } from "@/lib/contracts/boss-cleared";
 import { useClaimSeed } from "@/lib/contracts/seed-claim";
 import { useRunSeedCommitment } from "@/lib/contracts/run-seed";
 import { getStarterRealm, isStarterRealmDeployed } from "@/lib/contracts/starter-realms";
+import { loadEquipped, saveEquipped } from "@/lib/persistence/equipped";
 
 export default function PlayPage() {
   const params = useParams<{ preset: string }>();
@@ -129,18 +131,44 @@ export default function PlayPage() {
     [preset, cfg.realm],
   );
 
+  // Local inventory used in disconnected mode. When connected we read
+  // from the chain via `onchain.data`; keeping the local accumulator
+  // around lets the player play offline without losing drops.
+  const [localInventory, setLocalInventory] = useState<AssetCardType[]>([]);
+  // Equipped slots. Hydrated from localStorage on mount so gear earned in
+  // one realm carries into the next (the play state is reset on every
+  // mount, but the persistence layer survives). The initial useState falls
+  // back to starter gear so SSR + first paint render a coherent HUD; the
+  // post-mount effect below swaps in the saved snapshot if there is one.
+  const [equipped, setEquipped] = useState<{
+    weapon?: AssetCardType;
+    armor?: AssetCardType;
+  }>({ weapon: starterGear.weapon, armor: starterGear.armor });
+  // The equipped state used at run-start. Captured once at hydration time
+  // so subsequent equip changes (from drawer clicks or auto-equip on
+  // mint) don't restart the run.
+  const [runStartEquipped, setRunStartEquipped] = useState<{
+    weapon?: AssetCardType;
+    armor?: AssetCardType;
+  } | null>(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [tutorialDismissed, setTutorialDismissed] = useState(false);
+
   const initial = useMemo(() => {
-    if (!rngSeed) return null;
+    if (!rngSeed || !runStartEquipped) return null;
     return startRun({
       preset,
       realm: cfg.realm,
       rngSeed,
-      equipped: { weapon: starterGear.weapon, armor: starterGear.armor },
+      equipped: {
+        weapon: runStartEquipped.weapon,
+        armor: runStartEquipped.armor,
+      },
       bossId: cfg.bossId,
       schemas: CANONICAL_SCHEMAS[preset],
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [preset, rngSeed]);
+  }, [preset, rngSeed, runStartEquipped]);
 
   // Connected players wait briefly while we pin the run to a blockhash;
   // disconnected players go straight to the CSPRNG path. `mounted` keeps
@@ -148,19 +176,27 @@ export default function PlayPage() {
   const seedReady =
     mounted && !!initial && (!walletConnected || !!commitment.data);
 
-  // Local inventory used in disconnected mode. When connected we read
-  // from the chain via `onchain.data`; keeping the local accumulator
-  // around lets the player play offline without losing drops.
-  const [localInventory, setLocalInventory] = useState<AssetCardType[]>([]);
-  // Starter gear is preselected so the drawer reflects what the engine
-  // is actually using for combat. Players can swap to looted gear via
-  // `handleEquip` once drops land.
-  const [equipped, setEquipped] = useState<{
-    weapon?: AssetCardType;
-    armor?: AssetCardType;
-  }>({ weapon: starterGear.weapon, armor: starterGear.armor });
-  const [drawerOpen, setDrawerOpen] = useState(false);
-  const [tutorialDismissed, setTutorialDismissed] = useState(false);
+  // One-shot hydration: read the persisted snapshot, swap it into both the
+  // live equipped state and the run-start snapshot. Guarded so it only
+  // fires on first mount — re-running would clobber drawer equip choices.
+  useEffect(() => {
+    if (runStartEquipped !== null) return;
+    const stored = loadEquipped();
+    const initial = stored ?? {
+      weapon: starterGear.weapon,
+      armor: starterGear.armor,
+    };
+    setEquipped(initial);
+    setRunStartEquipped(initial);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Persist every equip change so the next mount (same preset reload OR
+  // navigation to a different /play/[preset]) picks the snapshot back up.
+  useEffect(() => {
+    if (runStartEquipped === null) return; // hydration not done yet
+    saveEquipped(equipped);
+  }, [equipped, runStartEquipped]);
 
   // Until a wallet's connected (or the query is mid-flight) we render
   // the empty Act 1 progress — the overlay handles that fine and copy
@@ -188,12 +224,13 @@ export default function PlayPage() {
       : localInventory;
 
   const handleLootMinted = async (loot: LootRoll, ctx: { depth: number }) => {
+    let newCard: AssetCardType;
     if (chainMintAvailable && initial) {
       // Real path — fire the tx and let the inventory query reconcile.
       // `useMintLoot` invalidates `inventoryCards(player)` on success.
       // `ctx.depth` is the live engine depth (the page only sees the
       // frozen `initial.state.depth` of 1 from `startRun`).
-      await mintLoot({
+      const { tokenId } = await mintLoot({
         realm: cfg.realm,
         preset,
         runSeed: initial.state.rngSeed,
@@ -201,12 +238,22 @@ export default function PlayPage() {
         loot,
         realmLabel: cfg.name,
       });
+      // Build the equipped-side card with the real on-chain tokenId so the
+      // inventory drawer's "selected" highlight matches once the chain
+      // query refetches and surfaces the canonical card.
+      newCard = lootRollToMockCard(loot, preset, cfg.realm, cfg.name, { tokenId });
     } else {
       // Disconnected OR realm-not-ready — keep the local accumulator alive.
-      const card = lootRollToMockCard(loot, preset, cfg.realm, cfg.name);
-      setLocalInventory((prev) => [...prev, card]);
+      newCard = lootRollToMockCard(loot, preset, cfg.realm, cfg.name);
+      setLocalInventory((prev) => [...prev, newCard]);
     }
-    // Auto-equip nothing — equipping is a deliberate UI action.
+    // Auto-equip the freshly-minted card — the prompt's CTA is literally
+    // "Mint and equip", so honor that. Per-slot replacement matches the
+    // drawer's equip path. Per spec the active CombatState's stats
+    // stay frozen until the next room, so this can't yank gear mid-fight.
+    if (newCard.slot === "weapon" || newCard.slot === "armor") {
+      setEquipped((prev) => ({ ...prev, [newCard.slot as "weapon" | "armor"]: newCard }));
+    }
   };
 
   const handleEquip = (
@@ -215,6 +262,12 @@ export default function PlayPage() {
   ) => {
     setEquipped((prev) => ({ ...prev, [slot]: card }));
   };
+
+  // Set the moment the engine emits BossCleared for this run, drives
+  // the inline story interstitial in the run-over panel. We *don't*
+  // wait for the on-chain receipt — the narrative beat is engine-truth
+  // and should land instantly.
+  const [bossClearedThisRun, setBossClearedThisRun] = useState(false);
 
   // Status of the clearReceipt mint that fires when the engine emits
   // BossCleared. The run-over panel in `<EncounterFrame/>` reads this
@@ -235,6 +288,7 @@ export default function PlayPage() {
   const handleEngineEvent = (event: EngineEvent) => {
     if (event.type !== "BossCleared") return;
     if (!initial) return;
+    setBossClearedThisRun(true);
     if (!chainMintAvailable) {
       setClearReceipt({
         status: "skipped",
@@ -288,6 +342,36 @@ export default function PlayPage() {
         }
       }
     : undefined;
+
+  // Projected post-clear tutorial progress for the inline story beat.
+  // We don't wait on the on-chain refetch — the player needs the next
+  // step the moment the boss falls. Idempotent if the player has
+  // already cleared this preset on a prior run.
+  const projectedProgress: TutorialProgress = useMemo(() => {
+    if (!bossClearedThisRun) return tutorial;
+    if (tutorial.cleared.some((c) => c.preset === preset)) return tutorial;
+    const cleared = [
+      ...tutorial.cleared,
+      { realm: cfg.realm, preset, ts: Math.floor(Date.now() / 1000) },
+    ];
+    const distinct = Math.min(3, cleared.length);
+    const act: TutorialProgress["act"] = tutorial.hasSeed
+      ? 5
+      : distinct >= 3
+        ? 4
+        : distinct === 2
+          ? 3
+          : distinct === 1
+            ? 2
+            : 1;
+    return {
+      ...tutorial,
+      cleared,
+      distinctClears: distinct,
+      act,
+      eligibleForSeed: !tutorial.hasSeed && distinct >= 3,
+    };
+  }, [bossClearedThisRun, tutorial, preset, cfg.realm]);
 
   // EncounterFrame keeps its own RunState; we hand off the run state as
   // produced by `startRun` (which already has starter gear baked into
@@ -366,6 +450,15 @@ export default function PlayPage() {
               onEvent={handleEngineEvent}
               onLootMinted={handleLootMinted}
               clearReceipt={clearReceipt}
+              interstitial={
+                bossClearedThisRun ? (
+                  <RealmClearedInterstitial
+                    justCleared={preset}
+                    projected={projectedProgress}
+                    onClaimSeed={handleClaimSeed}
+                  />
+                ) : null
+              }
             />
             {commitment.data && (
               <p className="text-[11px] opacity-50 font-mono break-all">
