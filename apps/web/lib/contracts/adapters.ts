@@ -211,6 +211,21 @@ function b64(s: string): string {
   return btoa(bin);
 }
 
+/**
+ * Minimal inline SVG. `decodeMetadataURI` validates that
+ * `json.image` is a base64 SVG data URI and throws otherwise — and
+ * `buildAssetCardFromMetadata` silently swallows that throw and returns
+ * a stat-less card. Translated cards don't surface an image anywhere,
+ * but the contract has to be honoured.
+ */
+const TRANSLATED_PLACEHOLDER_SVG_URI =
+  "data:image/svg+xml;base64," +
+  (typeof Buffer !== "undefined"
+    ? Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"/>', "utf8").toString(
+        "base64",
+      )
+    : btoa('<svg xmlns="http://www.w3.org/2000/svg"/>'));
+
 function buildTranslatedMetadataURI(args: {
   original: AssetCard;
   translatedSchemaId: number;
@@ -245,6 +260,7 @@ function buildTranslatedMetadataURI(args: {
   const json = {
     name: original.name,
     description: `${original.name} (translated for ${targetPreset}).`,
+    image: TRANSLATED_PLACEHOLDER_SVG_URI,
     attributes,
     seed_protocol: {
       schemaId: translatedSchemaId,

@@ -118,6 +118,43 @@ describe("armor extension codec round-trip", () => {
 });
 
 describe("buildTranslatedMetadataURI", () => {
+  it("emits an inline SVG image so buildAssetCardFromMetadata's strict decoder accepts it", async () => {
+    const { buildAssetCardFromMetadata } = await import(
+      "@/lib/metadata/asset-card"
+    );
+    const card = baseCard({
+      damageDie: 8,
+      attackBonus: 2,
+      damageBonus: 2,
+      element: "fire",
+    });
+    const uri = __internal.buildTranslatedMetadataURI({
+      original: card,
+      translatedSchemaId: 4,
+      targetPreset: "scifi",
+      weapon: {
+        damageDie: 6,
+        attackBonus: 3,
+        damageBonus: 2,
+        element: "fire",
+      },
+    });
+    const rebuilt = buildAssetCardFromMetadata({
+      tokenId: 1n,
+      tier: 3,
+      schemaId: 4,
+      metadataURI: uri,
+      mintedByRealm: ZERO,
+    });
+    // Stats must survive the round-trip — regression guard for the
+    // missing-image bug where decode threw and the catch swallowed it.
+    expect(rebuilt.slot).toBe("weapon");
+    expect(rebuilt.damageDie).toBe(6);
+    expect(rebuilt.attackBonus).toBe(3);
+    expect(rebuilt.damageBonus).toBe(2);
+    expect(rebuilt.element).toBe("fire");
+  });
+
   it("emits a data: URI whose payload decodes back to the translated stats", () => {
     const card = baseCard({
       damageDie: 8,
