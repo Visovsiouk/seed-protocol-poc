@@ -76,9 +76,15 @@ function SlotChip({
           {card.damageDie
             ? ` · d${card.damageDie}` +
               (card.attackBonus ? ` +${card.attackBonus} hit` : "") +
-              (card.damageBonus ? ` +${card.damageBonus} dmg` : "")
+              (card.damageBonus ? ` +${card.damageBonus} dmg` : "") +
+              (card.element && card.element !== "none" ? ` · ${card.element}` : "")
             : ""}
-          {card.acBonus !== undefined ? ` · AC+${card.acBonus} HP+${card.hpBonus ?? 0}` : ""}
+          {card.acBonus !== undefined
+            ? ` · AC+${card.acBonus} HP+${card.hpBonus ?? 0}` +
+              (card.resistElement && card.resistElement !== "none"
+                ? ` · resists ${card.resistElement}`
+                : "")
+            : ""}
         </span>
       )}
     </div>

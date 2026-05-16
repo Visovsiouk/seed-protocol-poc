@@ -73,10 +73,16 @@ export function AssetCard({ card, selected, onClick, compact }: Props) {
             d{card.damageDie}
             {card.damageBonus ? `+${card.damageBonus}` : ""} damage · +
             {card.attackBonus ?? 0} attack
+            {card.element && card.element !== "none"
+              ? ` · ${card.element}`
+              : ""}
           </>
         ) : (
           <>
             +{card.acBonus ?? 0} AC · +{card.hpBonus ?? 0} HP
+            {card.resistElement && card.resistElement !== "none"
+              ? ` · resists ${card.resistElement}`
+              : ""}
           </>
         )}
       </div>

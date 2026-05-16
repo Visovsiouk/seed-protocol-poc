@@ -121,6 +121,8 @@ export function lootRollToMockCard(
     damageBonus: loot.damageBonus,
     acBonus: loot.acBonus,
     hpBonus: loot.hpBonus,
+    element: loot.element,
+    resistElement: loot.resistElement,
     catalogEffects: loot.catalogEffects,
     extraFields: loot.extraFields,
     metadataURI: "",

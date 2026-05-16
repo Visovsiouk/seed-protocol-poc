@@ -86,6 +86,16 @@ export function buildLootMetadataURI(args: {
   if (loot.hpBonus !== undefined) {
     attributes.push({ trait_type: "hp_bonus", value: loot.hpBonus });
   }
+  // Element fields are preset-neutral on the canonical engine side. Adapters
+  // map preset-specific schema names (`weapon_type`,
+  // `damage_type`, `school_resist`, `energy_resist`, `tech_resist`) onto
+  // these two traits so the engine never branches on preset.
+  if (loot.element !== undefined && loot.element !== "none") {
+    attributes.push({ trait_type: "element", value: loot.element });
+  }
+  if (loot.resistElement !== undefined && loot.resistElement !== "none") {
+    attributes.push({ trait_type: "resist_element", value: loot.resistElement });
+  }
   for (const eff of loot.catalogEffects) {
     attributes.push({ trait_type: eff.name, value: eff.value });
   }

@@ -117,6 +117,95 @@ describe("buildAssetCardFromMetadata", () => {
     expect(card.catalogEffects).toEqual([]);
   });
 
+  it("round-trips weapon element from metadata", () => {
+    const uri = jsonUri(
+      basePayload({
+        attributes: [
+          { trait_type: "damage_die", value: 8 },
+          { trait_type: "attack_bonus", value: 2 },
+          { trait_type: "damage_bonus", value: 2 },
+          { trait_type: "element", value: "fire" },
+        ],
+      }),
+    );
+    const card = buildAssetCardFromMetadata({
+      tokenId: 7n,
+      tier: 3,
+      schemaId: 101,
+      metadataURI: uri,
+      mintedByRealm: "0x0000000000000000000000000000000000000a01",
+    });
+    expect(card.slot).toBe("weapon");
+    expect(card.element).toBe("fire");
+    expect(card.resistElement).toBeUndefined();
+    expect(card.damageBonus).toBe(2);
+    expect(card.extraFields).toEqual({});
+  });
+
+  it("round-trips armor resist_element from metadata", () => {
+    const uri = jsonUri(
+      basePayload({
+        attributes: [
+          { trait_type: "ac_bonus", value: 2 },
+          { trait_type: "hp_bonus", value: 10 },
+          { trait_type: "resist_element", value: "ice" },
+        ],
+      }),
+    );
+    const card = buildAssetCardFromMetadata({
+      tokenId: 8n,
+      tier: 2,
+      schemaId: 102,
+      metadataURI: uri,
+      mintedByRealm: "0x0000000000000000000000000000000000000a01",
+    });
+    expect(card.slot).toBe("armor");
+    expect(card.resistElement).toBe("ice");
+    expect(card.element).toBeUndefined();
+    expect(card.extraFields).toEqual({});
+  });
+
+  it("ignores an unknown element value (defensive against legacy metadata)", () => {
+    const uri = jsonUri(
+      basePayload({
+        attributes: [
+          { trait_type: "damage_die", value: 8 },
+          { trait_type: "element", value: "lava" },
+        ],
+      }),
+    );
+    const card = buildAssetCardFromMetadata({
+      tokenId: 9n,
+      tier: 3,
+      schemaId: 101,
+      metadataURI: uri,
+      mintedByRealm: "0x0000000000000000000000000000000000000a01",
+    });
+    expect(card.element).toBeUndefined();
+  });
+
+  it("never surfaces resistElement on a weapon card or element on an armor card", () => {
+    // Even if a malformed URI lists both, the slot-aware return ensures the
+    // engine sees clean shapes.
+    const weaponUri = jsonUri(
+      basePayload({
+        attributes: [
+          { trait_type: "damage_die", value: 8 },
+          { trait_type: "resist_element", value: "fire" }, // wrong slot
+        ],
+      }),
+    );
+    const wc = buildAssetCardFromMetadata({
+      tokenId: 10n,
+      tier: 3,
+      schemaId: 101,
+      metadataURI: weaponUri,
+      mintedByRealm: "0x0000000000000000000000000000000000000a01",
+    });
+    expect(wc.slot).toBe("weapon");
+    expect(wc.resistElement).toBeUndefined();
+  });
+
   it("ignores invalid damage_die values", () => {
     const uri = jsonUri(
       basePayload({

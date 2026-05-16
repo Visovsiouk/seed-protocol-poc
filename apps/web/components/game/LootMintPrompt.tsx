@@ -96,6 +96,12 @@ export function LootMintPrompt({ loot, bank, onMint, onSkip }: Props) {
         {loot.hpBonus !== undefined && (
           <StatRow label="HP" value={`+${loot.hpBonus}`} />
         )}
+        {loot.element !== undefined && loot.element !== "none" && (
+          <StatRow label="Element" value={loot.element} />
+        )}
+        {loot.resistElement !== undefined && loot.resistElement !== "none" && (
+          <StatRow label="Resists" value={loot.resistElement} />
+        )}
       </div>
 
       {loot.catalogEffects.length > 0 && (

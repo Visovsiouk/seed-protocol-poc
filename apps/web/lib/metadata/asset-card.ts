@@ -14,9 +14,11 @@ import type {
   CatalogEffect,
   CatalogEffectName,
   DamageDie,
+  Element,
   Slot,
   Tier,
 } from "@/lib/engine/types";
+import { ELEMENTS } from "@/lib/engine/types";
 import { decodeMetadataURI } from "./decode";
 
 const CATALOG_EFFECT_NAMES: readonly CatalogEffectName[] = [
@@ -37,6 +39,8 @@ const CANONICAL_STAT_KEYS = new Set([
   "damage_bonus",
   "ac_bonus",
   "hp_bonus",
+  "element",
+  "resist_element",
   "slot",
   // Tier/Schema are surfaced separately on the card; the renderer also
   // emits them as attributes so we filter them out of `extraFields`.
@@ -45,6 +49,8 @@ const CANONICAL_STAT_KEYS = new Set([
 ]);
 
 const VALID_DAMAGE_DIES: ReadonlySet<number> = new Set([4, 6, 8, 10, 12]);
+
+const VALID_ELEMENTS: ReadonlySet<string> = new Set<string>(ELEMENTS);
 
 function asNumber(v: string | number): number | undefined {
   if (typeof v === "number") return Number.isFinite(v) ? v : undefined;
@@ -88,6 +94,8 @@ export function buildAssetCardFromMetadata(args: {
   let damageBonus: number | undefined;
   let acBonus: number | undefined;
   let hpBonus: number | undefined;
+  let element: Element | undefined;
+  let resistElement: Element | undefined;
   let attrSlot: string | undefined;
 
   try {
@@ -123,6 +131,16 @@ export function buildAssetCardFromMetadata(args: {
       }
       if (key === "hp_bonus" && numeric !== undefined) {
         hpBonus = numeric;
+        continue;
+      }
+      if (key === "element" && typeof attr.value === "string") {
+        const v = attr.value.toLowerCase();
+        if (VALID_ELEMENTS.has(v)) element = v as Element;
+        continue;
+      }
+      if (key === "resist_element" && typeof attr.value === "string") {
+        const v = attr.value.toLowerCase();
+        if (VALID_ELEMENTS.has(v)) resistElement = v as Element;
         continue;
       }
       if (
@@ -164,6 +182,12 @@ export function buildAssetCardFromMetadata(args: {
     damageBonus,
     acBonus,
     hpBonus,
+    // Only surface the element on the slot it belongs to. A weapon should
+    // never carry `resistElement`, and armor should never carry `element` —
+    // server-side `validateLootRoll` rejects either, but we double-guard
+    // here so a malformed legacy metadata URI doesn't confuse the engine.
+    element: slot === "weapon" ? element : undefined,
+    resistElement: slot === "armor" ? resistElement : undefined,
     catalogEffects,
     extraFields,
     metadataURI,
