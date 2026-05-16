@@ -89,4 +89,35 @@ describe("validateLootRoll", () => {
   it("rejects T1 at boss depth (boss distribution starts at T2)", () => {
     expect(validateLootRoll(weaponT1(), 6, true)).toMatch(/tier 1 cannot drop/);
   });
+
+  it("accepts weapon with a valid element", () => {
+    const l: LootRoll = { ...weaponT1(), element: "fire" };
+    expect(validateLootRoll(l, 1, false)).toBeNull();
+  });
+
+  it("accepts weapon with element 'none'", () => {
+    const l: LootRoll = { ...weaponT1(), element: "none" };
+    expect(validateLootRoll(l, 1, false)).toBeNull();
+  });
+
+  it("rejects weapon carrying armor's resistElement field", () => {
+    const l: LootRoll = { ...weaponT1(), resistElement: "fire" };
+    expect(validateLootRoll(l, 1, false)).toMatch(/resistElement/);
+  });
+
+  it("rejects armor carrying weapon's element field", () => {
+    const l: LootRoll = { ...armorT2(), element: "fire" };
+    expect(validateLootRoll(l, 3, false)).toMatch(/element \(weapon field\)/);
+  });
+
+  it("rejects weapon with an unknown element value", () => {
+    // Bypass the type system to simulate a forged payload.
+    const l = { ...weaponT1(), element: "lava" } as unknown as LootRoll;
+    expect(validateLootRoll(l, 1, false)).toMatch(/not a valid Element/);
+  });
+
+  it("accepts armor with a valid resistElement", () => {
+    const l: LootRoll = { ...armorT2(), resistElement: "ice" };
+    expect(validateLootRoll(l, 3, false)).toBeNull();
+  });
 });

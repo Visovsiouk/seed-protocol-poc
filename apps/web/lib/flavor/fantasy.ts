@@ -62,6 +62,8 @@ const monsters = {
       "rattles and swings a rusted sword for {dmg}",
       "lunges with bony fingers for {dmg}",
     ],
+    weakTo: "holy",
+    resistTo: "unholy",
   },
   wolf: {
     id: "wolf",
@@ -85,6 +87,9 @@ const monsters = {
       "rakes you with rotting claws for {dmg}",
       "shrieks and lunges for {dmg}",
     ],
+    element: "unholy",
+    weakTo: "holy",
+    resistTo: "unholy",
   },
   forest_hag_minion: {
     id: "forest_hag_minion",
@@ -96,6 +101,7 @@ const monsters = {
       "wraps thorns around your arm for {dmg}",
       "drains your warmth for {dmg}",
     ],
+    weakTo: "fire",
   },
   ogre: {
     id: "ogre",
@@ -119,6 +125,9 @@ const monsters = {
       "drifts through your guard and chills you for {dmg}",
       "whispers your name and burns you for {dmg}",
     ],
+    element: "ice",
+    weakTo: "holy",
+    resistTo: "unholy",
   },
   troll: {
     id: "troll",
@@ -130,6 +139,7 @@ const monsters = {
       "swings a wet limb for {dmg}",
       "shoves you against the wall for {dmg}",
     ],
+    weakTo: "fire",
   },
   cultist: {
     id: "cultist",
@@ -141,6 +151,8 @@ const monsters = {
       "chants and slashes for {dmg}",
       "calls down a sickly light that burns you for {dmg}",
     ],
+    element: "unholy",
+    weakTo: "holy",
   },
   shadow_drake: {
     id: "shadow_drake",
@@ -153,6 +165,9 @@ const monsters = {
       "breathes a cone of dark fire for {dmg}",
       "rakes you with smoke-dark claws for {dmg}",
     ],
+    element: "fire",
+    weakTo: "ice",
+    resistTo: "fire",
   },
 } as const;
 
@@ -168,6 +183,9 @@ const bosses = {
     phase2NarrationKey: "forest_hag_phase2",
     phase2AttackDie: 10 as const,
     phase2SuppressEffect: "regen" as const,
+    element: "unholy" as const,
+    weakTo: "fire" as const,
+    resistTo: "unholy" as const,
   },
   lich: {
     id: "lich",
@@ -180,6 +198,9 @@ const bosses = {
     phase2NarrationKey: "lich_phase2",
     phase2AttackDie: 10 as const,
     phase2SuppressEffect: "lifesteal" as const,
+    element: "unholy" as const,
+    weakTo: "holy" as const,
+    resistTo: "unholy" as const,
   },
   dragon: {
     id: "dragon",
@@ -191,6 +212,9 @@ const bosses = {
     bakedEffects: ["multi_hit", "armor_pierce"] as ["multi_hit", "armor_pierce"],
     phase2NarrationKey: "dragon_phase2",
     phase2AttackDie: 12 as const,
+    element: "fire" as const,
+    weakTo: "ice" as const,
+    resistTo: "fire" as const,
   },
   warden: {
     id: "warden",
@@ -202,6 +226,7 @@ const bosses = {
     bakedEffects: ["damage_reduction", "thorns"] as ["damage_reduction", "thorns"],
     phase2NarrationKey: "warden_phase2",
     phase2AttackDie: 10 as const,
+    weakTo: "shock" as const,
   },
   vampire: {
     id: "vampire",
@@ -214,6 +239,9 @@ const bosses = {
     phase2NarrationKey: "vampire_phase2",
     phase2AttackDie: 10 as const,
     phase2SuppressEffect: "dodge_chance" as const,
+    element: "unholy" as const,
+    weakTo: "holy" as const,
+    resistTo: "unholy" as const,
   },
 } as const;
 

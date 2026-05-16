@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolveRound } from "./combat";
+import { armorElementMultiplier, elementMultiplier, resolveRound } from "./combat";
 import { createRng } from "./rng";
 import type {
   ActionChoice,
@@ -7,6 +7,7 @@ import type {
   BossDef,
   CatalogEffectName,
   CombatState,
+  Element,
   MonsterDef,
 } from "./types";
 
@@ -43,6 +44,7 @@ function card(
   acBonus: number,
   hpBonus: number,
   effects: { name: CatalogEffectName; value: number }[] = [],
+  element?: Element,
 ): AssetCard {
   return {
     tokenId: 1n,
@@ -56,6 +58,8 @@ function card(
     attackBonus: slot === "weapon" ? attackBonus : undefined,
     acBonus: slot === "armor" ? acBonus : undefined,
     hpBonus: slot === "armor" ? hpBonus : undefined,
+    element: slot === "weapon" ? element : undefined,
+    resistElement: slot === "armor" ? element : undefined,
     catalogEffects: effects,
     extraFields: {},
     metadataURI: "data:",
@@ -363,5 +367,210 @@ describe("resolveRound — determinism", () => {
         typeof v === "bigint" ? v.toString() : v,
       )),
     ).toEqual(snapshot);
+  });
+});
+
+describe("elementMultiplier (pure helper)", () => {
+  it("returns 1.5× when weapon element matches monster.weakTo", () => {
+    expect(elementMultiplier("fire", { weakTo: "fire" })).toEqual({
+      mult: 1.5,
+      tag: "weak",
+    });
+  });
+
+  it("returns 0.5× when weapon element matches monster.resistTo", () => {
+    expect(elementMultiplier("fire", { resistTo: "fire" })).toEqual({
+      mult: 0.5,
+      tag: "resist",
+    });
+  });
+
+  it("returns 1× when monster has neither weakTo nor resistTo match", () => {
+    expect(elementMultiplier("fire", { weakTo: "ice", resistTo: "shock" })).toEqual({
+      mult: 1,
+      tag: "neutral",
+    });
+  });
+
+  it("returns 1× when weapon element is undefined or 'none'", () => {
+    expect(elementMultiplier(undefined, { weakTo: "fire" })).toEqual({
+      mult: 1,
+      tag: "neutral",
+    });
+    expect(elementMultiplier("none", { weakTo: "fire" })).toEqual({
+      mult: 1,
+      tag: "neutral",
+    });
+  });
+});
+
+describe("armorElementMultiplier (pure helper)", () => {
+  it("halves damage when armor resist matches monster element", () => {
+    expect(armorElementMultiplier("fire", "fire")).toEqual({
+      mult: 0.5,
+      resisted: true,
+    });
+  });
+
+  it("returns 1× when armor resist doesn't match", () => {
+    expect(armorElementMultiplier("fire", "ice")).toEqual({
+      mult: 1,
+      resisted: false,
+    });
+  });
+
+  it("returns 1× when monster element is 'none' or undefined", () => {
+    expect(armorElementMultiplier("none", "fire")).toEqual({
+      mult: 1,
+      resisted: false,
+    });
+    expect(armorElementMultiplier(undefined, "fire")).toEqual({
+      mult: 1,
+      resisted: false,
+    });
+  });
+
+  it("returns 1× when armor resist is 'none' or undefined", () => {
+    expect(armorElementMultiplier("fire", "none")).toEqual({
+      mult: 1,
+      resisted: false,
+    });
+    expect(armorElementMultiplier("fire", undefined)).toEqual({
+      mult: 1,
+      resisted: false,
+    });
+  });
+});
+
+describe("resolveRound — elements", () => {
+  it("elementally-weak weapon produces the weak narration tag at least sometimes", () => {
+    // Monster weak to fire; fire weapon → 1.5× damage on hit, with " (elementally weak)" tag.
+    const weakMonster: MonsterDef = {
+      ...baseMonster,
+      weakTo: "fire",
+    };
+    const equipped = {
+      weapon: card("weapon", 6, 4, 0, 0, [], "fire"),
+    };
+    let weakTagSeen = 0;
+    for (let i = 0; i < 60; i++) {
+      const seedHex = i.toString(16).padStart(64, "0");
+      const r = resolveRound(
+        makeState({ monster: weakMonster }),
+        strike,
+        equipped,
+        createRng(`0x${seedHex}` as `0x${string}`),
+      );
+      if (r.lines.some((l) => /elementally weak/.test(l.text))) weakTagSeen++;
+    }
+    expect(weakTagSeen).toBeGreaterThan(0);
+  });
+
+  it("resist-aligned weapon produces the resisted narration tag at least sometimes", () => {
+    const resistMonster: MonsterDef = {
+      ...baseMonster,
+      resistTo: "fire",
+    };
+    const equipped = {
+      weapon: card("weapon", 6, 4, 0, 0, [], "fire"),
+    };
+    let resistTagSeen = 0;
+    for (let i = 0; i < 60; i++) {
+      const seedHex = i.toString(16).padStart(64, "0");
+      const r = resolveRound(
+        makeState({ monster: resistMonster }),
+        strike,
+        equipped,
+        createRng(`0x${seedHex}` as `0x${string}`),
+      );
+      if (r.lines.some((l) => / \(resisted\)/.test(l.text))) resistTagSeen++;
+    }
+    expect(resistTagSeen).toBeGreaterThan(0);
+  });
+
+  it("armor with matching resistElement produces 'wards it' narration at least sometimes", () => {
+    const fireMonster: MonsterDef = {
+      ...baseMonster,
+      element: "fire",
+    };
+    const equipped = {
+      weapon: card("weapon", 4, 0, 0, 0),
+      armor: card("armor", 6, 0, 0, 0, [], "fire"),
+    };
+    let wardSeen = 0;
+    for (let i = 0; i < 80; i++) {
+      const seedHex = i.toString(16).padStart(64, "0");
+      const r = resolveRound(
+        makeState({ monster: fireMonster, playerAc: 8 }), // low AC so monster hits often
+        brace,
+        equipped,
+        createRng(`0x${seedHex}` as `0x${string}`),
+      );
+      if (r.lines.some((l) => /wards it/.test(l.text))) wardSeen++;
+    }
+    expect(wardSeen).toBeGreaterThan(0);
+  });
+});
+
+describe("resolveRound — nat-20 and nat-1", () => {
+  it("nat-20 crits even when attackBonus would not normally clear AC", () => {
+    // Weapon with +0 bonus vs AC 20 monster — only a nat-20 ever hits.
+    const fortressMonster: MonsterDef = { ...baseMonster, ac: 20, hp: 999 };
+    const equipped = { weapon: card("weapon", 4, 0, 0, 0) };
+    let critsOnHit = 0;
+    let hits = 0;
+    for (let i = 0; i < 400; i++) {
+      const seedHex = i.toString(16).padStart(64, "0");
+      const r = resolveRound(
+        makeState({ monster: fortressMonster, monsterHp: 999 }),
+        strike,
+        equipped,
+        createRng(`0x${seedHex}` as `0x${string}`),
+      );
+      if (r.lines.some((l) => /You hit/.test(l.text))) {
+        hits++;
+        if (r.lines.some((l) => /CRITICAL/.test(l.text))) critsOnHit++;
+      }
+    }
+    expect(hits).toBeGreaterThan(0);
+    // Every hit against AC 20 with +0 bonus had to be a nat-20 — therefore every hit is a crit.
+    expect(critsOnHit).toBe(hits);
+  });
+
+  it("nat-1 fumbles the player swing even with massive attackBonus", () => {
+    // +20 to hit vs AC 12 — only a nat-1 can miss. Across many seeds at least
+    // some "You fumble" lines should appear.
+    const equipped = { weapon: card("weapon", 4, 20, 0, 0) };
+    let fumbles = 0;
+    for (let i = 0; i < 200; i++) {
+      const seedHex = i.toString(16).padStart(64, "0");
+      const r = resolveRound(
+        makeState(),
+        strike,
+        equipped,
+        createRng(`0x${seedHex}` as `0x${string}`),
+      );
+      if (r.lines.some((l) => /You fumble the swing/.test(l.text))) fumbles++;
+    }
+    expect(fumbles).toBeGreaterThan(0);
+    // Expect ~5% (1/20 nat-1 rate). Sanity: not absurd.
+    expect(fumbles).toBeLessThan(40);
+  });
+
+  it("monster nat-1 produces 'stumbles and misses' narration sometimes", () => {
+    // Player AC 8 so the monster nearly always hits — only nat-1 misses.
+    const equipped = { weapon: card("weapon", 4, 0, 0, 0) };
+    let stumbles = 0;
+    for (let i = 0; i < 200; i++) {
+      const seedHex = i.toString(16).padStart(64, "0");
+      const r = resolveRound(
+        makeState({ playerAc: 8 }),
+        brace,
+        equipped,
+        createRng(`0x${seedHex}` as `0x${string}`),
+      );
+      if (r.lines.some((l) => /stumbles and misses/.test(l.text))) stumbles++;
+    }
+    expect(stumbles).toBeGreaterThan(0);
   });
 });

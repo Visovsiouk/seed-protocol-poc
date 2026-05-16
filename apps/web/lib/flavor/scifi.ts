@@ -28,6 +28,8 @@ const monsters = {
       "pulses an EM burst that scorches you for {dmg}",
       "swivels and hits you with a stun lance for {dmg}",
     ],
+    element: "shock",
+    weakTo: "shock",
   },
   scavenger: {
     id: "scavenger",
@@ -52,6 +54,9 @@ const monsters = {
       "wraps you in cold static for {dmg}",
       "whispers a name that wasn't yours and burns you for {dmg}",
     ],
+    element: "unholy",
+    weakTo: "holy",
+    resistTo: "unholy",
   },
   warbot: {
     id: "warbot",
@@ -64,6 +69,7 @@ const monsters = {
       "fires a salvo for {dmg}",
       "boots a rusted protocol and slams into you for {dmg}",
     ],
+    weakTo: "shock",
   },
   xenoid: {
     id: "xenoid",
@@ -76,6 +82,7 @@ const monsters = {
       "extrudes a barbed limb that pierces you for {dmg}",
       "spits a glob of caustic resin that eats your armor for {dmg}",
     ],
+    weakTo: "fire",
   },
   exo_hunter: {
     id: "exo_hunter",
@@ -88,6 +95,7 @@ const monsters = {
       "closes and chains a melee strike for {dmg}",
       "vents a coolant flare into your visor for {dmg}",
     ],
+    weakTo: "shock",
   },
   // Phase-4 additions below — round out the roster to 12.
   saboteur: {
@@ -123,6 +131,9 @@ const monsters = {
       "drags rime across your suit seals for {dmg}",
       "grips your wrist and frost cracks your gauntlet for {dmg}",
     ],
+    element: "ice",
+    weakTo: "fire",
+    resistTo: "ice",
   },
   rogue_loader: {
     id: "rogue_loader",
@@ -146,6 +157,8 @@ const monsters = {
       "recites diagnostic prayers; your HUD bleeds for {dmg}",
       "calls down a targeting solution that strafes you for {dmg}",
     ],
+    element: "holy",
+    weakTo: "shock",
   },
   void_lich: {
     id: "void_lich",
@@ -158,6 +171,9 @@ const monsters = {
       "lifts you in a still-spreading gravity well for {dmg}",
       "speaks a frequency your bones recognize for {dmg}",
     ],
+    element: "unholy",
+    weakTo: "holy",
+    resistTo: "unholy",
   },
 } as const;
 
@@ -172,6 +188,8 @@ const bosses = {
     bakedEffects: ["multi_hit", "crit_chance"] as ["multi_hit", "crit_chance"],
     phase2NarrationKey: "ai_core_phase2",
     phase2AttackDie: 10 as const,
+    element: "shock" as const,
+    weakTo: "shock" as const,
   },
   hive_queen: {
     id: "hive_queen",
@@ -184,6 +202,7 @@ const bosses = {
     phase2NarrationKey: "hive_queen_phase2",
     phase2AttackDie: 10 as const,
     phase2SuppressEffect: "regen" as const,
+    weakTo: "fire" as const,
   },
   void_prince: {
     id: "void_prince",
@@ -195,6 +214,9 @@ const bosses = {
     bakedEffects: ["dodge_chance", "armor_pierce"] as ["dodge_chance", "armor_pierce"],
     phase2NarrationKey: "void_prince_phase2",
     phase2AttackDie: 12 as const,
+    element: "unholy" as const,
+    weakTo: "holy" as const,
+    resistTo: "unholy" as const,
   },
   // Phase-4 additions — give creator realms more boss variety.
   reactor_wyrm: {
@@ -207,6 +229,9 @@ const bosses = {
     bakedEffects: ["damage_reduction", "thorns"] as ["damage_reduction", "thorns"],
     phase2NarrationKey: "reactor_wyrm_phase2",
     phase2AttackDie: 12 as const,
+    element: "fire" as const,
+    weakTo: "ice" as const,
+    resistTo: "fire" as const,
   },
   oracle: {
     id: "oracle",
@@ -219,6 +244,8 @@ const bosses = {
     phase2NarrationKey: "oracle_phase2",
     phase2AttackDie: 10 as const,
     phase2SuppressEffect: "dodge_chance" as const,
+    element: "holy" as const,
+    weakTo: "unholy" as const,
   },
 } as const;
 

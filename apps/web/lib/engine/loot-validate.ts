@@ -17,8 +17,11 @@
  */
 
 import { WEAPON_EFFECTS, ARMOR_EFFECTS, getEffectSpec } from "./catalog";
-import type { CatalogEffect, LootRoll, Slot, Tier } from "./types";
+import type { CatalogEffect, Element, LootRoll, Slot, Tier } from "./types";
+import { ELEMENTS } from "./types";
 import { tierStats, type Difficulty } from "./tier";
+
+const VALID_ELEMENTS = new Set<Element>(ELEMENTS);
 
 /** Tier sets that the distribution can produce per difficulty. */
 const TIERS_BY_DIFFICULTY: Record<Difficulty, ReadonlySet<Tier>> = {
@@ -62,6 +65,12 @@ export function validateLootRoll(
     if (loot.acBonus !== undefined || loot.hpBonus !== undefined) {
       return `weapon has armor-slot fields set`;
     }
+    if (loot.resistElement !== undefined) {
+      return `weapon must not carry resistElement (armor field)`;
+    }
+    if (loot.element !== undefined && !VALID_ELEMENTS.has(loot.element)) {
+      return `weapon element "${loot.element}" is not a valid Element value`;
+    }
   } else if (loot.slot === "armor") {
     if (loot.acBonus !== expected.acBonus) {
       return `armor acBonus ${loot.acBonus} != tier ${loot.tier} canonical +${expected.acBonus}`;
@@ -71,6 +80,15 @@ export function validateLootRoll(
     }
     if (loot.damageDie !== undefined || loot.attackBonus !== undefined) {
       return `armor has weapon-slot fields set`;
+    }
+    if (loot.element !== undefined) {
+      return `armor must not carry element (weapon field)`;
+    }
+    if (
+      loot.resistElement !== undefined &&
+      !VALID_ELEMENTS.has(loot.resistElement)
+    ) {
+      return `armor resistElement "${loot.resistElement}" is not a valid Element value`;
     }
   } else {
     return `slot ${loot.slot} not mintable from the engine`;

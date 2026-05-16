@@ -20,12 +20,27 @@
 import type {
   CatalogEffect,
   CatalogEffectName,
+  Element,
   LootRoll,
   Slot,
 } from "./types";
+import { COMBAT_ELEMENTS } from "./types";
 import type { Rng } from "./rng";
 import { rollEffectValue } from "./catalog";
 import { type Difficulty, rollTier, tierStats } from "./tier";
+
+/**
+ * Per-drop element roll. Half of weapon drops carry a non-"none" element
+ * (and likewise armor resists); the other half stay mundane so the bank
+ * doesn't drown in elemental gear. Kept deterministic on the same `rng`
+ * the rest of the loot draws share.
+ */
+const ELEMENT_DROP_CHANCE = 0.5;
+
+function rollElement(rng: Rng): Element {
+  if (!rng.chance(ELEMENT_DROP_CHANCE)) return "none";
+  return rng.pick(COMBAT_ELEMENTS);
+}
 
 export type SchemaSpec = {
   schemaId: number;
@@ -73,6 +88,12 @@ export function rollLoot(args: {
     value: rollEffectValue(rng, name, tier),
   }));
 
+  // Element roll. Drawn AFTER catalog effects so seeds covering pre-element
+  // tests still produce the same tier/stats/effect sequence; only the post-
+  // effect draws shift. Weapons carry a damage element; armor carries a
+  // resist element.
+  const element: Element = rollElement(rng);
+
   // Name seed: 256-bit value drawn from 8 successive uint32s. Combines
   // tier/slot/effect rolls into a single bigint we can ship to the mint
   // call. We don't try to make this collision-proof — duplicates are fine
@@ -90,8 +111,8 @@ export function rollLoot(args: {
     nameSeed,
     extraFields: {},
     ...(slot === "weapon"
-      ? { damageDie: stats.damageDie, attackBonus: stats.attackBonus }
-      : { acBonus: stats.acBonus, hpBonus: stats.hpBonus }),
+      ? { damageDie: stats.damageDie, attackBonus: stats.attackBonus, element }
+      : { acBonus: stats.acBonus, hpBonus: stats.hpBonus, resistElement: element }),
   };
   return loot;
 }

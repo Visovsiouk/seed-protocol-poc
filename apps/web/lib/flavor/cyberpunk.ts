@@ -64,6 +64,7 @@ const monsters = {
       "converges with a buzzing whine for {dmg}",
       "boxes you in; rotor wash cuts your cheek for {dmg}",
     ],
+    weakTo: "shock",
   },
   netrunner: {
     id: "netrunner",
@@ -76,6 +77,8 @@ const monsters = {
       "shorts your subdermals for {dmg}",
       "pushes a fake heartbeat onto your monitor for {dmg}",
     ],
+    element: "shock",
+    weakTo: "shock",
   },
   enforcer: {
     id: "enforcer",
@@ -88,6 +91,7 @@ const monsters = {
       "checks you into the wall for {dmg}",
       "deploys a riot drone that tags you for {dmg}",
     ],
+    weakTo: "shock",
   },
   // Phase-4 additions below — round out the roster to 12.
   ad_mascot: {
@@ -123,6 +127,8 @@ const monsters = {
       "whirls; a mirrored heel finds your jaw for {dmg}",
       "exhales a calmed breath and the floor leaves you for {dmg}",
     ],
+    weakTo: "shock",
+    resistTo: "fire",
   },
   ice_sentinel: {
     id: "ice_sentinel",
@@ -134,6 +140,9 @@ const monsters = {
       "scans you; a numeric lash flays your nerves for {dmg}",
       "throws a packet that detonates between your eyes for {dmg}",
     ],
+    element: "ice",
+    weakTo: "fire",
+    resistTo: "ice",
   },
   corp_assassin: {
     id: "corp_assassin",
@@ -157,6 +166,8 @@ const monsters = {
       "lifts you; servos hum, joints fail somewhere for {dmg}",
       "speaks your name in a voice you knew once for {dmg}",
     ],
+    weakTo: "shock",
+    resistTo: "fire",
   },
 } as const;
 
@@ -171,6 +182,9 @@ const bosses = {
     bakedEffects: ["crit_chance", "armor_pierce"] as ["crit_chance", "armor_pierce"],
     phase2NarrationKey: "black_ice_phase2",
     phase2AttackDie: 10 as const,
+    element: "ice" as const,
+    weakTo: "fire" as const,
+    resistTo: "ice" as const,
   },
   ceo: {
     id: "ceo",
@@ -183,6 +197,7 @@ const bosses = {
     phase2NarrationKey: "ceo_phase2",
     phase2AttackDie: 10 as const,
     phase2SuppressEffect: "dodge_chance" as const,
+    weakTo: "shock" as const,
   },
   ghost: {
     id: "ghost",
@@ -194,6 +209,9 @@ const bosses = {
     bakedEffects: ["multi_hit", "bleed"] as ["multi_hit", "bleed"],
     phase2NarrationKey: "ghost_phase2",
     phase2AttackDie: 10 as const,
+    element: "unholy" as const,
+    weakTo: "holy" as const,
+    resistTo: "unholy" as const,
   },
   // Phase-4 additions — give creator realms more boss variety.
   rogue_god: {
@@ -206,6 +224,8 @@ const bosses = {
     bakedEffects: ["damage_reduction", "thorns"] as ["damage_reduction", "thorns"],
     phase2NarrationKey: "rogue_god_phase2",
     phase2AttackDie: 12 as const,
+    element: "shock" as const,
+    weakTo: "shock" as const,
   },
   matron: {
     id: "matron",
@@ -218,6 +238,7 @@ const bosses = {
     phase2NarrationKey: "matron_phase2",
     phase2AttackDie: 10 as const,
     phase2SuppressEffect: "regen" as const,
+    weakTo: "fire" as const,
   },
 } as const;
 

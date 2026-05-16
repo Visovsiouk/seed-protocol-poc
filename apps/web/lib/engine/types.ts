@@ -14,6 +14,40 @@ export type Slot = "weapon" | "armor" | "accessory";
 
 export type DamageDie = 4 | 6 | 8 | 10 | 12;
 
+/**
+ * Canonical engine element enum. Mirrors `element` (Fantasy
+ * weapon schema) but is preset-neutral on purpose: presets carry parallel
+ * enums on-chain (`weapon_type` for Sci-Fi, `damage_type` for Cyberpunk),
+ * and the adapters map them onto the same canonical set the engine
+ * uses. The engine never branches on preset for element math.
+ *
+ *   none   — no element; standard mundane swing.
+ *   fire   — Fantasy "fire" / Sci-Fi "plasma" / Cyberpunk "incendiary"
+ *   ice    — Fantasy "ice"  / Sci-Fi "cryo"   / Cyberpunk "cryogenic"
+ *   shock  — Fantasy "shock"/ Sci-Fi "ion"    / Cyberpunk "emp"
+ *   holy   — Fantasy "holy" / Sci-Fi "photon" / Cyberpunk "laser"
+ *   unholy — Fantasy "unholy"/Sci-Fi "void"   / Cyberpunk "nano"
+ */
+export type Element = "none" | "fire" | "ice" | "shock" | "holy" | "unholy";
+
+export const ELEMENTS: readonly Element[] = [
+  "none",
+  "fire",
+  "ice",
+  "shock",
+  "holy",
+  "unholy",
+] as const;
+
+/** Combat-affecting elements (excludes "none"). */
+export const COMBAT_ELEMENTS: readonly Exclude<Element, "none">[] = [
+  "fire",
+  "ice",
+  "shock",
+  "holy",
+  "unholy",
+] as const;
+
 export type CatalogEffectName =
   // weapon-slot effects
   | "lifesteal"
@@ -48,6 +82,19 @@ export type AssetCard = {
   attackBonus?: number;
   acBonus?: number;
   hpBonus?: number;
+  /**
+   * Weapon-slot only: the element the weapon deals on a hit. Maps onto a
+   * monster's `weakTo`/`resistTo` for the player→monster damage multiplier
+   *. Absent / "none" → mundane swing, no multiplier.
+   */
+  element?: Element;
+  /**
+   * Armor-slot only: the element the armor halves on incoming hits when
+   * the attacker's element matches. Spec field `school_resist`
+   * (Fantasy) / `energy_resist` (Sci-Fi) / `tech_resist` (Cyberpunk) all
+   * map onto this canonical field via adapters.
+   */
+  resistElement?: Element;
   /** Catalog effects, read by the engine regardless of source realm. */
   catalogEffects: CatalogEffect[];
   /** Non-canonical fields — displayed on the asset card, ignored by combat. */
@@ -65,6 +112,21 @@ export type MonsterDef = {
   ac: number;
   /** 3–4 parameterized strings; engine picks one per attack via the RNG. */
   attackVerbs: readonly string[];
+  /**
+   * Element the monster swings with. Absent ⇒ "none" (mundane). Used by
+   * combat.ts to halve damage taken by elementally-matching armor.
+   */
+  element?: Element;
+  /**
+   * Weapon element the monster takes 1.5× damage from on hit. Omit for
+   * monsters with no elemental weakness.
+   */
+  weakTo?: Element;
+  /**
+   * Weapon element the monster takes 0.5× damage from on hit. Omit for
+   * monsters with no elemental resistance.
+   */
+  resistTo?: Element;
 };
 
 export type BossDef = {
@@ -82,6 +144,12 @@ export type BossDef = {
   phase2AttackDie: DamageDie;
   /** Optional thematic suppression activated at phase 2. */
   phase2SuppressEffect?: CatalogEffectName;
+  /** Element the boss attacks with — symmetric to MonsterDef.element. */
+  element?: Element;
+  /** Weapon element the boss takes 1.5× damage from. */
+  weakTo?: Element;
+  /** Weapon element the boss takes 0.5× damage from. */
+  resistTo?: Element;
 };
 
 export type EncounterArchetype = "combat" | "hazard" | "discovery";
@@ -137,6 +205,10 @@ export type LootRoll = {
   attackBonus?: number;
   acBonus?: number;
   hpBonus?: number;
+  /** Weapon-slot only: rolled element. "none" or omitted means mundane. */
+  element?: Element;
+  /** Armor-slot only: rolled resistance element. */
+  resistElement?: Element;
   catalogEffects: CatalogEffect[];
   /** Seed for adjective+noun assembly so the name is deterministic. */
   nameSeed: bigint;

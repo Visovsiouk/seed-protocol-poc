@@ -129,6 +129,54 @@ describe("rollLoot", () => {
     expect(bossTotal).toBeGreaterThan(stdTotal);
   });
 
+  it("weapon roll carries an element field (possibly 'none')", () => {
+    const l = rollLoot({
+      rng: createRng(SEED),
+      difficulty: "standard",
+      slot: "weapon",
+      schemas: canonical,
+    });
+    expect(l.element).toBeDefined();
+    expect(["none", "fire", "ice", "shock", "holy", "unholy"]).toContain(l.element);
+    expect(l.resistElement).toBeUndefined();
+  });
+
+  it("armor roll carries a resistElement field (possibly 'none')", () => {
+    const l = rollLoot({
+      rng: createRng(SEED),
+      difficulty: "standard",
+      slot: "armor",
+      schemas: canonical,
+    });
+    expect(l.resistElement).toBeDefined();
+    expect(["none", "fire", "ice", "shock", "holy", "unholy"]).toContain(
+      l.resistElement,
+    );
+    expect(l.element).toBeUndefined();
+  });
+
+  it("element distribution: ~half non-'none', remainder spread across the 5 combat elements", () => {
+    const counts: Record<string, number> = {};
+    for (let i = 1; i <= 600; i++) {
+      const l = rollLoot({
+        rng: createRng(seedHex(i)),
+        difficulty: "standard",
+        slot: "weapon",
+        schemas: canonical,
+      });
+      const key = l.element ?? "missing";
+      counts[key] = (counts[key] ?? 0) + 1;
+    }
+    // ~50% none (±15% slack).
+    expect((counts.none ?? 0) / 600).toBeGreaterThan(0.35);
+    expect((counts.none ?? 0) / 600).toBeLessThan(0.65);
+    // At least 3 of the 5 combat elements observed.
+    const combatSeen = ["fire", "ice", "shock", "holy", "unholy"].filter(
+      (e) => (counts[e] ?? 0) > 0,
+    );
+    expect(combatSeen.length).toBeGreaterThanOrEqual(3);
+  });
+
   it("nameSeed is a 256-bit positive bigint", () => {
     const l = rollLoot({
       rng: createRng(SEED),

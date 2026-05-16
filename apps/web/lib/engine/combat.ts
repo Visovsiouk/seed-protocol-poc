@@ -24,12 +24,62 @@ import type {
   AssetCard,
   BossDef,
   CombatState,
+  Element,
   MonsterDef,
   NarrationLine,
 } from "./types";
 import type { Rng } from "./rng";
 
 const D20 = 20;
+
+/**
+ * Player→monster elemental multiplier. The weapon `element` is matched
+ * against the monster's `weakTo` / `resistTo` declarations:
+ *
+ *   weapon.element matches monster.weakTo     → 1.5×
+ *   weapon.element matches monster.resistTo   → 0.5×
+ *   otherwise (incl. "none" on either side)   → 1×
+ *
+ * Returns the multiplier and the matched relationship so callers can pick
+ * the right narration line.
+ */
+export function elementMultiplier(
+  weaponElement: Element | undefined,
+  monster: Pick<MonsterDef, "weakTo" | "resistTo">,
+): { mult: number; tag: "weak" | "resist" | "neutral" } {
+  if (!weaponElement || weaponElement === "none") {
+    return { mult: 1, tag: "neutral" };
+  }
+  if (monster.weakTo && monster.weakTo === weaponElement) {
+    return { mult: 1.5, tag: "weak" };
+  }
+  if (monster.resistTo && monster.resistTo === weaponElement) {
+    return { mult: 0.5, tag: "resist" };
+  }
+  return { mult: 1, tag: "neutral" };
+}
+
+/**
+ * Monster→player elemental multiplier. The armor's `resistElement`
+ * halves damage from a matching incoming element. There is no inverse
+ * "armor weak to X" axis in this slice — the spec frames resistance as a
+ * one-sided ward, not a vulnerability.
+ */
+export function armorElementMultiplier(
+  monsterElement: Element | undefined,
+  armorResist: Element | undefined,
+): { mult: number; resisted: boolean } {
+  if (!monsterElement || monsterElement === "none") {
+    return { mult: 1, resisted: false };
+  }
+  if (!armorResist || armorResist === "none") {
+    return { mult: 1, resisted: false };
+  }
+  if (armorResist === monsterElement) {
+    return { mult: 0.5, resisted: true };
+  }
+  return { mult: 1, resisted: false };
+}
 
 export type CombatTickResult = {
   state: CombatState;
@@ -40,33 +90,98 @@ export type CombatTickResult = {
   playerDefeated: boolean;
 };
 
-/** A player attack swing. Returns damage dealt (already accounting for crit/pierce). */
+export type PlayerSwing = {
+  hit: boolean;
+  damage: number;
+  /** True on a natural-20 attack roll OR a successful `crit_chance` proc. */
+  crit: boolean;
+  /** True on a natural-1 attack roll (auto-miss, regardless of bonuses). */
+  fumble: boolean;
+  pierced: boolean;
+  /** Element relationship that drove the damage multiplier. */
+  elementTag: "weak" | "resist" | "neutral";
+};
+
+/**
+ * A player attack swing.
+ *
+ * To-hit math:
+ *   - nat-1 on the d20 → automatic miss (fumble), regardless of attackBonus.
+ *   - nat-20 on the d20 → automatic hit + crit (2× damage), regardless of AC.
+ *   - otherwise `(roll + weapon.attackBonus) >= monster.ac` to hit.
+ *   - `modifiers.alwaysHit` only overrides the non-natural branch — it
+ *     can't make a fumbled die land. (Reserved for future deterministic
+ *     effects; currently unused.)
+ *
+ * Crit math:
+ *   - nat-20 always crits.
+ *   - Otherwise the `crit_chance` catalog effect rolls; one proc = crit.
+ *   - Crit is a flat 2× damage multiplier on the rolled die. Stacking
+ *     nat-20 with a crit_chance proc still caps at 2× (max, not multiply).
+ *
+ * Element math:
+ *   - Multiplier applied to post-crit damage. See `elementMultiplier`.
+ */
 function rollPlayerAttack(
   state: CombatState,
   equipped: { weapon?: AssetCard; armor?: AssetCard },
   rng: Rng,
   modifiers: { damageMult?: number; alwaysHit?: boolean } = {},
-): { hit: boolean; damage: number; crit: boolean; pierced: boolean } {
+): PlayerSwing {
   const weapon = equipped.weapon;
   const damageDie = weapon?.damageDie ?? 4; // unarmed fallback: d4
   const attackBonus = weapon?.attackBonus ?? 0;
   const pierce = getActiveEffectValue(state, equipped, "armor_pierce") > 0;
   const monsterAc = pierce ? Math.max(10, state.monster.ac - 2) : state.monster.ac;
 
-  const attackRoll = rng.rollDie(D20) + attackBonus;
-  const hit = modifiers.alwaysHit ? true : attackRoll >= monsterAc;
-  if (!hit) return { hit: false, damage: 0, crit: false, pierced: pierce };
+  const dieRoll = rng.rollDie(D20);
+
+  // Fumble: nat-1 is always a miss, regardless of attackBonus or alwaysHit.
+  if (dieRoll === 1) {
+    return {
+      hit: false,
+      damage: 0,
+      crit: false,
+      fumble: true,
+      pierced: pierce,
+      elementTag: "neutral",
+    };
+  }
+
+  // Nat-20 auto-crits, bypassing AC.
+  const isNat20 = dieRoll === 20;
+  const attackRoll = dieRoll + attackBonus;
+  const hit = isNat20 || modifiers.alwaysHit || attackRoll >= monsterAc;
+  if (!hit) {
+    return {
+      hit: false,
+      damage: 0,
+      crit: false,
+      fumble: false,
+      pierced: pierce,
+      elementTag: "neutral",
+    };
+  }
 
   const baseDamage = rng.rollDie(damageDie);
   const critChance = getActiveEffectValue(state, equipped, "crit_chance") / 100;
-  const crit = critChance > 0 && rng.chance(critChance);
+  const critProc = critChance > 0 && rng.chance(critChance);
+  const crit = isNat20 || critProc;
   let damage = crit ? baseDamage * 2 : baseDamage;
+
+  // Element multiplier (applied to post-crit damage).
+  const { mult: elemMult, tag: elementTag } = elementMultiplier(
+    weapon?.element,
+    state.monster,
+  );
+  damage = Math.floor(damage * elemMult);
+
   if (modifiers.damageMult !== undefined) {
     damage = Math.floor(damage * modifiers.damageMult);
   }
   // Damage is at least 1 on a hit (a successful attack always hurts).
   damage = Math.max(1, damage);
-  return { hit: true, damage, crit, pierced: pierce };
+  return { hit: true, damage, crit, fumble: false, pierced: pierce, elementTag };
 }
 
 /** Applies a player→monster damage event with lifesteal and bleed side-effects. */
@@ -100,16 +215,39 @@ function applyPlayerDamage(
   return { state: next, lifesteal, bleedApplied };
 }
 
-/** Monster swing → player. Honors dodge, damage_reduction, thorns, Brace, monster baked-in effects. */
+export type MonsterSwing = {
+  hit: boolean;
+  damageToPlayer: number;
+  thornsToMonster: number;
+  dodged: boolean;
+  reducedBy: number;
+  /** True on nat-20 OR a successful crit_chance proc. */
+  crit: boolean;
+  /** True on nat-1 (auto-miss, regardless of AC). */
+  fumble: boolean;
+  /** True when the armor halved this hit via element resistance. */
+  resisted: boolean;
+};
+
+/** Monster swing → player. Honors dodge, damage_reduction, thorns, Brace, monster baked-in effects, element resist. */
 function rollMonsterAttack(
   state: CombatState,
   equipped: { weapon?: AssetCard; armor?: AssetCard },
   rng: Rng,
-): { hit: boolean; damageToPlayer: number; thornsToMonster: number; dodged: boolean; reducedBy: number } {
-  // Dodge first.
+): MonsterSwing {
+  // Dodge first — fires before the d20 even rolls.
   const dodge = getActiveEffectValue(state, equipped, "dodge_chance") / 100;
   if (dodge > 0 && rng.chance(dodge)) {
-    return { hit: false, damageToPlayer: 0, thornsToMonster: 0, dodged: true, reducedBy: 0 };
+    return {
+      hit: false,
+      damageToPlayer: 0,
+      thornsToMonster: 0,
+      dodged: true,
+      reducedBy: 0,
+      crit: false,
+      fumble: false,
+      resisted: false,
+    };
   }
 
   // The monster's attack die comes from the boss's phase-2 bumped die when
@@ -125,18 +263,50 @@ function rollMonsterAttack(
     (monsterPierce ? Math.max(10, state.playerAc - 2) : state.playerAc) +
     (state.bracedThisTurn ? 2 : 0);
 
-  const attackRoll = rng.rollDie(D20);
-  if (attackRoll < effectivePlayerAc) {
-    return { hit: false, damageToPlayer: 0, thornsToMonster: 0, dodged: false, reducedBy: 0 };
+  const dieRoll = rng.rollDie(D20);
+
+  // Fumble: nat-1 is always a miss for the monster too.
+  if (dieRoll === 1) {
+    return {
+      hit: false,
+      damageToPlayer: 0,
+      thornsToMonster: 0,
+      dodged: false,
+      reducedBy: 0,
+      crit: false,
+      fumble: true,
+      resisted: false,
+    };
+  }
+
+  const isNat20 = dieRoll === 20;
+  if (!isNat20 && dieRoll < effectivePlayerAc) {
+    return {
+      hit: false,
+      damageToPlayer: 0,
+      thornsToMonster: 0,
+      dodged: false,
+      reducedBy: 0,
+      crit: false,
+      fumble: false,
+      resisted: false,
+    };
   }
 
   let damage = rng.rollDie(attackDie);
 
-  // Monster crit_chance.
-  const monsterCrit = getMonsterEffectValue(state, "crit_chance") / 100;
-  if (monsterCrit > 0 && rng.chance(monsterCrit)) {
-    damage *= 2;
-  }
+  // Crit: nat-20 always crits; crit_chance still rolls otherwise.
+  const monsterCritChance = getMonsterEffectValue(state, "crit_chance") / 100;
+  const critProc = monsterCritChance > 0 && rng.chance(monsterCritChance);
+  const crit = isNat20 || critProc;
+  if (crit) damage *= 2;
+
+  // Element resist on the player's armor halves damage from a matching swing.
+  const { mult: elemMult, resisted } = armorElementMultiplier(
+    state.monster.element,
+    equipped.armor?.resistElement,
+  );
+  damage = Math.floor(damage * elemMult);
 
   // Damage reduction.
   const dr = getActiveEffectValue(state, equipped, "damage_reduction");
@@ -152,6 +322,9 @@ function rollMonsterAttack(
     thornsToMonster: thorns,
     dodged: false,
     reducedBy,
+    crit,
+    fumble: false,
+    resisted,
   };
 }
 
@@ -214,7 +387,9 @@ export function resolveRound(
         const swing = rollPlayerAttack(s, equipped, rng, modifiers);
         if (!swing.hit) {
           lines.push({
-            text: "Your strike goes wide.",
+            text: swing.fumble
+              ? "You fumble the swing."
+              : "Your strike goes wide.",
             emphasis: "info",
           });
           continue;
@@ -223,8 +398,14 @@ export function resolveRound(
         s = applied.state;
         const critTag = swing.crit ? " — CRITICAL!" : "";
         const pierceTag = swing.pierced ? " (armor pierced)" : "";
+        const elementTag =
+          swing.elementTag === "weak"
+            ? " (elementally weak)"
+            : swing.elementTag === "resist"
+              ? " (resisted)"
+              : "";
         lines.push({
-          text: `You hit for ${swing.damage}${critTag}${pierceTag}.`,
+          text: `You hit for ${swing.damage}${critTag}${pierceTag}${elementTag}.`,
           emphasis: swing.crit ? "drama" : "damage",
         });
         if (applied.lifesteal > 0) {
@@ -252,13 +433,20 @@ export function resolveRound(
     if (ma.dodged) {
       lines.push({ text: `You dodge the ${s.monster.name}'s attack.`, emphasis: "info" });
     } else if (!ma.hit) {
-      lines.push({ text: `The ${s.monster.name}'s attack glances off.`, emphasis: "info" });
+      lines.push({
+        text: ma.fumble
+          ? `The ${s.monster.name} stumbles and misses.`
+          : `The ${s.monster.name}'s attack glances off.`,
+        emphasis: "info",
+      });
     } else {
       const reducedTag = ma.reducedBy > 0 ? ` (-${ma.reducedBy} reduced)` : "";
+      const critTag = ma.crit ? " — CRITICAL!" : "";
+      const resistTag = ma.resisted ? " (your armor wards it)" : "";
       s = { ...s, playerHp: Math.max(0, s.playerHp - ma.damageToPlayer) };
       lines.push({
-        text: `The ${s.monster.name} hits you for ${ma.damageToPlayer}${reducedTag}.`,
-        emphasis: "damage",
+        text: `The ${s.monster.name} hits you for ${ma.damageToPlayer}${critTag}${resistTag}${reducedTag}.`,
+        emphasis: ma.crit ? "drama" : "damage",
       });
 
       // Thorns reflects regardless of whether the player just died.
