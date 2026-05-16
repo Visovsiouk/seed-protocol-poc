@@ -62,7 +62,7 @@ import { useMintLoot } from "@/lib/contracts/loot";
 import { useMintClearReceipt } from "@/lib/contracts/boss-cleared";
 import { useClaimSeed } from "@/lib/contracts/seed-claim";
 import { useRunSeedCommitment } from "@/lib/contracts/run-seed";
-import { getStarterRealm } from "@/lib/contracts/starter-realms";
+import { getStarterRealm, isStarterRealmDeployed } from "@/lib/contracts/starter-realms";
 
 export default function PlayPage() {
   const params = useParams<{ preset: string }>();
@@ -303,9 +303,19 @@ export default function PlayPage() {
         <Link href="/" className="text-sm opacity-70 hover:opacity-100">
           ← Realms
         </Link>
-        <h1 className="text-2xl font-semibold tracking-tight">
-          {cfg.name}
-        </h1>
+        <div className="flex flex-col items-center gap-1">
+          <h1 className="text-2xl font-semibold tracking-tight">
+            {cfg.name}
+          </h1>
+          {isStarterRealmDeployed(cfg.realm) && (
+            <Link
+              href={`/realm/${cfg.realm}`}
+              className="text-[11px] uppercase tracking-widest opacity-60 hover:opacity-100"
+            >
+              Realm details ↗
+            </Link>
+          )}
+        </div>
         <div className="flex items-center gap-3">
           <button
             type="button"

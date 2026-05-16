@@ -176,9 +176,19 @@ export default function CreatorRealmPlayPage() {
         <Link href="/" className="text-sm opacity-70 hover:opacity-100">
           ← Realms
         </Link>
-        <h1 className="text-2xl font-semibold tracking-tight font-mono">
-          {realmName}
-        </h1>
+        <div className="flex flex-col items-center gap-1">
+          <h1 className="text-2xl font-semibold tracking-tight font-mono">
+            {realmName}
+          </h1>
+          {address && (
+            <Link
+              href={`/realm/${address}`}
+              className="text-[11px] uppercase tracking-widest opacity-60 hover:opacity-100"
+            >
+              Realm details ↗
+            </Link>
+          )}
+        </div>
         <div className="flex items-center gap-3">
           <button
             type="button"
