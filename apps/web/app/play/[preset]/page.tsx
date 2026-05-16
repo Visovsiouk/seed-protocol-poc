@@ -529,6 +529,7 @@ export default function PlayPage() {
         inventory={inventory}
         equipped={equipped}
         onEquip={handleEquip}
+        activeRealm={cfg.realm}
       />
     </main>
   );

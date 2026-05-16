@@ -15,6 +15,11 @@
  */
 
 import type { AssetCard as AssetCardType, Element } from "@/lib/engine/types";
+import {
+  presetForRealm,
+  useTranslatedCard,
+} from "@/lib/contracts/adapters";
+import { getAdapterAddress } from "@/lib/contracts/seeded-adapters";
 
 type Props = {
   card: AssetCardType;
@@ -22,6 +27,13 @@ type Props = {
   onClick?: () => void;
   /** Compact mode strips the description and shortens the card. */
   compact?: boolean;
+  /**
+   * The realm the player is currently playing in. When set and different
+   * from `card.realm`, the card renders a translation strip showing the
+   * stats the adapter will produce on equip. Omit on screens where there
+   * is no "active realm" context (e.g. the Bazaar listing detail).
+   */
+  targetRealm?: `0x${string}`;
 };
 
 const TIER_LABEL: Record<number, string> = {
@@ -65,7 +77,91 @@ function ElementChip({
   );
 }
 
-export function AssetCard({ card, selected, onClick, compact }: Props) {
+function shortAddr(addr: `0x${string}`): string {
+  return `${addr.slice(0, 6)}…${addr.slice(-4)}`;
+}
+
+/**
+ * Strip rendered below the native stats when a card is foreign to the
+ * active realm. Calls `useTranslatedCard` (cached by tokenId+targetRealm)
+ * so flipping back to the same drawer view doesn't re-hit the chain.
+ */
+function TranslationStrip({
+  card,
+  targetRealm,
+}: {
+  card: AssetCardType;
+  targetRealm: `0x${string}`;
+}) {
+  const sourcePreset = presetForRealm(card.realm);
+  const targetPreset = presetForRealm(targetRealm);
+  const { data: translated, isFetching } = useTranslatedCard(card, targetRealm);
+
+  // Only show the strip when there is an actual preset hop to translate.
+  if (!sourcePreset || !targetPreset) return null;
+  if (sourcePreset === targetPreset) return null;
+  if (card.slot !== "weapon" && card.slot !== "armor") return null;
+
+  const adapter = getAdapterAddress(card.slot, sourcePreset, targetPreset);
+  const hasAdapter = adapter !== "0x0000000000000000000000000000000000000000";
+  const isWeapon = card.slot === "weapon";
+  const tr = translated && translated !== card ? translated : null;
+
+  return (
+    <div
+      className="mt-1 rounded-sm p-2 flex flex-col gap-1"
+      style={{
+        background: "rgba(120,200,255,0.06)",
+        border: "1px dashed rgba(120,200,255,0.35)",
+      }}
+    >
+      <div className="flex items-baseline justify-between gap-2">
+        <span
+          className="text-[10px] uppercase tracking-wider"
+          style={{ color: "#a8dcff" }}
+        >
+          Translated for {targetPreset}
+        </span>
+        {hasAdapter && (
+          <span className="text-[10px] opacity-50 font-mono">
+            via {shortAddr(adapter)}
+          </span>
+        )}
+      </div>
+      {!hasAdapter ? (
+        <span className="text-[10px] opacity-60">
+          No adapter deployed — equipping uses native stats.
+        </span>
+      ) : !tr ? (
+        <span className="text-[10px] opacity-60">
+          {isFetching ? "Translating…" : "Awaiting adapter read."}
+        </span>
+      ) : (
+        <div className="text-xs tabular-nums opacity-90">
+          {isWeapon ? (
+            <>
+              d{tr.damageDie}
+              {tr.damageBonus ? `+${tr.damageBonus}` : ""} damage · +
+              {tr.attackBonus ?? 0} attack
+            </>
+          ) : (
+            <>
+              +{tr.acBonus ?? 0} AC · +{tr.hpBonus ?? 0} HP
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function AssetCard({
+  card,
+  selected,
+  onClick,
+  compact,
+  targetRealm,
+}: Props) {
   const isWeapon = card.slot === "weapon";
   return (
     <button
@@ -144,6 +240,9 @@ export function AssetCard({ card, selected, onClick, compact }: Props) {
         <span className="text-[10px] opacity-50 uppercase tracking-wider">
           Genesis liquidity
         </span>
+      )}
+      {targetRealm && targetRealm.toLowerCase() !== card.realm.toLowerCase() && (
+        <TranslationStrip card={card} targetRealm={targetRealm} />
       )}
     </button>
   );

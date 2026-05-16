@@ -27,6 +27,12 @@ type Props = {
   inventory: readonly AssetCardType[];
   equipped: Equipped;
   onEquip: (slot: Exclude<Slot, "accessory">, card: AssetCardType) => void;
+  /**
+   * The realm currently being played. Forwarded to each `<AssetCard/>` so
+   * foreign-realm cards can render their translation strip. Optional —
+   * screens without a single "active realm" can omit it.
+   */
+  activeRealm?: `0x${string}`;
 };
 
 function Section({
@@ -34,11 +40,13 @@ function Section({
   cards,
   equippedTokenId,
   onEquip,
+  activeRealm,
 }: {
   label: string;
   cards: readonly AssetCardType[];
   equippedTokenId?: bigint;
   onEquip: (card: AssetCardType) => void;
+  activeRealm?: `0x${string}`;
 }) {
   if (cards.length === 0) {
     return (
@@ -58,6 +66,7 @@ function Section({
             card={c}
             selected={c.tokenId === equippedTokenId}
             onClick={() => onEquip(c)}
+            targetRealm={activeRealm}
           />
         ))}
       </div>
@@ -71,6 +80,7 @@ export function InventoryDrawer({
   inventory,
   equipped,
   onEquip,
+  activeRealm,
 }: Props) {
   const [tab, setTab] = useState<"weapon" | "armor">("weapon");
   const weapons = inventory.filter((c) => c.slot === "weapon");
@@ -126,6 +136,7 @@ export function InventoryDrawer({
             cards={weapons}
             equippedTokenId={equipped.weapon?.tokenId}
             onEquip={(c) => onEquip("weapon", c)}
+            activeRealm={activeRealm}
           />
         ) : (
           <Section
@@ -133,6 +144,7 @@ export function InventoryDrawer({
             cards={armors}
             equippedTokenId={equipped.armor?.tokenId}
             onEquip={(c) => onEquip("armor", c)}
+            activeRealm={activeRealm}
           />
         )}
       </aside>
