@@ -23,12 +23,16 @@
  *   Registration is permissionless (IAdapterRegistry.sol:39) — any
  *   funded account can call it; we use the admin keyring slot.
  *
- * Idempotency: re-running checks `.seeded-adapters.json` and skips
- * deployments whose entry already has a non-zero address. The
+ * Idempotency: re-running checks `.seeded-adapters.json` AND probes the
+ * cached address for bytecode (`eth_getCode`). A non-zero entry whose
+ * address has no code (e.g. after an Anvil restart that wiped state but
+ * left the JSON behind) is treated as missing and redeployed. The
  * AdapterRegistry is append-only — re-registering would emit a duplicate
- * `AdapterRegistered` event and bloat `getAdapters()` returns. The skip
- * check is per-(slot, source, target), not per-contract — moving the
- * mnemonic or rebuilding the contracts requires deleting the JSON entry.
+ * `AdapterRegistered` event and bloat `getAdapters()` returns, so we
+ * also re-register only when redeploying. The skip check is per-(slot,
+ * source, target), not per-contract — moving the mnemonic or rebuilding
+ * the contracts with different bytecode still requires deleting the
+ * JSON entry.
  *
  * Run with:
  *   pnpm --filter web seed:adapters
@@ -375,8 +379,14 @@ async function main() {
         const label = `${slot} ${src}→${tgt}`;
         const prior = existing.adapters[slot][src][tgt];
         if (prior && prior !== ZERO) {
-          console.log(`  skip ${label} — already at ${prior}`);
-          continue;
+          // Probe bytecode — handles the "Anvil restarted but JSON
+          // survived" case where the cached address is now empty.
+          const priorCode = await publicClient.getCode({ address: prior });
+          if (priorCode && priorCode !== "0x") {
+            console.log(`  skip ${label} — already at ${prior}`);
+            continue;
+          }
+          console.log(`  stale ${label} at ${prior} (no code) — redeploying`);
         }
         const sourceSchemaId = lootSchemas[src];
         const targetSchemaId = lootSchemas[tgt];
