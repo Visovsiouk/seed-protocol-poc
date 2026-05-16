@@ -225,6 +225,39 @@ export default function PlayPage() {
       ? [...(onchain.data ?? []), ...localInventory]
       : localInventory;
 
+  // Reconcile stale equipped gear against the current inventory. After
+  // Anvil restart (or a wallet swap), the localStorage snapshot can
+  // reference tokenIds that no longer exist on this chain. Drop any such
+  // card back to starter gear so the HUD/combat stop fighting with ghost
+  // stats. Starter gear is `tokenId === 0n` and never gets reconciled
+  // away.
+  //
+  // Gated on `onchain.isSuccess` when connected so we don't wipe during
+  // the initial inventory fetch. When disconnected, `localInventory` is
+  // the only source of truth and is reset on every mount — any persisted
+  // equipped card is by definition stale until re-equipped.
+  useEffect(() => {
+    if (runStartEquipped === null) return;
+    if (walletConnected && !onchain.isSuccess) return;
+    const ownedIds = new Set(inventory.map((c) => c.tokenId));
+    const isStale = (card?: AssetCardType) =>
+      !!card && card.tokenId !== 0n && !ownedIds.has(card.tokenId);
+    if (!isStale(equipped.weapon) && !isStale(equipped.armor)) return;
+    const reconciled = {
+      weapon: isStale(equipped.weapon) ? starterGear.weapon : equipped.weapon,
+      armor: isStale(equipped.armor) ? starterGear.armor : equipped.armor,
+    };
+    setEquipped(reconciled);
+    setRunStartEquipped(reconciled);
+  }, [
+    walletConnected,
+    onchain.isSuccess,
+    inventory,
+    runStartEquipped,
+    equipped,
+    starterGear,
+  ]);
+
   const handleLootMinted = async (loot: LootRoll, ctx: { depth: number }) => {
     let newCard: AssetCardType;
     if (chainMintAvailable && initial) {
