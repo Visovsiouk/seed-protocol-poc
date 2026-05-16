@@ -31,7 +31,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { notFound, useParams } from "next/navigation";
-import { useAccount } from "wagmi";
+import { useAccount, usePublicClient } from "wagmi";
 import type {
   AssetCard as AssetCardType,
   EngineEvent,
@@ -64,6 +64,7 @@ import { useMintClearReceipt } from "@/lib/contracts/boss-cleared";
 import { useClaimSeed } from "@/lib/contracts/seed-claim";
 import { useRunSeedCommitment } from "@/lib/contracts/run-seed";
 import { getStarterRealm, isStarterRealmDeployed } from "@/lib/contracts/starter-realms";
+import { translateCardForRealm } from "@/lib/contracts/adapters";
 import { loadEquipped, saveEquipped } from "@/lib/persistence/equipped";
 
 export default function PlayPage() {
@@ -76,6 +77,7 @@ export default function PlayPage() {
   // from the on-chain registry via `useStarterRealm` below.
   const cfg = getStarterRealm(preset);
   const { address } = useAccount();
+  const publicClient = usePublicClient();
   const { mintLoot, walletConnected } = useMintLoot();
   const { mintClearReceipt } = useMintClearReceipt();
   const onchain = useInventoryCards(address);
@@ -256,11 +258,51 @@ export default function PlayPage() {
     }
   };
 
+  // Per-(tokenId, targetRealm) translation cache. The drawer fires
+  // `onEquip` synchronously; rather than await inside the click handler
+  // (which would block the React tree on a chain read), we kick off the
+  // translation and pop the translated card into `equipped` when it
+  // resolves. The cache keys off the foreign tokenId so re-equipping the
+  // same card costs nothing past the first hop.
+  const [translationCache] = useState<Map<string, AssetCardType>>(() => new Map());
+
   const handleEquip = (
     slot: "weapon" | "armor",
     card: AssetCardType,
   ) => {
+    // Native cards equip immediately. Foreign cards (different source
+    // preset) need the on-chain adapter translation; we equip with the
+    // native stats first so the drawer's selection state reconciles
+    // instantly, then swap in the translated card when it lands.
     setEquipped((prev) => ({ ...prev, [slot]: card }));
+    if (!publicClient) return;
+    const key = `${card.tokenId.toString()}::${cfg.realm.toLowerCase()}`;
+    const cached = translationCache.get(key);
+    if (cached) {
+      setEquipped((prev) => ({ ...prev, [slot]: cached }));
+      return;
+    }
+    void translateCardForRealm({
+      card,
+      targetRealm: cfg.realm,
+      publicClient,
+    })
+      .then((translated) => {
+        // No-op if translation returned the same card (native, missing
+        // adapter, or revert — see `translateCardForRealm` fallbacks).
+        if (translated === card) return;
+        translationCache.set(key, translated);
+        // Only apply if this slot still holds the card the user picked —
+        // they may have clicked something else in the meantime.
+        setEquipped((prev) =>
+          prev[slot]?.tokenId === card.tokenId ? { ...prev, [slot]: translated } : prev,
+        );
+      })
+      .catch(() => {
+        // translateCardForRealm already swallows view-call reverts; this
+        // catches only programming errors. Silent — the card stays
+        // equipped with native stats.
+      });
   };
 
   // Set the moment the engine emits BossCleared for this run, drives
