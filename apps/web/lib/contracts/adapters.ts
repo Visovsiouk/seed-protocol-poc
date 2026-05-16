@@ -271,6 +271,21 @@ export type TranslateArgs = {
 };
 
 /**
+ * Thrown when the adapter `view` call reverts or the address has no
+ * bytecode. The most common cause in dev is `.seeded-adapters.json`
+ * pointing at addresses on a stale Anvil instance — re-run
+ * `pnpm --filter web seed:adapters` after restarting the chain.
+ */
+export class AdapterCallFailed extends Error {
+  readonly adapter: `0x${string}`;
+  constructor(adapter: `0x${string}`, cause: unknown) {
+    super(`adapter ${adapter} call failed: ${String(cause)}`);
+    this.name = "AdapterCallFailed";
+    this.adapter = adapter;
+  }
+}
+
+/**
  * Returns a new `AssetCard` whose metadata URI carries the target
  * preset's translated stats, or the input card unchanged when no
  * translation is needed / possible:
@@ -321,10 +336,13 @@ export async function translateCardForRealm({
         extensionData,
       ],
     })) as typeof translated;
-  } catch {
-    // Adapter unavailable / reverted / RPC dropped — fall back to native
-    // stats. The drawer will still display the card's source-realm name.
-    return card;
+  } catch (err) {
+    // Adapter unavailable / reverted / RPC dropped. Surface as a thrown
+    // error so the React Query layer can flip `isError` and the UI strip
+    // can distinguish "translating…" from "tried and failed". Callers
+    // outside the hook (e.g. `handleEquip`) catch and fall back to the
+    // native card themselves.
+    throw new AdapterCallFailed(adapter, err);
   }
 
   const [translatedAttrs, translatedExt] = translated;
@@ -371,7 +389,7 @@ export async function translateCardForRealm({
 export function useTranslatedCard(
   card: AssetCard | undefined,
   targetRealm: `0x${string}`,
-): { data: AssetCard | undefined; isFetching: boolean } {
+): { data: AssetCard | undefined; isFetching: boolean; isError: boolean } {
   const publicClient = usePublicClient();
 
   const sourcePreset = card ? presetForRealm(card.realm) : null;
@@ -396,14 +414,21 @@ export function useTranslatedCard(
     ],
     enabled: needsTranslation && !!publicClient,
     staleTime: Infinity,
+    retry: false,
     queryFn: async () => {
       if (!card || !publicClient) return card;
       return translateCardForRealm({ card, targetRealm, publicClient });
     },
   });
 
-  if (!needsTranslation) return { data: card, isFetching: false };
-  return { data: query.data ?? card, isFetching: query.isFetching };
+  if (!needsTranslation) {
+    return { data: card, isFetching: false, isError: false };
+  }
+  return {
+    data: query.data ?? card,
+    isFetching: query.isFetching,
+    isError: query.isError,
+  };
 }
 
 // Re-export for tests that exercise the codec without a chain.

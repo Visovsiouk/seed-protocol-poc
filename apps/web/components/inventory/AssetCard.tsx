@@ -95,7 +95,11 @@ function TranslationStrip({
 }) {
   const sourcePreset = presetForRealm(card.realm);
   const targetPreset = presetForRealm(targetRealm);
-  const { data: translated, isFetching } = useTranslatedCard(card, targetRealm);
+  const {
+    data: translated,
+    isFetching,
+    isError,
+  } = useTranslatedCard(card, targetRealm);
 
   // Only show the strip when there is an actual preset hop to translate.
   if (!sourcePreset || !targetPreset) return null;
@@ -131,6 +135,11 @@ function TranslationStrip({
       {!hasAdapter ? (
         <span className="text-[10px] opacity-60">
           No adapter deployed — equipping uses native stats.
+        </span>
+      ) : isError ? (
+        <span className="text-[10px]" style={{ color: "#ffb38a" }}>
+          Adapter call failed — re-run <code>pnpm seed:adapters</code> if you
+          restarted Anvil. Equipping uses native stats.
         </span>
       ) : !tr ? (
         <span className="text-[10px] opacity-60">
