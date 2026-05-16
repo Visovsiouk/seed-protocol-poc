@@ -512,6 +512,92 @@ describe("resolveRound — elements", () => {
   });
 });
 
+describe("resolveRound — roll tags in narration", () => {
+  it("player hit lines show d20 roll + bonus and the damage die roll", () => {
+    const equipped = { weapon: card("weapon", 8, 4, 0, 0) };
+    let saw = false;
+    for (let i = 0; i < 30 && !saw; i++) {
+      const seedHex = i.toString(16).padStart(64, "0");
+      const r = resolveRound(
+        makeState(),
+        strike,
+        equipped,
+        createRng(`0x${seedHex}` as `0x${string}`),
+      );
+      const hitLine = r.lines.find((l) => /You hit/.test(l.text));
+      if (hitLine) {
+        // Must include "[d20 N+4 vs AC 12 · d8: M]" or the auto-hit nat-20 variant
+        expect(hitLine.text).toMatch(/\[d20 .* · d8: \d+\]/);
+        saw = true;
+      }
+    }
+    expect(saw).toBe(true);
+  });
+
+  it("player miss lines show d20 roll + bonus vs AC without a damage tag", () => {
+    const equipped = { weapon: card("weapon", 4, 0, 0, 0) };
+    const hardMonster: MonsterDef = { ...baseMonster, ac: 19, hp: 999 };
+    let saw = false;
+    for (let i = 0; i < 80 && !saw; i++) {
+      const seedHex = i.toString(16).padStart(64, "0");
+      const r = resolveRound(
+        makeState({ monster: hardMonster, monsterHp: 999 }),
+        strike,
+        equipped,
+        createRng(`0x${seedHex}` as `0x${string}`),
+      );
+      const missLine = r.lines.find((l) => /strike goes wide/.test(l.text));
+      if (missLine) {
+        expect(missLine.text).toMatch(/\[d20 \d+ vs AC 19\]/);
+        expect(missLine.text).not.toMatch(/d4:/);
+        saw = true;
+      }
+    }
+    expect(saw).toBe(true);
+  });
+
+  it("player fumble line shows '[d20 1 — fumble]'", () => {
+    const equipped = { weapon: card("weapon", 6, 0, 0, 0) };
+    let saw = false;
+    for (let i = 0; i < 200 && !saw; i++) {
+      const seedHex = i.toString(16).padStart(64, "0");
+      const r = resolveRound(
+        makeState(),
+        strike,
+        equipped,
+        createRng(`0x${seedHex}` as `0x${string}`),
+      );
+      const fumble = r.lines.find((l) => /You fumble/.test(l.text));
+      if (fumble) {
+        expect(fumble.text).toMatch(/\[d20 1 — fumble\]/);
+        saw = true;
+      }
+    }
+    expect(saw).toBe(true);
+  });
+
+  it("monster hit lines show d20 roll vs AC and the attack die roll", () => {
+    const equipped = { weapon: card("weapon", 4, 0, 0, 0) };
+    let saw = false;
+    for (let i = 0; i < 30 && !saw; i++) {
+      const seedHex = i.toString(16).padStart(64, "0");
+      const r = resolveRound(
+        makeState({ playerAc: 8 }),
+        brace,
+        equipped,
+        createRng(`0x${seedHex}` as `0x${string}`),
+      );
+      const hitLine = r.lines.find((l) => /Goblin hits you/.test(l.text));
+      if (hitLine) {
+        // Brace adds +2 AC → target 10
+        expect(hitLine.text).toMatch(/\[d20 .* vs AC 10 · d6: \d+\]/);
+        saw = true;
+      }
+    }
+    expect(saw).toBe(true);
+  });
+});
+
 describe("resolveRound — nat-20 and nat-1", () => {
   it("nat-20 crits even when attackBonus would not normally clear AC", () => {
     // Weapon with +0 bonus vs AC 20 monster — only a nat-20 ever hits.

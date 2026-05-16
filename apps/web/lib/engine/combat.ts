@@ -100,6 +100,16 @@ export type PlayerSwing = {
   pierced: boolean;
   /** Element relationship that drove the damage multiplier. */
   elementTag: "weak" | "resist" | "neutral";
+  /** Raw d20 attack roll (1–20). */
+  dieRoll: number;
+  /** Weapon attackBonus applied to the d20. */
+  attackBonus: number;
+  /** Monster AC the attack was compared against (post-pierce). */
+  targetAc: number;
+  /** Damage die used (4/6/8/10/12 or 4 for unarmed). */
+  damageDie: number;
+  /** Raw damage die roll before crit/element/flank multipliers. 0 on a miss. */
+  damageRoll: number;
 };
 
 /**
@@ -145,6 +155,11 @@ function rollPlayerAttack(
       fumble: true,
       pierced: pierce,
       elementTag: "neutral",
+      dieRoll,
+      attackBonus,
+      targetAc: monsterAc,
+      damageDie,
+      damageRoll: 0,
     };
   }
 
@@ -160,6 +175,11 @@ function rollPlayerAttack(
       fumble: false,
       pierced: pierce,
       elementTag: "neutral",
+      dieRoll,
+      attackBonus,
+      targetAc: monsterAc,
+      damageDie,
+      damageRoll: 0,
     };
   }
 
@@ -181,7 +201,19 @@ function rollPlayerAttack(
   }
   // Damage is at least 1 on a hit (a successful attack always hurts).
   damage = Math.max(1, damage);
-  return { hit: true, damage, crit, fumble: false, pierced: pierce, elementTag };
+  return {
+    hit: true,
+    damage,
+    crit,
+    fumble: false,
+    pierced: pierce,
+    elementTag,
+    dieRoll,
+    attackBonus,
+    targetAc: monsterAc,
+    damageDie,
+    damageRoll: baseDamage,
+  };
 }
 
 /** Applies a player→monster damage event with lifesteal and bleed side-effects. */
@@ -227,6 +259,14 @@ export type MonsterSwing = {
   fumble: boolean;
   /** True when the armor halved this hit via element resistance. */
   resisted: boolean;
+  /** Raw d20 attack roll (1–20). Undefined when the swing was dodged. */
+  dieRoll?: number;
+  /** Effective player AC at the time of the swing (post-pierce, +brace). */
+  targetAc?: number;
+  /** Monster attack die size (4/6/8/10/12). */
+  attackDie?: number;
+  /** Raw damage die roll before crit/element multipliers. 0 on a miss. */
+  damageRoll?: number;
 };
 
 /** Monster swing → player. Honors dodge, damage_reduction, thorns, Brace, monster baked-in effects, element resist. */
@@ -276,6 +316,10 @@ function rollMonsterAttack(
       crit: false,
       fumble: true,
       resisted: false,
+      dieRoll,
+      targetAc: effectivePlayerAc,
+      attackDie,
+      damageRoll: 0,
     };
   }
 
@@ -290,10 +334,15 @@ function rollMonsterAttack(
       crit: false,
       fumble: false,
       resisted: false,
+      dieRoll,
+      targetAc: effectivePlayerAc,
+      attackDie,
+      damageRoll: 0,
     };
   }
 
-  let damage = rng.rollDie(attackDie);
+  const damageRoll = rng.rollDie(attackDie);
+  let damage = damageRoll;
 
   // Crit: nat-20 always crits; crit_chance still rolls otherwise.
   const monsterCritChance = getMonsterEffectValue(state, "crit_chance") / 100;
@@ -325,11 +374,51 @@ function rollMonsterAttack(
     crit,
     fumble: false,
     resisted,
+    dieRoll,
+    targetAc: effectivePlayerAc,
+    attackDie,
+    damageRoll,
   };
 }
 
 function isBoss(m: MonsterDef | BossDef): m is BossDef {
   return "bakedEffects" in m;
+}
+
+/**
+ * Formats a player swing's roll math as a trailing tag, e.g.
+ *   " [d20 14+2 vs AC 12 · d8: 5]"           (hit)
+ *   " [d20 8+2 vs AC 12]"                    (miss)
+ *   " [d20 1 — fumble]"                      (nat-1)
+ *   " [d20 20 — auto-hit · d8: 5]"           (nat-20)
+ *
+ * Kept verbose-but-readable so players can see exactly what was rolled
+ * and against what target. The base damage roll is reported before
+ * crit/element/flank multipliers — the final damage on the result line
+ * shows the post-multiplier number.
+ */
+function playerRollTag(swing: PlayerSwing): string {
+  if (swing.fumble) return ` [d20 1 — fumble]`;
+  const sign = swing.attackBonus >= 0 ? "+" : "";
+  const bonusStr =
+    swing.attackBonus === 0 ? "" : `${sign}${swing.attackBonus}`;
+  const d20Part =
+    swing.dieRoll === 20
+      ? `d20 20 — auto-hit`
+      : `d20 ${swing.dieRoll}${bonusStr} vs AC ${swing.targetAc}`;
+  if (!swing.hit) return ` [${d20Part}]`;
+  return ` [${d20Part} · d${swing.damageDie}: ${swing.damageRoll}]`;
+}
+
+function monsterRollTag(swing: MonsterSwing): string {
+  if (swing.dieRoll === undefined) return ""; // dodged — no swing was rolled
+  if (swing.fumble) return ` [d20 1 — fumble]`;
+  const d20Part =
+    swing.dieRoll === 20
+      ? `d20 20 — auto-hit`
+      : `d20 ${swing.dieRoll} vs AC ${swing.targetAc}`;
+  if (!swing.hit) return ` [${d20Part}]`;
+  return ` [${d20Part} · d${swing.attackDie}: ${swing.damageRoll}]`;
 }
 
 /**
@@ -387,9 +476,10 @@ export function resolveRound(
         const swing = rollPlayerAttack(s, equipped, rng, modifiers);
         if (!swing.hit) {
           lines.push({
-            text: swing.fumble
-              ? "You fumble the swing."
-              : "Your strike goes wide.",
+            text:
+              (swing.fumble
+                ? "You fumble the swing."
+                : "Your strike goes wide.") + playerRollTag(swing),
             emphasis: "info",
           });
           continue;
@@ -405,7 +495,7 @@ export function resolveRound(
               ? " (resisted)"
               : "";
         lines.push({
-          text: `You hit for ${swing.damage}${critTag}${pierceTag}${elementTag}.`,
+          text: `You hit for ${swing.damage}${critTag}${pierceTag}${elementTag}.${playerRollTag(swing)}`,
           emphasis: swing.crit ? "drama" : "damage",
         });
         if (applied.lifesteal > 0) {
@@ -434,9 +524,10 @@ export function resolveRound(
       lines.push({ text: `You dodge the ${s.monster.name}'s attack.`, emphasis: "info" });
     } else if (!ma.hit) {
       lines.push({
-        text: ma.fumble
-          ? `The ${s.monster.name} stumbles and misses.`
-          : `The ${s.monster.name}'s attack glances off.`,
+        text:
+          (ma.fumble
+            ? `The ${s.monster.name} stumbles and misses.`
+            : `The ${s.monster.name}'s attack glances off.`) + monsterRollTag(ma),
         emphasis: "info",
       });
     } else {
@@ -445,7 +536,7 @@ export function resolveRound(
       const resistTag = ma.resisted ? " (your armor wards it)" : "";
       s = { ...s, playerHp: Math.max(0, s.playerHp - ma.damageToPlayer) };
       lines.push({
-        text: `The ${s.monster.name} hits you for ${ma.damageToPlayer}${critTag}${resistTag}${reducedTag}.`,
+        text: `The ${s.monster.name} hits you for ${ma.damageToPlayer}${critTag}${resistTag}${reducedTag}.${monsterRollTag(ma)}`,
         emphasis: ma.crit ? "drama" : "damage",
       });
 
