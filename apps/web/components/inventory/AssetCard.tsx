@@ -19,8 +19,8 @@ import type {
   Element,
   Preset,
 } from "@/lib/engine/types";
-import { ELEMENT_LABELS } from "@/lib/engine/types";
 import {
+  elementLabel,
   presetForRealm,
   useTranslatedCard,
 } from "@/lib/contracts/adapters";
@@ -70,13 +70,14 @@ function ElementChip({
   /**
    * The preset whose vocabulary should label the element. Maps the
    * canonical enum onto the preset's local name (e.g. holy → "laser"
-   * in cyberpunk). Colour stays element-keyed so the player still
-   * reads the same hue across realms.
+   * in cyberpunk). `null` falls back to the canonical name. Colour
+   * stays element-keyed so the player still reads the same hue across
+   * realms.
    */
-  preset: Preset;
+  preset: Preset | null;
 }) {
   const c = ELEMENT_COLOR[element];
-  const label = ELEMENT_LABELS[preset][element];
+  const label = elementLabel(element, preset);
   return (
     <span
       className="text-[10px] px-1.5 py-0.5 rounded uppercase tracking-wider font-semibold"
@@ -219,13 +220,12 @@ export function AssetCard({
   // canonical enum is shared across presets — only the label flavor
   // changes — so we prefer the active realm's vocabulary when we know
   // it (the player is "in" that realm and shouldn't see "holy" in a
-  // cyberpunk drawer). Fall back to the card's source preset, and
-  // finally to "fantasy" if neither resolves (e.g. starter gear from
-  // an unseeded realm).
-  const labelPreset: Preset =
+  // cyberpunk drawer). Fall back to the card's source preset; if
+  // neither resolves (e.g. starter gear from an unseeded realm) the
+  // chip falls back to the canonical name via `elementLabel`.
+  const labelPreset: Preset | null =
     (targetRealm && presetForRealm(targetRealm)) ||
-    presetForRealm(card.realm) ||
-    "fantasy";
+    presetForRealm(card.realm);
   return (
     <button
       type="button"

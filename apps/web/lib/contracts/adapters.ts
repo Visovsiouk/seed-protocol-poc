@@ -85,6 +85,60 @@ const ONCHAIN_TO_ELEMENT: readonly Element[] = [
   "unholy",
 ] as const;
 
+/**
+ * Per-preset display labels for the canonical element enum (
+ * element alias rename). The numeric on-chain value is shared
+ * across presets, so this is the *off-chain* half of the adapter
+ * contract: when a player crosses realms, the same element renders
+ * under the destination preset's vocabulary (a holy axe reads as
+ * "laser" inside a cyberpunk realm, "photon" inside a sci-fi one).
+ *
+ * Lives here rather than in `lib/engine/types.ts` because the engine
+ * never branches on labels — it operates on the canonical enum. Label
+ * resolution is a translation/UI concern, which is exactly what the
+ * adapter module is for.
+ */
+export const ELEMENT_LABELS: Record<
+  Preset,
+  Record<Exclude<Element, "none">, string>
+> = {
+  fantasy: {
+    fire: "fire",
+    ice: "ice",
+    shock: "shock",
+    holy: "holy",
+    unholy: "unholy",
+  },
+  scifi: {
+    fire: "plasma",
+    ice: "cryo",
+    shock: "ion",
+    holy: "photon",
+    unholy: "void",
+  },
+  cyberpunk: {
+    fire: "incendiary",
+    ice: "cryogenic",
+    shock: "emp",
+    holy: "laser",
+    unholy: "nano",
+  },
+};
+
+/**
+ * Resolves the preset-local label for an element, given the realm
+ * vocabulary to render under. Returns the canonical name as a fallback
+ * so callers that can't resolve a preset (foreign realm, starter gear)
+ * still display something readable.
+ */
+export function elementLabel(
+  element: Exclude<Element, "none">,
+  preset: Preset | null,
+): string {
+  if (!preset) return element;
+  return ELEMENT_LABELS[preset][element];
+}
+
 // DamageDie enum: 0=D4, 1=D6, 2=D8, 3=D10, 4=D12 (PresetTypes.sol).
 const DIE_TO_ONCHAIN: Record<number, number> = { 4: 0, 6: 1, 8: 2, 10: 3, 12: 4 };
 const ONCHAIN_TO_DIE: readonly number[] = [4, 6, 8, 10, 12];
