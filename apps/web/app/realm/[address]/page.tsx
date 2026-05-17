@@ -24,6 +24,7 @@ import { useMemo } from "react";
 import { useParams } from "next/navigation";
 import { useAccount } from "wagmi";
 import { ConnectButton } from "@/components/wallet/ConnectButton";
+import { RealmActivityFeed } from "@/components/realm/RealmActivityFeed";
 import { useRealms } from "@/lib/reads/hooks";
 import { listStarterRealms } from "@/lib/contracts/starter-realms";
 import { resolveRealmDetail, type RealmDetail } from "@/lib/contracts/realm-detail";
@@ -270,6 +271,13 @@ export default function RealmDashboardPage() {
               </footer>
             )}
           </article>
+        )}
+
+        {detail && detail.kind !== "unknown" && (
+          <RealmActivityFeed
+            realm={detail.address}
+            preset={detail.kind === "starter" ? detail.preset : null}
+          />
         )}
       </section>
     </main>

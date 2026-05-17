@@ -12,6 +12,10 @@ import {
 } from "./realms";
 import { fetchBossClears, fetchHasSeed } from "./boss-clears";
 import {
+  fetchRealmActivity,
+  type RealmActivityEntry,
+} from "./realm-activity";
+import {
   deriveTutorialProgress,
   type TutorialProgress,
   type BossClearEvent,
@@ -148,6 +152,31 @@ export function useTutorialProgress(player: `0x${string}` | undefined) {
       ]);
       return deriveTutorialProgress({ hasSeed, events });
     },
+    ...defaultReadQueryOptions,
+  });
+}
+
+/**
+ * Per-realm activity feed: most-recent `AssetMinted` events on the
+ * realm clone, with each row tagged `loot | clear-receipt | unknown`
+ * via the seeded per-preset schema IDs. Used by the `/realm/[address]`
+ * dashboard's activity panel.
+ */
+export function useRealmActivity(args: {
+  realm: `0x${string}` | null;
+  preset: Preset | null;
+  limit?: number;
+}) {
+  const { realm, preset, limit } = args;
+  return useQuery<RealmActivityEntry[]>({
+    queryKey: queryKeys.activity(
+      realm ?? ("0x0000000000000000000000000000000000000000" as const),
+    ),
+    enabled: !!realm,
+    queryFn: () =>
+      realm
+        ? fetchRealmActivity({ realm, preset, limit })
+        : Promise.resolve([]),
     ...defaultReadQueryOptions,
   });
 }
