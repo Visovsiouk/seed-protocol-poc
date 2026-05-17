@@ -27,6 +27,7 @@ import { ConnectButton } from "@/components/wallet/ConnectButton";
 import { RealmActivityFeed } from "@/components/realm/RealmActivityFeed";
 import { MetricsRow } from "@/components/realm/MetricsRow";
 import { BossLeaderboard } from "@/components/realm/BossLeaderboard";
+import { RealmAssetsGrid } from "@/components/realm/RealmAssetsGrid";
 import { useRealms } from "@/lib/reads/hooks";
 import { listStarterRealms } from "@/lib/contracts/starter-realms";
 import { resolveRealmDetail, type RealmDetail } from "@/lib/contracts/realm-detail";
@@ -293,6 +294,10 @@ export default function RealmDashboardPage() {
                 preset={detail.kind === "starter" ? detail.preset : null}
               />
             </div>
+            <RealmAssetsGrid
+              realm={detail.address}
+              preset={detail.kind === "starter" ? detail.preset : null}
+            />
           </>
         )}
       </section>

@@ -16,6 +16,7 @@ import {
   type RealmActivityEntry,
 } from "./realm-activity";
 import { fetchRealmStats, type RealmStats } from "./realm-stats";
+import { fetchRealmAssets } from "./realm-assets";
 import {
   deriveTutorialProgress,
   type TutorialProgress,
@@ -210,6 +211,30 @@ export function useRealmStats(args: {
             },
             leaderboard: [],
           }),
+    ...defaultReadQueryOptions,
+  });
+}
+
+/**
+ * Hydrated catalog of cards a realm has ever minted (newest first,
+ * deduped by tokenId, clearReceipts dropped). Powers the
+ * `<RealmAssetsGrid/>` panel on `/realm/[address]`.
+ */
+export function useRealmAssets(args: {
+  realm: `0x${string}` | null;
+  preset: Preset | null;
+  limit?: number;
+}) {
+  const { realm, preset, limit } = args;
+  return useQuery<AssetCard[]>({
+    queryKey: queryKeys.realmAssets(
+      realm ?? ("0x0000000000000000000000000000000000000000" as const),
+    ),
+    enabled: !!realm,
+    queryFn: () =>
+      realm
+        ? fetchRealmAssets({ realm, preset, cardLimit: limit })
+        : Promise.resolve([]),
     ...defaultReadQueryOptions,
   });
 }
