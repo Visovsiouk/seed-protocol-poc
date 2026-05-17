@@ -105,6 +105,14 @@ type Props = {
    * `null`/omitted falls back to canonical names.
    */
   activePreset?: Preset | null;
+  /**
+   * Restart the run from depth 1 with a fresh seed. Triggered by the
+   * defeat panel after roguelike permadeath. The parent owns seed
+   * regeneration (a fresh seed produces a fresh encounter chain — a
+   * same-seed restart would deterministically replay the death) so it
+   * also owns the callback. Omit to disable the restart CTA.
+   */
+  onRestart?: () => void;
 };
 
 /**
@@ -130,6 +138,7 @@ export function EncounterFrame({
   clearReceipt,
   interstitial,
   activePreset = null,
+  onRestart,
 }: Props) {
   const initialSplit = useMemo(() => splitIntro(initialLines), [initialLines]);
 
@@ -262,6 +271,7 @@ export function EncounterFrame({
   }, [bossId, busy, state]);
 
   const runOver = state.bossCleared && !state.encounter && !state.pendingLoot;
+  const runDefeated = state.defeated;
 
   return (
     <div className="flex flex-col gap-4">
@@ -282,7 +292,54 @@ export function EncounterFrame({
 
       <CombatLog lines={feed} />
 
-      {state.encounter ? (
+      {runDefeated ? (
+        <section
+          aria-label="Run ended in defeat"
+          className="flex flex-col gap-3"
+        >
+          <div
+            className="flex flex-col gap-3 p-5 rounded-md"
+            style={{
+              background: "rgba(255,80,80,0.06)",
+              border: "1px solid rgba(255,80,80,0.30)",
+            }}
+          >
+            <header className="flex items-baseline justify-between gap-2">
+              <h2 className="text-base font-semibold" style={{ color: "#f99" }}>
+                The realm keeps you
+              </h2>
+              {state.defeatedAtDepth !== undefined && (
+                <span className="text-[11px] uppercase tracking-widest opacity-70">
+                  Fell at depth {state.defeatedAtDepth}
+                  {state.defeatedTurn !== undefined
+                    ? ` · turn ${state.defeatedTurn}`
+                    : ""}
+                </span>
+              )}
+            </header>
+            <p className="text-sm opacity-90 leading-relaxed">
+              The run is over. No clear receipt is minted, and the realm chain
+              stays unchanged — but the gear in your pack is yours. Step back
+              in when you&apos;re ready.
+            </p>
+            {onRestart && (
+              <div className="flex">
+                <button
+                  type="button"
+                  onClick={onRestart}
+                  className="rounded-md px-4 py-2 text-sm font-medium transition"
+                  style={{
+                    background: "var(--color-preset-accent)",
+                    color: "var(--color-preset-bg)",
+                  }}
+                >
+                  Step back in →
+                </button>
+              </div>
+            )}
+          </div>
+        </section>
+      ) : state.encounter ? (
         <ActionChoices
           encounter={state.encounter}
           combatVerbs={bank.combatVerbs}

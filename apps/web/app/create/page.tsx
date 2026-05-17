@@ -28,6 +28,7 @@ import { useState } from "react";
 import { useAccount } from "wagmi";
 import { ConnectButton } from "@/components/wallet/ConnectButton";
 import { useCreateEcosystem } from "@/lib/contracts/factory";
+import { useTutorialProgress } from "@/lib/reads/hooks";
 
 type Status =
   | { kind: "idle" }
@@ -44,6 +45,15 @@ export default function CreatePage() {
   const { address } = useAccount();
   const { createEcosystem } = useCreateEcosystem();
   const [status, setStatus] = useState<Status>({ kind: "idle" });
+
+  // Realm authorship is gated on the Seed SBT: the on-chain receipt that
+  // says the player has cleared all three starter realms and earned the
+  // right to mint their own. `useTutorialProgress` already reads the SBT
+  // balance via `fetchHasSeed`, so we lean on that here.
+  const tutorialQuery = useTutorialProgress(address);
+  const hasSeed = tutorialQuery.data?.hasSeed === true;
+  const seedKnown = !!address && tutorialQuery.isSuccess;
+  const seedGate = !!address && seedKnown && !hasSeed;
 
   const busy = status.kind === "signing" || status.kind === "confirming";
 
@@ -109,11 +119,45 @@ export default function CreatePage() {
           </aside>
         )}
 
+        {seedGate && (
+          <aside
+            aria-label="Seed required"
+            className="rounded-md p-4 text-sm leading-relaxed"
+            style={{
+              background: "rgba(255,196,0,0.10)",
+              border: "1px solid rgba(255,196,0,0.35)",
+            }}
+          >
+            <p>
+              <strong>Seed required.</strong> Realm authorship is reserved
+              for holders of the Genesis Seed SBT — the on-chain receipt
+              that says you&apos;ve walked all three starter realms.
+            </p>
+            <p className="mt-2 opacity-80">
+              Clear Fantasy, Sci-Fi, and Cyberpunk first, then claim the
+              Seed from the tutorial overlay. The factory call will keep
+              reverting until the SBT lands in this wallet.
+            </p>
+            <div className="mt-3 flex gap-3">
+              <Link
+                href="/"
+                className="rounded-md px-3 py-1.5 text-sm"
+                style={{
+                  background: "rgba(255,255,255,0.06)",
+                  border: "1px solid rgba(255,255,255,0.15)",
+                }}
+              >
+                Back to realms →
+              </Link>
+            </div>
+          </aside>
+        )}
+
         <div className="flex flex-col gap-3">
           <button
             type="button"
             onClick={onDeploy}
-            disabled={!address || busy || status.kind === "done"}
+            disabled={!address || seedGate || busy || status.kind === "done"}
             className="self-start rounded-md px-4 py-2 text-sm font-medium transition disabled:opacity-50"
             style={{
               background: "var(--color-preset-bg, rgba(255,255,255,0.08))",

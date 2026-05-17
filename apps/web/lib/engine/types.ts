@@ -232,6 +232,16 @@ export type RunState = {
   bossCleared: boolean;
   bossClearedTimestamp?: number;
   bossClearedTurns?: number;
+  /**
+   * Roguelike permadeath terminator. When true, the run is over —
+   * `step` and `advance` reject further input and the UI surfaces a
+   * defeat panel with a restart CTA. Gear in `equipped` is retained
+   * (a death surrenders progress, not inventory). No clearReceipt is
+   * minted, so the realm-progression chain stays put.
+   */
+  defeated: boolean;
+  defeatedAtDepth?: number;
+  defeatedTurn?: number;
 };
 
 export type ActionChoice =
@@ -247,7 +257,8 @@ export type NarrationLine = {
 export type EngineEvent =
   | { type: "RoomCleared"; depth: number }
   | { type: "BossCleared"; finalHp: number; turns: number }
-  | { type: "LootDropped"; loot: LootRoll };
+  | { type: "LootDropped"; loot: LootRoll }
+  | { type: "PlayerDefeated"; depth: number; turn: number };
 
 export type StepResult = {
   state: RunState;

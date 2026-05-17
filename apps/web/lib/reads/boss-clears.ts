@@ -113,6 +113,24 @@ export async function fetchBossClears(
         }),
       );
 
+      // Resolve real wall-clock timestamps from the block headers so the
+      // UI can render "cleared Nm/h/d ago" without faking the math.
+      // Deduped per blockNumber because a single block can carry several
+      // mints (Anvil with auto-mining batches an entire test's txs into
+      // one block). Bounded by the number of distinct clear blocks for
+      // this player — small, well below any RPC concern.
+      const uniqueBlocks = new Map<bigint, Promise<bigint>>();
+      const blockTs = async (bn: bigint): Promise<bigint> => {
+        let p = uniqueBlocks.get(bn);
+        if (!p) {
+          p = client
+            .getBlock({ blockNumber: bn })
+            .then((b) => b.timestamp);
+          uniqueBlocks.set(bn, p);
+        }
+        return p;
+      };
+
       const out: BossClearEvent[] = [];
       for (const h of hydrated) {
         if (!h) continue;
@@ -121,10 +139,7 @@ export async function fetchBossClears(
           preset,
           finalHp: readNumericAttr(h.attrs, "final_hp"),
           turns: readNumericAttr(h.attrs, "turns"),
-          // blockNumber doubles as the ordering "ts" — deriver only
-          // sorts, doesn't compare to a wall clock. Real timestamps
-          // would require a getBlock per log, not worth it at PoC scale.
-          ts: Number(h.blockNumber),
+          ts: Number(await blockTs(h.blockNumber)),
           blockNumber: h.blockNumber,
           logIndex: h.logIndex,
         });

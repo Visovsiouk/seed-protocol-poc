@@ -83,6 +83,12 @@ export default function CreatorRealmPlayPage() {
     setMounted(true);
   }, [csprngSeed]);
 
+  // Roguelike restart counter — keyed on `<EncounterFrame/>` so the
+  // engine state hard-resets after permadeath. Trial mode is already
+  // CSPRNG-seeded (no on-chain commitment), so we just regen the seed
+  // directly when bumping the epoch.
+  const [runEpoch, setRunEpoch] = useState(0);
+
   // Per-preset palette is keyed off `data-preset` on the body. Trial mode
   // pins it to the trial preset so the page feels consistent with the
   // fantasy starter realm.
@@ -116,7 +122,12 @@ export default function CreatorRealmPlayPage() {
       schemas: CANONICAL_SCHEMAS[TRIAL_PRESET],
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [address, csprngSeed]);
+  }, [address, csprngSeed, runEpoch]);
+
+  const handleRestart = () => {
+    setCsprngSeed(fallbackSeed());
+    setRunEpoch((e) => e + 1);
+  };
 
   const seedReady = mounted && !!initial && !!address;
 
@@ -262,12 +273,14 @@ export default function CreatorRealmPlayPage() {
 
         {seedReady && initialState && initial ? (
           <EncounterFrame
+            key={runEpoch}
             initialState={initialState}
             initialLines={initial.lines}
             bossId={TRIAL_BOSS_ID}
             equipped={equipped}
             activePreset={TRIAL_PRESET}
             onLootMinted={handleLootMinted}
+            onRestart={handleRestart}
           />
         ) : (
           <aside

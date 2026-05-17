@@ -23,6 +23,7 @@ import type {
   Element,
   LootRoll,
   Slot,
+  Tier,
 } from "./types";
 import { COMBAT_ELEMENTS } from "./types";
 import type { Rng } from "./rng";
@@ -53,6 +54,14 @@ export type RealmSchemas = {
   armor: SchemaSpec;
   /** Accessory slot is type-reserved but not minted in the PoC. */
   accessory?: SchemaSpec;
+  /**
+   * Optional realm-level ceiling on tier rolls. When set, `rollLoot`
+   * truncates the distribution at this tier and renormalizes the
+   * surviving weights so harder-realm tiers (T3+) can't drop. Starter
+   * realms cap at T2 to keep the seed liquidity floor; player-authored
+   * realms scale this cap with `EcosystemRegistry.size`.
+   */
+  maxTier?: Tier;
 };
 
 /**
@@ -79,7 +88,7 @@ export function rollLoot(args: {
   schemas: RealmSchemas;
 }): LootRoll {
   const { rng, difficulty, slot, schemas } = args;
-  const tier = rollTier(rng, difficulty);
+  const tier = rollTier(rng, difficulty, schemas.maxTier);
   const stats = tierStats(tier, slot);
   const schema = schemas[slot];
 

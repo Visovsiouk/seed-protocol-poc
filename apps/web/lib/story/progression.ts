@@ -2,10 +2,11 @@
  * Realm-by-realm story progression.
  *
  * The PoC frames Fantasy as Genesis — the player's first run is locked
- * to The Hollow Reach. Clearing it splits the Seed into two more
- * fragments, unlocking Sci-Fi and Cyberpunk as parallel next steps.
- * Clearing any second realm reveals the last one, and clearing all
- * three makes the player eligible for the Seed SBT.
+ * to The Hollow Reach. From there the player walks the realms in a
+ * strict linear chain: each starter realm only opens once the previous
+ * one's clearReceipt is in the player's wallet on-chain (the
+ * `TutorialProgress.cleared` list is derived from those receipts —
+ * see `lib/reads/boss-clears.ts`).
  *
  * Pure: takes a `TutorialProgress` snapshot and returns per-preset
  * lock state plus narrative copy. No hooks, no chain reads.
@@ -14,12 +15,17 @@
 import type { Preset } from "@/lib/engine/types";
 import type { TutorialProgress } from "@/lib/tutorial/progress";
 
+/**
+ * Canonical play order. Each realm requires every prior realm cleared
+ * before it unlocks. Genesis (index 0) is always playable.
+ */
+export const REALM_ORDER: readonly Preset[] = ["fantasy", "scifi", "cyberpunk"];
+
 export type RealmLockState =
-  | "genesis-locked"    // Fantasy before any clear — entry point, never locked
+  | "genesis-locked"    // First realm in REALM_ORDER — entry point, always playable
   | "cleared"           // Player has cleared this realm already
-  | "unlocked"          // Available, not yet cleared
-  | "locked-pre-genesis" // Sci-Fi / Cyberpunk before Fantasy clear
-  | "locked-pre-second"; // Final realm hidden until second clear
+  | "unlocked"          // Available, not yet cleared (previous in chain is cleared)
+  | "locked-pre-prev";  // Previous realm in the chain isn't cleared yet
 
 export function lockStateFor(
   preset: Preset,
@@ -28,14 +34,12 @@ export function lockStateFor(
   const cleared = progress.cleared.some((c) => c.preset === preset);
   if (cleared) return "cleared";
 
-  const fantasyCleared = progress.cleared.some((c) => c.preset === "fantasy");
+  const idx = REALM_ORDER.indexOf(preset);
+  if (idx <= 0) return "genesis-locked";
 
-  if (preset === "fantasy") return "genesis-locked";
-  if (!fantasyCleared) return "locked-pre-genesis";
-  // Fantasy is cleared. Sci-Fi and Cyberpunk both unlock together —
-  // we don't gate the third behind the second so the player keeps
-  // a choice of next direction.
-  return "unlocked";
+  const prev = REALM_ORDER[idx - 1]!;
+  const prevCleared = progress.cleared.some((c) => c.preset === prev);
+  return prevCleared ? "unlocked" : "locked-pre-prev";
 }
 
 export function isPlayable(state: RealmLockState): boolean {
@@ -51,7 +55,7 @@ export function lockTeaseFor(preset: Preset): string {
     return "A signal you cannot hear yet. The Reach must fall first.";
   }
   if (preset === "cyberpunk") {
-    return "Wet neon behind a door that won't open. Not until something else breaks.";
+    return "Wet neon behind a door that won't open. Not until the Drift goes dark.";
   }
   return "";
 }

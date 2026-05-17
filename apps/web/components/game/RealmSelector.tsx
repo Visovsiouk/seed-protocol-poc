@@ -97,7 +97,7 @@ function StarterCard({
   const cleared = lockState === "cleared";
 
   const status: { label: string; tone: "ok" | "warn" | "muted" } =
-    lockState === "locked-pre-genesis" || lockState === "locked-pre-second"
+    lockState === "locked-pre-prev"
       ? { label: "Sealed", tone: "muted" }
       : cleared
         ? { label: "Cleared", tone: "ok" }

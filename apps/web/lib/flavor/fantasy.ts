@@ -132,7 +132,7 @@ const monsters = {
   troll: {
     id: "troll",
     name: "Troll",
-    hp: 36,
+    hp: 26,
     attackDie: 8,
     ac: 14,
     attackVerbs: [
@@ -157,8 +157,8 @@ const monsters = {
   shadow_drake: {
     id: "shadow_drake",
     name: "Shadow Drake",
-    hp: 30,
-    attackDie: 10,
+    hp: 22,
+    attackDie: 8,
     ac: 15,
     attackVerbs: [
       "lashes its tail for {dmg}",
@@ -176,12 +176,12 @@ const bosses = {
     id: "forest_hag",
     preset: "fantasy" as const,
     name: "The Forest Hag",
-    baseHp: 60,
-    attackDie: 8 as const,
+    baseHp: 42,
+    attackDie: 6 as const,
     ac: 14,
     bakedEffects: ["dodge_chance", "regen"] as ["dodge_chance", "regen"],
     phase2NarrationKey: "forest_hag_phase2",
-    phase2AttackDie: 10 as const,
+    phase2AttackDie: 8 as const,
     phase2SuppressEffect: "regen" as const,
     element: "unholy" as const,
     weakTo: "fire" as const,

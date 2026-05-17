@@ -87,8 +87,8 @@ const monsters = {
   exo_hunter: {
     id: "exo_hunter",
     name: "Exo Hunter",
-    hp: 32,
-    attackDie: 10,
+    hp: 24,
+    attackDie: 8,
     ac: 15,
     attackVerbs: [
       "fires a railgun shot for {dmg}",
@@ -163,8 +163,8 @@ const monsters = {
   void_lich: {
     id: "void_lich",
     name: "Void Lich",
-    hp: 34,
-    attackDie: 10,
+    hp: 26,
+    attackDie: 8,
     ac: 15,
     attackVerbs: [
       "opens a hairline rift; vacuum bites your shoulder for {dmg}",
@@ -182,12 +182,12 @@ const bosses = {
     id: "ai_core",
     preset: "scifi" as const,
     name: "The AI Core",
-    baseHp: 70,
-    attackDie: 8 as const,
+    baseHp: 34,
+    attackDie: 6 as const,
     ac: 14,
     bakedEffects: ["multi_hit", "crit_chance"] as ["multi_hit", "crit_chance"],
     phase2NarrationKey: "ai_core_phase2",
-    phase2AttackDie: 10 as const,
+    phase2AttackDie: 8 as const,
     element: "shock" as const,
     weakTo: "shock" as const,
   },

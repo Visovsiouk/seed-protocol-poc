@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { advance, BOSS_DEPTH, commitLootMint, startRun, step } from "./index";
-import type { ActionChoice, RunState } from "./types";
+import type { ActionChoice, AssetCard, RunState } from "./types";
 import type { RealmSchemas } from "./loot";
 
 const REALM = "0x0000000000000000000000000000000000000001" as `0x${string}`;
@@ -10,6 +10,29 @@ const seedHex = (i: number) =>
 const schemas: RealmSchemas = {
   weapon: { schemaId: 1, catalogEffects: [] },
   armor: { schemaId: 2, catalogEffects: [] },
+};
+
+/**
+ * Tank-loadout for the boss-depth walk tests. The engine now permadeaths
+ * the run the moment a monster swing brings the player to ≤ 0 HP; the
+ * boss-depth tests aren't testing the survival math, they're testing that
+ * room generation lands on a boss at BOSS_DEPTH. Give the test player
+ * enough HP/AC that any RNG path through five standard rooms survives.
+ */
+const TANK_ARMOR: AssetCard = {
+  tokenId: 1n,
+  schemaId: 2,
+  realm: REALM,
+  realmName: "test",
+  slot: "armor",
+  tier: 5,
+  name: "Test Plate",
+  acBonus: 5,
+  hpBonus: 200,
+  catalogEffects: [],
+  extraFields: {},
+  metadataURI: "data:test",
+  preseed: false,
 };
 
 function makeRun(overrides: Partial<Parameters<typeof startRun>[0]> = {}) {
@@ -122,7 +145,7 @@ describe("engine.commitLootMint", () => {
 describe("engine boss-depth handling", () => {
   it("at BOSS_DEPTH, encounter is combat with a boss", () => {
     // Walk depth from 1 → BOSS_DEPTH.
-    let s: RunState = makeRun().state;
+    let s: RunState = makeRun({ equipped: { armor: TANK_ARMOR } }).state;
     for (let d = 1; d < BOSS_DEPTH; d++) {
       s = clearRoom(s);
       if (s.pendingLoot) s = commitLootMint(s);
@@ -136,7 +159,7 @@ describe("engine boss-depth handling", () => {
   it("boss clear emits BossCleared and sets bossCleared", () => {
     // Set up a state at BOSS_DEPTH with weak boss settings by carrying a strong loadout.
     // We'll just simulate by directly mounting at BOSS_DEPTH and stepping with flank.
-    let s: RunState = makeRun().state;
+    let s: RunState = makeRun({ equipped: { armor: TANK_ARMOR } }).state;
     for (let d = 1; d < BOSS_DEPTH; d++) {
       s = clearRoom(s);
       if (s.pendingLoot) s = commitLootMint(s);

@@ -83,7 +83,7 @@ const monsters = {
   enforcer: {
     id: "enforcer",
     name: "Sector Enforcer",
-    hp: 30,
+    hp: 22,
     attackDie: 10,
     ac: 15,
     attackVerbs: [
@@ -158,8 +158,8 @@ const monsters = {
   rogue_synth: {
     id: "rogue_synth",
     name: "Rogue Synth",
-    hp: 34,
-    attackDie: 10,
+    hp: 24,
+    attackDie: 8,
     ac: 15,
     attackVerbs: [
       "swings a load-bearing arm like a wrecking ball for {dmg}",
@@ -176,12 +176,12 @@ const bosses = {
     id: "black_ice",
     preset: "cyberpunk" as const,
     name: "Black ICE",
-    baseHp: 70,
-    attackDie: 8 as const,
+    baseHp: 30,
+    attackDie: 6 as const,
     ac: 14,
     bakedEffects: ["crit_chance", "armor_pierce"] as ["crit_chance", "armor_pierce"],
     phase2NarrationKey: "black_ice_phase2",
-    phase2AttackDie: 10 as const,
+    phase2AttackDie: 8 as const,
     element: "ice" as const,
     weakTo: "fire" as const,
     resistTo: "ice" as const,

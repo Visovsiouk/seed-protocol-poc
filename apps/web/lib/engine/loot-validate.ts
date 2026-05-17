@@ -41,16 +41,28 @@ function difficultyForDepth(depth: number, isBoss: boolean): Difficulty {
  * Returns `null` if the LootRoll is internally consistent and could
  * have been produced by `rollLoot` at the given `(depth, isBoss)`;
  * otherwise a short reason string.
+ *
+ * `maxTier` (optional) enforces a realm-level tier ceiling — starter
+ * realms cap at T2, player realms scale with registry size. This is the
+ * load-bearing server check that backs the engine-side `RealmSchemas.maxTier`
+ * cap: contracts don't enforce tiers (mintAsset is `onlyOwner`), so the
+ * only place a forged T3+ roll can be rejected before `mintAsset` is here.
  */
 export function validateLootRoll(
   loot: LootRoll,
   depth: number,
   isBoss: boolean,
+  maxTier?: Tier,
 ): string | null {
   // 1. Tier matches the difficulty distribution.
   const difficulty = difficultyForDepth(depth, isBoss);
   if (!TIERS_BY_DIFFICULTY[difficulty].has(loot.tier)) {
     return `tier ${loot.tier} cannot drop at depth ${depth} (difficulty=${difficulty})`;
+  }
+
+  // 1a. Realm-level tier ceiling.
+  if (maxTier !== undefined && loot.tier > maxTier) {
+    return `tier ${loot.tier} exceeds realm maxTier ${maxTier}`;
   }
 
   // 2. Tier/slot stat fields are exactly what the canonical table says.

@@ -15,7 +15,21 @@ import {
 } from "@/lib/contracts/loot-derive";
 import { validateLootRoll } from "@/lib/engine/loot-validate";
 import { BOSS_DEPTH } from "@/lib/engine";
-import type { LootRoll, Tier } from "@/lib/engine/types";
+import type { LootRoll, Preset, Tier } from "@/lib/engine/types";
+
+/**
+ * Per-preset (starter-realm) tier ceiling. Every realm the public
+ * `/api/realm/mint-loot` route can hit today is a starter — player-
+ * authored realms get their own scaled-cap mint route in.
+ * Mirrored against the engine's `RealmSchemas.maxTier` so honest
+ * clients never roll above the cap, and tampered clients are rejected
+ * here before `mintAsset` is signed.
+ */
+const STARTER_REALM_MAX_TIER: Record<Preset, Tier> = {
+  fantasy: 2,
+  scifi: 2,
+  cyberpunk: 2,
+};
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -182,7 +196,12 @@ export async function POST(req: Request) {
   // Catalog-bounds check (see hardening docblock above). Rejects forged
   // rolls before any chain interaction. `isBoss` is true at BOSS_DEPTH+,
   // matching the engine's `difficultyFor` logic.
-  const validationErr = validateLootRoll(loot, body.depth, body.depth >= BOSS_DEPTH);
+  const validationErr = validateLootRoll(
+    loot,
+    body.depth,
+    body.depth >= BOSS_DEPTH,
+    STARTER_REALM_MAX_TIER[body.preset],
+  );
   if (validationErr) {
     return reply(422, {
       ok: false,

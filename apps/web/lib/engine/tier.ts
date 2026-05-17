@@ -80,16 +80,41 @@ const TIER_DISTRIBUTION: Record<Difficulty, ReadonlyArray<readonly [Tier, number
   ],
 };
 
-/** Rolls a tier per the difficulty distribution. */
-export function rollTier(rng: Rng, difficulty: Difficulty): Tier {
-  const dist = TIER_DISTRIBUTION[difficulty];
-  const roll = rng.nextInt(100);
+/**
+ * Rolls a tier per the difficulty distribution.
+ *
+ * `maxTier` (optional) truncates the distribution and renormalizes the
+ * remaining weights so they still sum to 100. The probability mass that
+ * would have landed on capped tiers is redistributed *proportionally*
+ * across the surviving tiers — i.e. a starter-realm `maxTier: 2` `boss`
+ * roll gives all 18% T4 + 2% T5 weight to T2/T3 in their original 30:50
+ * ratio. This avoids piling every truncated drop onto the highest
+ * surviving tier (which would make capped realms drop *more* T3s than
+ * uncapped ones at boss depth).
+ *
+ * If every tier in the distribution is above `maxTier` (impossible with
+ * the current tables but defensive), we fall back to `maxTier` itself.
+ */
+export function rollTier(
+  rng: Rng,
+  difficulty: Difficulty,
+  maxTier?: Tier,
+): Tier {
+  const base = TIER_DISTRIBUTION[difficulty];
+  const dist =
+    maxTier === undefined ? base : base.filter(([t]) => t <= maxTier);
+  if (dist.length === 0) {
+    // No surviving tiers — clamp to the cap.
+    return maxTier ?? base[base.length - 1]![0];
+  }
+  const total = dist.reduce((sum, [, w]) => sum + w, 0);
+  const roll = rng.nextInt(total);
   let cumulative = 0;
   for (const [tier, weight] of dist) {
     cumulative += weight;
     if (roll < cumulative) return tier;
   }
-  // Unreachable iff the table sums to 100. Fall back to the last entry.
+  // Unreachable iff weights sum to `total`. Fall back to the last entry.
   return dist[dist.length - 1]![0];
 }
 

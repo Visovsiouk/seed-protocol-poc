@@ -74,11 +74,12 @@ function lootRoundtripToCard(args: {
 
 // Starter weapon/armor handed to the player at run start. These are
 // in-memory cards (tokenId 0n) — not real on-chain assets — so the first
-// encounter is winnable out of the box. Stats are modest so loot drops
-// still feel like an upgrade: d6 + 1 attack vs. bare-handed, and +5 HP /
-// +1 AC vs. base 25 HP / AC 10. The cards are produced by the same
-// metadata roundtrip every other card uses (see `lootRoundtripToCard`),
-// so the engine never has to special-case starter gear.
+// encounter is winnable out of the box. Stats are pinned to the
+// Tier 1 floor (d4 / +0 / +0 for weapons, +1 AC / +5 HP for armor) so
+// every real drop — even another T1 — is a strictly equal-or-better roll
+// once flavor effects land. The cards are produced by the same metadata
+// roundtrip every other card uses (see `lootRoundtripToCard`), so the
+// engine never has to special-case starter gear.
 export function makeStarterGear(
   preset: Preset,
   realm: `0x${string}`,
@@ -89,8 +90,9 @@ export function makeStarterGear(
     tier: 1,
     slot: "weapon",
     schemaId: 0,
-    damageDie: 6,
-    attackBonus: 1,
+    damageDie: 4,
+    attackBonus: 0,
+    damageBonus: 0,
     catalogEffects: [],
     nameSeed: 0n,
     extraFields: {},

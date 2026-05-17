@@ -28,7 +28,7 @@
  * realm's palette glued to the chrome.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { notFound, useParams } from "next/navigation";
 import { useAccount, usePublicClient } from "wagmi";
@@ -66,6 +66,11 @@ import { useRunSeedCommitment } from "@/lib/contracts/run-seed";
 import { getStarterRealm, isStarterRealmDeployed } from "@/lib/contracts/starter-realms";
 import { translateCardForRealm } from "@/lib/contracts/adapters";
 import { loadEquipped, saveEquipped } from "@/lib/persistence/equipped";
+import {
+  REALM_ORDER,
+  lockStateFor,
+  lockTeaseFor,
+} from "@/lib/story/progression";
 
 export default function PlayPage() {
   const params = useParams<{ preset: string }>();
@@ -105,13 +110,24 @@ export default function PlayPage() {
     setMounted(true);
   }, [csprngSeed]);
 
+  // Roguelike restart bookkeeping. `runEpoch` is bumped each time the
+  // player dies and clicks "Step back in" — it doubles as the React key
+  // on `<EncounterFrame/>` so the engine state (depth, encounter, defeated
+  // flag) hard-resets without us having to thread a separate "reset"
+  // signal into the frame. `restartSeed` overrides the commitment seed
+  // for retry runs: re-pinning to a fresh blockhash would require a new
+  // signature, which is bad UX for a death-retry loop. Trade-off
+  // documented in the run-pinned-to-block footer (hidden on restart runs).
+  const [runEpoch, setRunEpoch] = useState(0);
+  const [restartSeed, setRestartSeed] = useState<`0x${string}` | null>(null);
+
   // The seed actually fed to `startRun` below. When connected, prefer
   // the on-chain commitment so the run is verifiable; while it's still
-  // resolving, fall back to CSPRNG so play isn't blocked. May be null
-  // during SSR / first paint — the EncounterFrame is gated on `seedReady`
-  // so `startRun` is only invoked once we have a real seed.
+  // resolving, fall back to CSPRNG so play isn't blocked. After a
+  // permadeath restart, `restartSeed` takes top priority so the retry
+  // doesn't deterministically replay the death encounter.
   const rngSeed: `0x${string}` | null =
-    commitment.data?.seed ?? csprngSeed ?? null;
+    restartSeed ?? commitment.data?.seed ?? csprngSeed ?? null;
 
   // Effect-only body palette toggle — keeps SSR pristine.
   useEffect(() => {
@@ -167,10 +183,15 @@ export default function PlayPage() {
         armor: runStartEquipped.armor,
       },
       bossId: cfg.bossId,
-      schemas: CANONICAL_SCHEMAS[preset],
+      // Starter realms cap rolls at T2 to preserve the seed-liquidity floor:
+      // the bank should fill up with T1/T2 gear from tutorials, and T3+ is
+      // reserved for player-authored realms. The server mirrors
+      // this ceiling in `/api/realm/mint-loot`, so a tampered client roll
+      // would be rejected at mint time anyway.
+      schemas: { ...CANONICAL_SCHEMAS[preset], maxTier: 2 },
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [preset, rngSeed, runStartEquipped]);
+  }, [preset, rngSeed, runStartEquipped, runEpoch]);
 
   // Connected players wait briefly while we pin the run to a blockhash;
   // disconnected players go straight to the CSPRNG path. `mounted` keeps
@@ -233,12 +254,16 @@ export default function PlayPage() {
   // away.
   //
   // Gated on `onchain.isSuccess` when connected so we don't wipe during
-  // the initial inventory fetch. When disconnected, `localInventory` is
-  // the only source of truth and is reset on every mount — any persisted
-  // equipped card is by definition stale until re-equipped.
+  // the initial inventory fetch. Also gated on `!onchain.isFetching` so
+  // the post-`mintLoot` invalidation window can't reconcile against the
+  // *previous* snapshot — that would clobber the freshly-equipped, just-
+  // minted card before the refetch surfaces it. When disconnected,
+  // `localInventory` is the only source of truth and is reset on every
+  // mount — any persisted equipped card is by definition stale until
+  // re-equipped.
   useEffect(() => {
     if (runStartEquipped === null) return;
-    if (walletConnected && !onchain.isSuccess) return;
+    if (walletConnected && (!onchain.isSuccess || onchain.isFetching)) return;
     const ownedIds = new Set(inventory.map((c) => c.tokenId));
     const isStale = (card?: AssetCardType) =>
       !!card && card.tokenId !== 0n && !ownedIds.has(card.tokenId);
@@ -252,6 +277,7 @@ export default function PlayPage() {
   }, [
     walletConnected,
     onchain.isSuccess,
+    onchain.isFetching,
     inventory,
     runStartEquipped,
     equipped,
@@ -354,6 +380,19 @@ export default function PlayPage() {
     | { status: "skipped"; reason: string }
     | undefined
   >(undefined);
+
+  // Roguelike restart. Bumps `runEpoch` (which keys EncounterFrame so its
+  // local engine state hard-resets), draws a fresh CSPRNG seed so the
+  // retry doesn't deterministically replay the death encounter, and
+  // clears clear-receipt/boss-cleared state from the prior run. Gear in
+  // `equipped` is retained per the engine's death contract — death
+  // surrenders progress, not inventory.
+  const handleRestart = useCallback(() => {
+    setRestartSeed(fallbackSeed());
+    setBossClearedThisRun(false);
+    setClearReceipt(undefined);
+    setRunEpoch((e) => e + 1);
+  }, []);
 
   // Mint the on-chain clearReceipt the moment the engine emits
   // BossCleared. Disconnected / realm-not-ready runs surface a
@@ -491,6 +530,58 @@ export default function PlayPage() {
     );
   }
 
+  // Realm-chain gate. The starter realms unlock linearly: each preset is
+  // sealed until the previous realm's on-chain clearReceipt is in the
+  // player's wallet (`useTutorialProgress` -> `fetchBossClears` scans
+  // AssetMinted with the clearReceipt schemaId). Wait for the tutorial
+  // query to land before gating so the gate doesn't flash sealed while
+  // `emptyTutorialProgress()` is the placeholder.
+  const lockState = lockStateFor(preset, tutorial);
+  if (mounted && tutorialQuery.isSuccess && lockState === "locked-pre-prev") {
+    const prevPreset =
+      REALM_ORDER[Math.max(0, REALM_ORDER.indexOf(preset) - 1)]!;
+    const prevName = getStarterRealm(prevPreset).name;
+    return (
+      <main className="min-h-screen px-6 py-10">
+        <header className="mx-auto mb-10 flex max-w-3xl items-center justify-between">
+          <Link href="/" className="text-sm opacity-70 hover:opacity-100">
+            ← Realms
+          </Link>
+          <h1 className="text-2xl font-semibold tracking-tight">{cfg.name}</h1>
+          <ConnectButton />
+        </header>
+        <section
+          aria-label="Realm sealed"
+          className="mx-auto flex max-w-md flex-col items-center gap-4 rounded-md p-6 text-center"
+          style={{
+            background: "rgba(255,255,255,0.04)",
+            border: "1px dashed rgba(255,255,255,0.18)",
+          }}
+        >
+          <h2 className="text-lg font-semibold">Sealed</h2>
+          <p className="text-sm opacity-75 leading-relaxed">
+            {lockTeaseFor(preset)}
+          </p>
+          <p className="text-xs opacity-60 leading-relaxed">
+            Clear <strong>{prevName}</strong> first — its clearReceipt is
+            the key to this door.
+          </p>
+          <Link
+            href={`/play/${prevPreset}`}
+            className="rounded-md px-4 py-2 text-sm transition"
+            style={{
+              background: "var(--color-preset-accent, rgba(255,255,255,0.1))",
+              color: "var(--color-preset-bg, #fff)",
+              border: "1px solid rgba(255,255,255,0.15)",
+            }}
+          >
+            Go to {prevName} →
+          </Link>
+        </section>
+      </main>
+    );
+  }
+
   return (
     <main className="min-h-screen px-6 py-8">
       <header className="mx-auto mb-6 flex max-w-4xl items-center justify-between">
@@ -553,6 +644,7 @@ export default function PlayPage() {
         {seedReady && initialState && initial ? (
           <>
             <EncounterFrame
+              key={runEpoch}
               initialState={initialState}
               initialLines={initial.lines}
               bossId={cfg.bossId}
@@ -560,6 +652,7 @@ export default function PlayPage() {
               activePreset={preset}
               onEvent={handleEngineEvent}
               onLootMinted={handleLootMinted}
+              onRestart={handleRestart}
               clearReceipt={clearReceipt}
               interstitial={
                 bossClearedThisRun ? (
@@ -571,10 +664,15 @@ export default function PlayPage() {
                 ) : null
               }
             />
-            {commitment.data && (
+            {commitment.data && !restartSeed && (
               <p className="text-[11px] opacity-50 font-mono break-all">
                 Run committed against block {commitment.data.blockNumber.toString()}{" "}
                 · seed {commitment.data.seed.slice(0, 10)}…
+              </p>
+            )}
+            {restartSeed && (
+              <p className="text-[11px] opacity-50 font-mono break-all">
+                Retry run · seed {restartSeed.slice(0, 10)}… (not chain-pinned)
               </p>
             )}
           </>

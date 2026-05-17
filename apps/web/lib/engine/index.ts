@@ -232,6 +232,7 @@ export function startRun(args: StartRunArgs): { state: RunState; lines: Narratio
     encounter: null,
     equipped: args.equipped,
     bossCleared: false,
+    defeated: false,
   };
   const gen = generateEncounter(baseState, args.bossId);
   const state: RunState = { ...baseState, encounter: gen.encounter };
@@ -269,14 +270,19 @@ export function step(state: RunState, choice: ActionChoice): StepResult {
   const equipped = equippedFor(state);
   const events: EngineEvent[] = [];
 
+  if (state.defeated) {
+    throw new Error("step: run is over — call startRun() to begin a new run");
+  }
+
   if (enc.kind === "combat") {
     const result = resolveRound(enc.combat, choice, equipped, rng);
     let combat = result.state;
     const lines = [...result.lines];
     const monsterDefeated = result.monsterDefeated;
+    const playerDefeated = result.playerDefeated;
 
-    // Phase transition for bosses.
-    if (!monsterDefeated && state.depth >= BOSS_DEPTH) {
+    // Phase transition for bosses (only if both combatants are still standing).
+    if (!monsterDefeated && !playerDefeated && state.depth >= BOSS_DEPTH) {
       const pt = checkPhaseTransition(combat);
       if (pt.transitioned) {
         combat = pt.state;
@@ -310,6 +316,28 @@ export function step(state: RunState, choice: ActionChoice): StepResult {
         ...(isBoss
           ? { bossClearedTimestamp: Date.now(), bossClearedTurns: combat.turn }
           : {}),
+      };
+      SCHEMA_STORE.set(nextState, schemas);
+      return { state: nextState, outcome: lines, events };
+    }
+
+    if (playerDefeated) {
+      // Roguelike permadeath. Run is over: encounter stays in place so the
+      // UI can re-render the last combat frame under the defeat panel, but
+      // the terminator flag short-circuits further `step()` calls. No
+      // clearReceipt, no boss-clear flag mutation, no loot. Equipped gear
+      // is retained — death surrenders progress, not inventory.
+      lines.push({
+        text: `You fall. ${combat.monster.name} stands over you.`,
+        emphasis: "drama",
+      });
+      events.push({ type: "PlayerDefeated", depth: state.depth, turn: combat.turn });
+      const nextState: RunState = {
+        ...state,
+        encounter: { ...enc, combat },
+        defeated: true,
+        defeatedAtDepth: state.depth,
+        defeatedTurn: combat.turn,
       };
       SCHEMA_STORE.set(nextState, schemas);
       return { state: nextState, outcome: lines, events };
@@ -415,6 +443,9 @@ export function advance(
   state: RunState,
   bossId: string,
 ): { state: RunState; lines: NarrationLine[] } {
+  if (state.defeated) {
+    return { state, lines: [{ text: "The run is over.", emphasis: "drama" }] };
+  }
   if (state.bossCleared) {
     return { state, lines: [{ text: "The run is over.", emphasis: "info" }] };
   }
