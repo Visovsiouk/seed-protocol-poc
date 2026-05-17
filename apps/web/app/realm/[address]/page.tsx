@@ -28,6 +28,7 @@ import { RealmActivityFeed } from "@/components/realm/RealmActivityFeed";
 import { MetricsRow } from "@/components/realm/MetricsRow";
 import { BossLeaderboard } from "@/components/realm/BossLeaderboard";
 import { RealmAssetsGrid } from "@/components/realm/RealmAssetsGrid";
+import { RoyaltyEarnedDemo } from "@/components/realm/RoyaltyEarnedDemo";
 import { useRealms } from "@/lib/reads/hooks";
 import { listStarterRealms } from "@/lib/contracts/starter-realms";
 import { resolveRealmDetail, type RealmDetail } from "@/lib/contracts/realm-detail";
@@ -274,6 +275,18 @@ export default function RealmDashboardPage() {
               </footer>
             )}
           </article>
+        )}
+
+        {detail && detail.kind !== "unknown" && isOwner && (
+          <RoyaltyEarnedDemo
+            realm={detail.address}
+            preset={detail.kind === "starter" ? detail.preset : "fantasy"}
+            realmLabel={
+              detail.kind === "starter"
+                ? detail.name
+                : `Realm ${shortAddress(detail.address)}`
+            }
+          />
         )}
 
         {detail && detail.kind !== "unknown" && (
