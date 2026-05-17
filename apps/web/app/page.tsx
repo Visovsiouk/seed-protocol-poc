@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { RealmSelector } from "@/components/game/RealmSelector";
+import { FeaturedRealm } from "@/components/landing/FeaturedRealm";
 import { ConnectButton } from "@/components/wallet/ConnectButton";
 
 /**
@@ -54,8 +55,11 @@ export default function HomePage() {
           <ConnectButton />
         </div>
       </header>
-      <div className="mx-auto flex max-w-5xl flex-col items-center">
-        <RealmSelector />
+      <div className="mx-auto max-w-5xl">
+        <FeaturedRealm />
+        <div className="flex flex-col items-center">
+          <RealmSelector />
+        </div>
       </div>
     </main>
   );
