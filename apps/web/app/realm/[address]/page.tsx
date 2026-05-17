@@ -25,6 +25,8 @@ import { useParams } from "next/navigation";
 import { useAccount } from "wagmi";
 import { ConnectButton } from "@/components/wallet/ConnectButton";
 import { RealmActivityFeed } from "@/components/realm/RealmActivityFeed";
+import { MetricsRow } from "@/components/realm/MetricsRow";
+import { BossLeaderboard } from "@/components/realm/BossLeaderboard";
 import { useRealms } from "@/lib/reads/hooks";
 import { listStarterRealms } from "@/lib/contracts/starter-realms";
 import { resolveRealmDetail, type RealmDetail } from "@/lib/contracts/realm-detail";
@@ -274,10 +276,24 @@ export default function RealmDashboardPage() {
         )}
 
         {detail && detail.kind !== "unknown" && (
-          <RealmActivityFeed
-            realm={detail.address}
-            preset={detail.kind === "starter" ? detail.preset : null}
-          />
+          <>
+            <MetricsRow
+              realm={detail.address}
+              preset={detail.kind === "starter" ? detail.preset : null}
+            />
+            <div className="grid gap-6 lg:grid-cols-2">
+              {detail.kind === "starter" && (
+                <BossLeaderboard
+                  realm={detail.address}
+                  preset={detail.preset}
+                />
+              )}
+              <RealmActivityFeed
+                realm={detail.address}
+                preset={detail.kind === "starter" ? detail.preset : null}
+              />
+            </div>
+          </>
         )}
       </section>
     </main>

@@ -15,6 +15,7 @@ import {
   fetchRealmActivity,
   type RealmActivityEntry,
 } from "./realm-activity";
+import { fetchRealmStats, type RealmStats } from "./realm-stats";
 import {
   deriveTutorialProgress,
   type TutorialProgress,
@@ -177,6 +178,38 @@ export function useRealmActivity(args: {
       realm
         ? fetchRealmActivity({ realm, preset, limit })
         : Promise.resolve([]),
+    ...defaultReadQueryOptions,
+  });
+}
+
+/**
+ * Aggregate metrics + boss leaderboard for a single realm. Powers the
+ * `/realm/[address]` MetricsRow + BossLeaderboard panels off one
+ * `AssetMinted` scan.
+ */
+export function useRealmStats(args: {
+  realm: `0x${string}` | null;
+  preset: Preset | null;
+}) {
+  const { realm, preset } = args;
+  return useQuery<RealmStats>({
+    queryKey: queryKeys.realmStats(
+      realm ?? ("0x0000000000000000000000000000000000000000" as const),
+    ),
+    enabled: !!realm,
+    queryFn: () =>
+      realm
+        ? fetchRealmStats({ realm, preset })
+        : Promise.resolve({
+            metrics: {
+              totalMints: 0,
+              lootMints: 0,
+              clearReceipts: 0,
+              distinctHolders: 0,
+              firstClearBlock: null,
+            },
+            leaderboard: [],
+          }),
     ...defaultReadQueryOptions,
   });
 }

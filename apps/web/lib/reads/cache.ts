@@ -26,6 +26,7 @@ export const queryKeys = {
     ["tutorial-progress", player] as const,
   bossLeaderboard: (realm: `0x${string}`) =>
     ["boss-leaderboard", realm] as const,
+  realmStats: (realm: `0x${string}`) => ["realm-stats", realm] as const,
   adapters: (schemaId: number) => ["adapters", schemaId] as const,
 };
 
