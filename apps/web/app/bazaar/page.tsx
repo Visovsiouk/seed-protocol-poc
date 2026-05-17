@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ListingsGrid } from "@/components/bazaar/ListingsGrid";
 import { RecentSalesFeed } from "@/components/bazaar/RecentSalesFeed";
 import { ListButton } from "@/components/bazaar/ListButton";
+import { RealmLeaderboards } from "@/components/bazaar/RealmLeaderboards";
 import { ConnectButton } from "@/components/wallet/ConnectButton";
 
 export const metadata = {
@@ -33,11 +34,14 @@ export default function BazaarPage() {
           </h2>
           <ListingsGrid />
         </div>
-        <aside>
-          <h2 className="mb-4 text-sm font-medium uppercase tracking-wider opacity-60">
-            Recent sales
-          </h2>
-          <RecentSalesFeed />
+        <aside className="flex flex-col gap-6">
+          <div>
+            <h2 className="mb-4 text-sm font-medium uppercase tracking-wider opacity-60">
+              Recent sales
+            </h2>
+            <RecentSalesFeed />
+          </div>
+          <RealmLeaderboards />
         </aside>
       </section>
     </main>
