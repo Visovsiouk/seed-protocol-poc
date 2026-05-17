@@ -232,6 +232,7 @@ export default function CreatorRealmPlayPage() {
             initialLines={initial.lines}
             bossId={TRIAL_BOSS_ID}
             equipped={equipped}
+            activePreset={TRIAL_PRESET}
             onLootMinted={handleLootMinted}
           />
         ) : (

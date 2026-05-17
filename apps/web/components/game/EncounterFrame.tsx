@@ -34,6 +34,7 @@ import type {
   EngineEvent,
   LootRoll,
   NarrationLine,
+  Preset,
   RunState,
 } from "@/lib/engine/types";
 import {
@@ -97,6 +98,13 @@ type Props = {
    * tutorial progress and the Seed claim handler.
    */
   interstitial?: React.ReactNode;
+  /**
+   * Preset of the realm this run is in. Used purely for element-label
+   * vocabulary in the monster banner — e.g. a cyberpunk run renders
+   * canonical `unholy` as `nano` via the on-chain adapter labels.
+   * `null`/omitted falls back to canonical names.
+   */
+  activePreset?: Preset | null;
 };
 
 /**
@@ -121,6 +129,7 @@ export function EncounterFrame({
   onLootMinted,
   clearReceipt,
   interstitial,
+  activePreset = null,
 }: Props) {
   const initialSplit = useMemo(() => splitIntro(initialLines), [initialLines]);
 
@@ -265,7 +274,11 @@ export function EncounterFrame({
         />
       )}
 
-      <RoomNarration encounter={state.encounter} intro={intro} />
+      <RoomNarration
+        encounter={state.encounter}
+        intro={intro}
+        activePreset={activePreset}
+      />
 
       <CombatLog lines={feed} />
 

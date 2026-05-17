@@ -26,6 +26,8 @@ import {
 } from "@/lib/contracts/adapters";
 import { getAdapterAddress } from "@/lib/contracts/seeded-adapters";
 
+const ZERO_ADDR = "0x0000000000000000000000000000000000000000" as const;
+
 type Props = {
   card: AssetCardType;
   selected?: boolean;
@@ -97,42 +99,38 @@ function shortAddr(addr: `0x${string}`): string {
 }
 
 /**
- * Strip rendered below the native stats when a card is foreign to the
- * active realm. Calls `useTranslatedCard` (cached by tokenId+targetRealm)
- * so flipping back to the same drawer view doesn't re-hit the chain.
+ * Strip rendered below the active-realm stats showing the card's
+ * *original* (source-preset) stats and element vocabulary. Only renders
+ * when a real translation hop applies. Loading / missing-adapter /
+ * error states fall through to a status line instead of stat rows —
+ * the parent has already rendered the native stats up top in those
+ * cases, so the source card itself isn't useful to show twice.
  */
-function TranslationStrip({
+function OriginalStrip({
   card,
-  targetRealm,
+  sourcePreset,
+  hasAdapter,
+  hasTranslation,
+  adapter,
+  isFetching,
+  isError,
 }: {
   card: AssetCardType;
-  targetRealm: `0x${string}`;
+  sourcePreset: Preset;
+  hasAdapter: boolean;
+  hasTranslation: boolean;
+  adapter: `0x${string}`;
+  isFetching: boolean;
+  isError: boolean;
 }) {
-  const sourcePreset = presetForRealm(card.realm);
-  const targetPreset = presetForRealm(targetRealm);
-  const {
-    data: translated,
-    isFetching,
-    isError,
-  } = useTranslatedCard(card, targetRealm);
-
-  // Only show the strip when there is an actual preset hop to translate.
-  if (!sourcePreset || !targetPreset) return null;
-  if (sourcePreset === targetPreset) return null;
-  if (card.slot !== "weapon" && card.slot !== "armor") return null;
-
-  const adapter = getAdapterAddress(card.slot, sourcePreset, targetPreset);
-  const hasAdapter = adapter !== "0x0000000000000000000000000000000000000000";
   const isWeapon = card.slot === "weapon";
-  const tr = translated && translated !== card ? translated : null;
-
-  const translatedDamageElement =
-    isWeapon && tr?.element && tr.element !== "none"
-      ? (tr.element as Exclude<Element, "none">)
+  const damageElement =
+    isWeapon && card.element && card.element !== "none"
+      ? (card.element as Exclude<Element, "none">)
       : null;
-  const translatedResistElement =
-    !isWeapon && tr?.resistElement && tr.resistElement !== "none"
-      ? (tr.resistElement as Exclude<Element, "none">)
+  const resistElement =
+    !isWeapon && card.resistElement && card.resistElement !== "none"
+      ? (card.resistElement as Exclude<Element, "none">)
       : null;
 
   return (
@@ -148,7 +146,7 @@ function TranslationStrip({
           className="text-[10px] uppercase tracking-wider"
           style={{ color: "#a8dcff" }}
         >
-          Translated for {targetPreset}
+          Translated from {sourcePreset}
         </span>
         {hasAdapter && (
           <span className="text-[10px] opacity-50 font-mono">
@@ -165,7 +163,7 @@ function TranslationStrip({
           Adapter call failed — re-run <code>pnpm seed:adapters</code> if you
           restarted Anvil. Equipping uses native stats.
         </span>
-      ) : !tr ? (
+      ) : !hasTranslation ? (
         <span className="text-[10px] opacity-60">
           {isFetching ? "Translating…" : "Awaiting adapter read."}
         </span>
@@ -174,30 +172,30 @@ function TranslationStrip({
           <div className="text-xs tabular-nums opacity-90">
             {isWeapon ? (
               <>
-                d{tr.damageDie}
-                {tr.damageBonus ? `+${tr.damageBonus}` : ""} damage · +
-                {tr.attackBonus ?? 0} attack
+                d{card.damageDie}
+                {card.damageBonus ? `+${card.damageBonus}` : ""} damage · +
+                {card.attackBonus ?? 0} attack
               </>
             ) : (
               <>
-                +{tr.acBonus ?? 0} AC · +{tr.hpBonus ?? 0} HP
+                +{card.acBonus ?? 0} AC · +{card.hpBonus ?? 0} HP
               </>
             )}
           </div>
-          {(translatedDamageElement || translatedResistElement) && (
+          {(damageElement || resistElement) && (
             <div className="flex flex-wrap gap-1">
-              {translatedDamageElement && (
+              {damageElement && (
                 <ElementChip
-                  element={translatedDamageElement}
+                  element={damageElement}
                   kind="damage"
-                  preset={targetPreset}
+                  preset={sourcePreset}
                 />
               )}
-              {translatedResistElement && (
+              {resistElement && (
                 <ElementChip
-                  element={translatedResistElement}
+                  element={resistElement}
                   kind="resist"
-                  preset={targetPreset}
+                  preset={sourcePreset}
                 />
               )}
             </div>
@@ -216,16 +214,54 @@ export function AssetCard({
   targetRealm,
 }: Props) {
   const isWeapon = card.slot === "weapon";
-  // Display preset for the element chips on the native stats row. The
-  // canonical enum is shared across presets — only the label flavor
-  // changes — so we prefer the active realm's vocabulary when we know
-  // it (the player is "in" that realm and shouldn't see "holy" in a
-  // cyberpunk drawer). Fall back to the card's source preset; if
-  // neither resolves (e.g. starter gear from an unseeded realm) the
-  // chip falls back to the canonical name via `elementLabel`.
-  const labelPreset: Preset | null =
-    (targetRealm && presetForRealm(targetRealm)) ||
-    presetForRealm(card.realm);
+
+  // Decide whether a real preset hop applies. The hook itself short-
+  // circuits non-hop cases and returns the input card unchanged, but
+  // we still need these locally to drive the strip + label vocabularies.
+  const sourcePreset = presetForRealm(card.realm);
+  const targetPreset = targetRealm ? presetForRealm(targetRealm) : null;
+  const isHop =
+    !!sourcePreset &&
+    !!targetPreset &&
+    sourcePreset !== targetPreset &&
+    (card.slot === "weapon" || card.slot === "armor");
+
+  // Always call the hook (rules-of-hooks). When `isHop` is false the
+  // hook resolves synchronously to the input card.
+  const safeRealm = (targetRealm ?? card.realm) as `0x${string}`;
+  const {
+    data: translated,
+    isFetching,
+    isError,
+  } = useTranslatedCard(card, safeRealm);
+
+  // `translated === card` (same identity) means the hook chose passthrough;
+  // we only have a real translation to display when the identity differs.
+  const hasTranslation = isHop && !!translated && translated !== card;
+
+  // The card we show on top. When the player is "in" a different
+  // preset's realm and we have a successful translation, that's what
+  // should headline the card — the player sees their gear in the
+  // current realm's language. Otherwise (no hop, fetching, or error)
+  // fall back to the source card so the UI never shows empty stats.
+  const displayCard: AssetCardType = hasTranslation ? translated! : card;
+
+  // Vocabulary for the top element chips: target preset when we're
+  // showing translated stats, otherwise the source preset (or canonical
+  // fallback if neither resolves).
+  const topLabelPreset: Preset | null = hasTranslation
+    ? targetPreset
+    : sourcePreset;
+
+  const adapter = isHop
+    ? getAdapterAddress(
+        card.slot as "weapon" | "armor",
+        sourcePreset!,
+        targetPreset!,
+      )
+    : ZERO_ADDR;
+  const hasAdapter = adapter !== ZERO_ADDR;
+
   return (
     <button
       type="button"
@@ -243,7 +279,7 @@ export function AssetCard({
       }}
     >
       <header className="flex items-baseline justify-between gap-2">
-        <h4 className="font-semibold text-sm truncate">{card.name}</h4>
+        <h4 className="font-semibold text-sm truncate">{displayCard.name}</h4>
         <span
           className="text-[10px] px-1.5 py-0.5 rounded uppercase tracking-wider"
           style={{
@@ -251,46 +287,55 @@ export function AssetCard({
             color: "var(--color-preset-bg)",
           }}
         >
-          T{card.tier}
+          T{displayCard.tier}
         </span>
       </header>
       {!compact && (
         <p className="text-xs opacity-50">
-          {TIER_LABEL[card.tier]} · {card.slot} · {card.realmName}
+          {TIER_LABEL[displayCard.tier]} · {displayCard.slot} ·{" "}
+          {displayCard.realmName}
         </p>
       )}
       <div className="text-xs opacity-80 tabular-nums">
         {isWeapon ? (
           <>
-            d{card.damageDie}
-            {card.damageBonus ? `+${card.damageBonus}` : ""} damage · +
-            {card.attackBonus ?? 0} attack
+            d{displayCard.damageDie}
+            {displayCard.damageBonus ? `+${displayCard.damageBonus}` : ""}{" "}
+            damage · +{displayCard.attackBonus ?? 0} attack
           </>
         ) : (
           <>
-            +{card.acBonus ?? 0} AC · +{card.hpBonus ?? 0} HP
+            +{displayCard.acBonus ?? 0} AC · +{displayCard.hpBonus ?? 0} HP
           </>
         )}
       </div>
-      {((isWeapon && card.element && card.element !== "none") ||
-        (!isWeapon && card.resistElement && card.resistElement !== "none") ||
-        card.catalogEffects.length > 0) && (
+      {((isWeapon && displayCard.element && displayCard.element !== "none") ||
+        (!isWeapon &&
+          displayCard.resistElement &&
+          displayCard.resistElement !== "none") ||
+        displayCard.catalogEffects.length > 0) && (
         <div className="flex flex-wrap gap-1">
-          {isWeapon && card.element && card.element !== "none" && (
-            <ElementChip
-              element={card.element as Exclude<Element, "none">}
-              kind="damage"
-              preset={labelPreset}
-            />
-          )}
-          {!isWeapon && card.resistElement && card.resistElement !== "none" && (
-            <ElementChip
-              element={card.resistElement as Exclude<Element, "none">}
-              kind="resist"
-              preset={labelPreset}
-            />
-          )}
-          {card.catalogEffects.map((e) => (
+          {isWeapon &&
+            displayCard.element &&
+            displayCard.element !== "none" && (
+              <ElementChip
+                element={displayCard.element as Exclude<Element, "none">}
+                kind="damage"
+                preset={topLabelPreset}
+              />
+            )}
+          {!isWeapon &&
+            displayCard.resistElement &&
+            displayCard.resistElement !== "none" && (
+              <ElementChip
+                element={
+                  displayCard.resistElement as Exclude<Element, "none">
+                }
+                kind="resist"
+                preset={topLabelPreset}
+              />
+            )}
+          {displayCard.catalogEffects.map((e) => (
             <span
               key={e.name}
               className="text-[10px] px-1.5 py-0.5 rounded"
@@ -304,13 +349,21 @@ export function AssetCard({
           ))}
         </div>
       )}
-      {card.preseed && (
+      {displayCard.preseed && (
         <span className="text-[10px] opacity-50 uppercase tracking-wider">
           Genesis liquidity
         </span>
       )}
-      {targetRealm && targetRealm.toLowerCase() !== card.realm.toLowerCase() && (
-        <TranslationStrip card={card} targetRealm={targetRealm} />
+      {isHop && (
+        <OriginalStrip
+          card={card}
+          sourcePreset={sourcePreset!}
+          hasAdapter={hasAdapter}
+          hasTranslation={hasTranslation}
+          adapter={adapter}
+          isFetching={isFetching}
+          isError={isError}
+        />
       )}
     </button>
   );

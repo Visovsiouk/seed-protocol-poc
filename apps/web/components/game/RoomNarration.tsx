@@ -9,7 +9,13 @@
  * Action choices live in `<ActionChoices/>`.
  */
 
-import type { CombatState, Element, EncounterState } from "@/lib/engine/types";
+import type {
+  CombatState,
+  Element,
+  EncounterState,
+  Preset,
+} from "@/lib/engine/types";
+import { useElementLabel } from "@/lib/contracts/adapters";
 
 /** Per-element accent colours, kept local to this banner (mirror of the
  * inventory AssetCard's palette). Engine doesn't know about presentation;
@@ -25,11 +31,16 @@ const ELEMENT_COLOR: Record<Exclude<Element, "none">, { bg: string; fg: string }
 function ElementTag({
   element,
   label,
+  preset,
 }: {
   element: Exclude<Element, "none">;
   label: string;
+  /** Active-realm preset whose vocabulary should name the element.
+   * `null` falls back to the canonical name via `useElementLabel`. */
+  preset: Preset | null;
 }) {
   const c = ELEMENT_COLOR[element];
+  const elementLabel = useElementLabel(element, preset);
   return (
     <span
       className="text-[10px] px-1.5 py-0.5 rounded uppercase tracking-wider font-semibold"
@@ -39,12 +50,18 @@ function ElementTag({
         border: `1px solid ${c.fg}55`,
       }}
     >
-      {label}: {element}
+      {label}: {elementLabel}
     </span>
   );
 }
 
-function MonsterBanner({ combat }: { combat: CombatState }) {
+function MonsterBanner({
+  combat,
+  activePreset,
+}: {
+  combat: CombatState;
+  activePreset: Preset | null;
+}) {
   const monster = combat.monster;
   const isBoss = "bakedEffects" in monster;
   const maxHp = isBoss ? monster.baseHp : monster.hp;
@@ -75,9 +92,15 @@ function MonsterBanner({ combat }: { combat: CombatState }) {
       </div>
       {hasElementInfo && (
         <div className="flex flex-wrap gap-1.5 mt-1">
-          {element && <ElementTag element={element} label="attacks" />}
-          {weakTo && <ElementTag element={weakTo} label="weak" />}
-          {resistTo && <ElementTag element={resistTo} label="resists" />}
+          {element && (
+            <ElementTag element={element} label="attacks" preset={activePreset} />
+          )}
+          {weakTo && (
+            <ElementTag element={weakTo} label="weak" preset={activePreset} />
+          )}
+          {resistTo && (
+            <ElementTag element={resistTo} label="resists" preset={activePreset} />
+          )}
         </div>
       )}
     </div>
@@ -87,10 +110,18 @@ function MonsterBanner({ combat }: { combat: CombatState }) {
 export function RoomNarration({
   encounter,
   intro,
+  activePreset = null,
 }: {
   encounter: EncounterState | null;
   /** Narration line(s) emitted when the encounter was generated. */
   intro: string;
+  /**
+   * Preset of the realm the player is currently in. Threaded down to
+   * the monster banner's element tags so they render the current
+   * realm's vocabulary (e.g. cyberpunk shows "nano" instead of the
+   * canonical "unholy"). `null` falls back to canonical names.
+   */
+  activePreset?: Preset | null;
 }) {
   return (
     <section
@@ -102,7 +133,9 @@ export function RoomNarration({
       aria-label="Room narration"
     >
       <p className="text-base leading-relaxed opacity-90">{intro}</p>
-      {encounter?.kind === "combat" && <MonsterBanner combat={encounter.combat} />}
+      {encounter?.kind === "combat" && (
+        <MonsterBanner combat={encounter.combat} activePreset={activePreset} />
+      )}
       {encounter?.kind === "hazard" && (
         <p className="text-xs uppercase tracking-wide opacity-50">Hazard</p>
       )}

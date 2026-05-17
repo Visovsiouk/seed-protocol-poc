@@ -522,6 +522,7 @@ export default function PlayPage() {
               initialLines={initial.lines}
               bossId={cfg.bossId}
               equipped={equipped}
+              activePreset={preset}
               onEvent={handleEngineEvent}
               onLootMinted={handleLootMinted}
               clearReceipt={clearReceipt}
