@@ -1,14 +1,12 @@
 "use client";
 
 /**
- * Loot-drop prompt that surfaces after a room clear. will wire
- * the on-chain mint here via `useMintLoot` from `lib/contracts/`; in 2B
- * we render the rolled stats and let the player "Mint" (engine-only
- * commit via `commitLootMint`) or "Skip".
+ * Loot-drop prompt that surfaces after a room clear. Renders the rolled
+ * stats and lets the player "Mint and equip" (dispatches the on-chain
+ * mint via the caller's `onMint`) or "Skip".
  *
  * Why a prompt and not auto-mint: the player should see what dropped
- * before paying gas. Once the contracts land in 2C this same component
- * dispatches the tx and surfaces a tx-toast.
+ * before paying gas.
  */
 
 import { useState } from "react";
@@ -120,11 +118,6 @@ export function LootMintPrompt({ loot, bank, onMint, onSkip }: Props) {
           ))}
         </div>
       )}
-
-      <p className="text-xs opacity-50">
-        Phase 2C wires the on-chain mint. For now the engine commits the
-        drop to your run.
-      </p>
 
       <div className="flex gap-2 mt-1">
         <button

@@ -26,6 +26,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
+import { useAccount } from "wagmi";
 import type {
   AssetCard as AssetCardType,
   LootRoll,
@@ -63,6 +64,7 @@ export default function CreatorRealmPlayPage() {
   const validAddress = isHexAddress(raw);
   const address = (validAddress ? (raw.toLowerCase() as `0x${string}`) : null);
 
+  const { isConnected: walletConnected } = useAccount();
   const realms = useRealms();
   const onchain = useMemo(
     () =>
@@ -166,6 +168,38 @@ export default function CreatorRealmPlayPage() {
             ecosystem address.
           </p>
         </div>
+      </main>
+    );
+  }
+
+  if (mounted && !walletConnected) {
+    return (
+      <main className="min-h-screen px-6 py-10">
+        <header className="mx-auto mb-10 flex max-w-3xl items-center justify-between">
+          <Link href="/" className="text-sm opacity-70 hover:opacity-100">
+            ← Realms
+          </Link>
+          <h1 className="text-2xl font-semibold tracking-tight font-mono">
+            {realmName}
+          </h1>
+          <ConnectButton />
+        </header>
+        <section
+          aria-label="Wallet required"
+          className="mx-auto flex max-w-md flex-col items-center gap-4 rounded-md p-6 text-center"
+          style={{
+            background: "rgba(255,255,255,0.04)",
+            border: "1px solid rgba(255,255,255,0.10)",
+          }}
+        >
+          <h2 className="text-lg font-semibold">Connect a wallet to play</h2>
+          <p className="text-sm opacity-75 leading-relaxed">
+            Trial runs on creator realms still pin every drop to your
+            address — connect a wallet so loot lands somewhere you control,
+            not a session that vanishes on refresh.
+          </p>
+          <ConnectButton />
+        </section>
       </main>
     );
   }

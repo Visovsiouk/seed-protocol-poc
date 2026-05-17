@@ -456,6 +456,41 @@ export default function PlayPage() {
   // SCHEMA_STORE WeakMap lookup in `step()` resolves.
   const initialState: RunState | null = initial?.state ?? null;
 
+  // Wallet gate. The play loop mints loot and clearReceipts the moment
+  // they're earned; without a connected account those go nowhere visible
+  // ("I just minted into I don't know where"). Block entry until the
+  // player connects so every action has a destination. Gated on `mounted`
+  // to keep SSR + first-paint stable while wagmi rehydrates.
+  if (mounted && !walletConnected) {
+    return (
+      <main className="min-h-screen px-6 py-10">
+        <header className="mx-auto mb-10 flex max-w-3xl items-center justify-between">
+          <Link href="/" className="text-sm opacity-70 hover:opacity-100">
+            ← Realms
+          </Link>
+          <h1 className="text-2xl font-semibold tracking-tight">{cfg.name}</h1>
+          <ConnectButton />
+        </header>
+        <section
+          aria-label="Wallet required"
+          className="mx-auto flex max-w-md flex-col items-center gap-4 rounded-md p-6 text-center"
+          style={{
+            background: "rgba(255,255,255,0.04)",
+            border: "1px solid rgba(255,255,255,0.1)",
+          }}
+        >
+          <h2 className="text-lg font-semibold">Connect a wallet to play</h2>
+          <p className="text-sm opacity-75 leading-relaxed">
+            Runs are pinned to an on-chain commitment, loot is minted to
+            your wallet, and boss clears mint a receipt under your address.
+            Connect to start — testnet ETH is enough.
+          </p>
+          <ConnectButton />
+        </section>
+      </main>
+    );
+  }
+
   return (
     <main className="min-h-screen px-6 py-8">
       <header className="mx-auto mb-6 flex max-w-4xl items-center justify-between">
