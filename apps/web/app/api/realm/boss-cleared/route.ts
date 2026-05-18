@@ -4,15 +4,21 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { ecosystemTemplateAbi } from "@abis/generated";
-import { getOwnerSigner, getPublicClient } from "@/lib/server/realm-signer";
+import {
+  getOwnerSigner,
+  getPlayerRealmSigner,
+  getPublicClient,
+} from "@/lib/server/realm-signer";
 import {
   getSeededRealm,
   getSeededSchemaIds,
 } from "@/lib/contracts/seeded-realms";
+import { getPlayerRealm } from "@/lib/server/realm-db";
 import {
   buildClearReceiptMetadataURI,
   deriveClearReceiptTokenId,
 } from "@/lib/contracts/clear-receipt-derive";
+import type { Preset } from "@/lib/engine/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -78,6 +84,9 @@ const bodySchema = z.object({
   turns: z.number().int().min(1).max(10_000),
   finalHp: z.number().int().min(0).max(10_000),
   realmLabel: z.string().min(1).max(64),
+  /** Mirrors `/api/realm/mint-loot`. Optional — fall back to starter
+   * preset routing when absent. */
+  realmAddress: addressSchema.optional(),
 });
 
 type Body = z.infer<typeof bodySchema>;
@@ -104,7 +113,27 @@ export async function POST(req: Request) {
     });
   }
 
-  const realm = getSeededRealm(body.preset);
+  const playerRow = body.realmAddress
+    ? getPlayerRealm(body.realmAddress.toLowerCase() as `0x${string}`)
+    : undefined;
+
+  if (body.realmAddress && !playerRow) {
+    const seededStarter = getSeededRealm(body.preset);
+    if (
+      seededStarter.toLowerCase() !== body.realmAddress.toLowerCase()
+    ) {
+      return reply(404, {
+        ok: false,
+        reason: "realm_unknown",
+        message: `realmAddress ${body.realmAddress} is not a registered player realm and is not the starter for ${body.preset}`,
+      });
+    }
+  }
+
+  const effectivePreset: Preset = playerRow ? playerRow.preset : body.preset;
+  const realm: `0x${string}` = playerRow
+    ? playerRow.address
+    : getSeededRealm(body.preset);
   if (realm === "0x0000000000000000000000000000000000000000") {
     return reply(409, {
       ok: false,
@@ -113,15 +142,14 @@ export async function POST(req: Request) {
     });
   }
 
-  // clearReceipt schemaId is per-realm (the seeder registers each
-  // realm's pair independently). The schema id we want here is the
-  // one resolved against the realm we're minting from.
-  const seededIds = getSeededSchemaIds(body.preset);
+  // Schema ids are keyed off the flavor preset (player realms reuse
+  // the starter pair for their preset — they don't register schemas).
+  const seededIds = getSeededSchemaIds(effectivePreset);
   if (seededIds.clearReceipt === 0n) {
     return reply(409, {
       ok: false,
       reason: "schema_not_seeded",
-      message: `clearReceipt schema not registered on ${body.preset} realm`,
+      message: `clearReceipt schema not registered on ${effectivePreset} realm`,
     });
   }
 
@@ -142,7 +170,7 @@ export async function POST(req: Request) {
   const clearedAt = Math.floor(Date.now() / 1000);
 
   const metadataURI = buildClearReceiptMetadataURI({
-    preset: body.preset,
+    preset: effectivePreset,
     realmLabel: body.realmLabel,
     player,
     bossId: body.bossId,
@@ -156,12 +184,14 @@ export async function POST(req: Request) {
   // 0-indexed enum) as a neutral default.
   const onchainTier = 0;
 
-  const owner = getOwnerSigner(body.preset);
+  const signer = playerRow
+    ? getPlayerRealmSigner(playerRow.signerIndex)
+    : getOwnerSigner(body.preset);
   const publicClient = getPublicClient();
 
   let hash: `0x${string}`;
   try {
-    hash = await owner.wallet.writeContract({
+    hash = await signer.wallet.writeContract({
       address: realm,
       abi: ecosystemTemplateAbi,
       functionName: "mintAsset",
@@ -175,8 +205,8 @@ export async function POST(req: Request) {
           metadataURI,
         },
       ],
-      account: owner.account,
-      chain: owner.wallet.chain,
+      account: signer.account,
+      chain: signer.wallet.chain,
     });
   } catch (e) {
     return reply(500, {

@@ -90,6 +90,12 @@ export function useMintLoot() {
             },
             realmLabel: args.realmLabel,
             assembledName,
+            // Pass the realm address so the server can route to the
+            // per-realm delegate signer for player realms. Starter
+            // realms can also send this — the server tolerates the
+            // starter address as a no-op match against
+            // `getSeededRealm(preset)`.
+            realmAddress: args.realm,
           }),
         });
         const body = (await res.json()) as

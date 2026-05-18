@@ -117,3 +117,54 @@ export function listKeyringAddresses(): Record<KeyringRole, `0x${string}`> {
     cyberpunk: signers.cyberpunk.account.address,
   };
 }
+
+/**
+ * Derive a player-realm minter delegate from the same master mnemonic
+ * at BIP-44 index `index` (must be ≥ 4 — indices 0–3 are reserved for
+ * admin + starter owners). The on-chain `EcosystemTemplate.setMinter`
+ * flow authorizes this address; subsequent `mintAsset` calls signed by
+ * this account go through the `onlyOwnerOrMinter` modifier. The realm's
+ * `owner()` keeps royalty / dashboard control — the delegate can only
+ * mint.
+ *
+ * Cached on the keyring so we don't re-derive on every mint.
+ */
+const playerSignerCache = new Map<number, Signer>();
+
+export function getPlayerRealmSigner(index: number): Signer {
+  if (index < 4) {
+    throw new Error(
+      `getPlayerRealmSigner: index ${index} is reserved (0=admin, 1..3=starter owners)`,
+    );
+  }
+  const hit = playerSignerCache.get(index);
+  if (hit) return hit;
+  const env = getServerEnv();
+  const transport = http(env.REALM_SIGNER_RPC_URL);
+  const account = mnemonicToAccount(env.REALM_SIGNER_MNEMONIC, {
+    addressIndex: index,
+  });
+  const wallet = createWalletClient({
+    account,
+    chain: activeChain,
+    transport,
+  });
+  const signer: Signer = { account, wallet };
+  playerSignerCache.set(index, signer);
+  return signer;
+}
+
+/** Just the address — no wallet client. Cheap; safe to call from API
+ * routes that only need to *show* the player what they're authorizing
+ * before they sign `setMinter`. */
+export function derivePlayerRealmSignerAddress(index: number): `0x${string}` {
+  if (index < 4) {
+    throw new Error(
+      `derivePlayerRealmSignerAddress: index ${index} is reserved`,
+    );
+  }
+  const env = getServerEnv();
+  return mnemonicToAccount(env.REALM_SIGNER_MNEMONIC, {
+    addressIndex: index,
+  }).address;
+}

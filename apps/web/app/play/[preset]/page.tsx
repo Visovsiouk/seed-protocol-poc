@@ -420,6 +420,7 @@ export default function PlayPage() {
       turns: event.turns,
       finalHp: event.finalHp,
       realmLabel: cfg.name,
+      realm: cfg.realm,
     })
       .then(({ tokenId, txHash }) => {
         setClearReceipt({ status: "minted", tokenId, txHash });

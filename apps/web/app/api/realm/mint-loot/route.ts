@@ -4,11 +4,16 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { ecosystemTemplateAbi } from "@abis/generated";
-import { getOwnerSigner, getPublicClient } from "@/lib/server/realm-signer";
+import {
+  getOwnerSigner,
+  getPlayerRealmSigner,
+  getPublicClient,
+} from "@/lib/server/realm-signer";
 import {
   getSeededRealm,
   getSeededSchemaIds,
 } from "@/lib/contracts/seeded-realms";
+import { getPlayerRealm } from "@/lib/server/realm-db";
 import {
   buildLootMetadataURI,
   deriveLootTokenId,
@@ -18,12 +23,12 @@ import { BOSS_DEPTH } from "@/lib/engine";
 import type { LootRoll, Preset, Tier } from "@/lib/engine/types";
 
 /**
- * Per-preset (starter-realm) tier ceiling. Every realm the public
- * `/api/realm/mint-loot` route can hit today is a starter — player-
- * authored realms get their own scaled-cap mint route in.
- * Mirrored against the engine's `RealmSchemas.maxTier` so honest
- * clients never roll above the cap, and tampered clients are rejected
- * here before `mintAsset` is signed.
+ * Per-preset starter-realm tier ceiling. Player-authored realms carry
+ * their own `maxTier` in the sqlite row (`player_realms.max_tier`);
+ * starter realms are pinned to T2 to preserve the seed-liquidity floor
+ * (tutorial gear stays bounded so the bank doesn't flood with T3+).
+ * Honest clients respect the cap; tampered clients are rejected here
+ * before `mintAsset` is signed.
  */
 const STARTER_REALM_MAX_TIER: Record<Preset, Tier> = {
   fantasy: 2,
@@ -134,6 +139,14 @@ const bodySchema = z.object({
   loot: lootRollSchema,
   realmLabel: z.string().min(1).max(64),
   assembledName: z.string().min(1).max(128),
+  /**
+   * Optional. When present and the address matches a row in
+   * `player_realms`, the route signs `mintAsset` from the realm's
+   * delegate (HD index from the sqlite row) and validates against
+   * the row's `maxTier`. When absent, falls back to the starter
+   * realm for `preset`, signed by the static `getOwnerSigner`.
+   */
+  realmAddress: addressSchema.optional(),
 });
 
 type Body = z.infer<typeof bodySchema>;
@@ -160,7 +173,43 @@ export async function POST(req: Request) {
     });
   }
 
-  const realm = getSeededRealm(body.preset);
+  // Route to player-realm path if the caller supplied a realmAddress
+  // that matches a row in sqlite. Otherwise fall through to the static
+  // starter path keyed on `preset`. We resolve the per-realm signer +
+  // schema ids + maxTier cap up here so the validate/sign branches
+  // below stay flavor-agnostic.
+  const playerRow = body.realmAddress
+    ? getPlayerRealm(body.realmAddress.toLowerCase() as `0x${string}`)
+    : undefined;
+
+  // Sanity: if the player supplied a realmAddress that *isn't* in
+  // sqlite, refuse rather than silently fall through to the starter
+  // realm. A play session that thought it was minting to realm X
+  // would otherwise quietly mint to the starter realm of preset Y.
+  if (body.realmAddress && !playerRow) {
+    // Allowance: the starter address for `body.preset` is its own
+    // realmAddress — accept that as the starter path.
+    const seededStarter = getSeededRealm(body.preset);
+    if (
+      seededStarter.toLowerCase() !== body.realmAddress.toLowerCase()
+    ) {
+      return reply(404, {
+        ok: false,
+        reason: "realm_unknown",
+        message: `realmAddress ${body.realmAddress} is not a registered player realm and is not the starter for ${body.preset}`,
+      });
+    }
+  }
+
+  // The on-chain `extensionSchemaId` is per-realm and per-flavor;
+  // starter realms have their pair recorded in `.seeded-realms.json`,
+  // while player realms inherit the starter schema for their preset
+  // (the seeder is the only `registerSchema` caller; player realms
+  // call into the same factory + share the global SchemaRegistry).
+  const effectivePreset: Preset = playerRow ? playerRow.preset : body.preset;
+  const realm: `0x${string}` = playerRow
+    ? playerRow.address
+    : getSeededRealm(body.preset);
   if (realm === "0x0000000000000000000000000000000000000000") {
     return reply(409, {
       ok: false,
@@ -169,18 +218,21 @@ export async function POST(req: Request) {
     });
   }
 
-  // On-chain "loot" schema id is per-realm (the seeder registers each
-  // realm's pair independently). The engine's `loot.schemaId` is a
-  // PoC-canonical identifier (101/201/301 etc) — useful for the
-  // metadata trait but NOT the on-chain extensionSchemaId.
-  const seededIds = getSeededSchemaIds(body.preset);
+  // Schema ids are keyed off the *flavor* preset (player realms
+  // mirror the starter's flavor for schema purposes — they don't
+  // register new schemas).
+  const seededIds = getSeededSchemaIds(effectivePreset);
   if (seededIds.loot === 0n) {
     return reply(409, {
       ok: false,
       reason: "schema_not_seeded",
-      message: `loot schema not registered on ${body.preset} realm`,
+      message: `loot schema not registered on ${effectivePreset} realm`,
     });
   }
+
+  const maxTier: Tier = playerRow
+    ? playerRow.maxTier
+    : STARTER_REALM_MAX_TIER[body.preset];
 
   // Reconstruct the LootRoll shape the helpers expect (LootRoll's
   // `nameSeed` is bigint internally; we serialize it as decimal string
@@ -200,7 +252,7 @@ export async function POST(req: Request) {
     loot,
     body.depth,
     body.depth >= BOSS_DEPTH,
-    STARTER_REALM_MAX_TIER[body.preset],
+    maxTier,
   );
   if (validationErr) {
     return reply(422, {
@@ -219,7 +271,7 @@ export async function POST(req: Request) {
 
   const metadataURI = buildLootMetadataURI({
     loot,
-    preset: body.preset,
+    preset: effectivePreset,
     realmLabel: body.realmLabel,
     assembledName: body.assembledName,
   });
@@ -227,12 +279,18 @@ export async function POST(req: Request) {
   // SeedTypes.Tier is a 0-indexed uint8 enum on-chain; engine surface is 1..5.
   const onchainTier = Math.max(0, loot.tier - 1);
 
-  const owner = getOwnerSigner(body.preset);
+  // Player realms sign via the delegate the player authorized in
+  // `setMinter(...)` — the realm's `owner()` is the player's wallet
+  // (offline at play time). Starter realms still sign via the
+  // statically-known `getOwnerSigner`.
+  const signer = playerRow
+    ? getPlayerRealmSigner(playerRow.signerIndex)
+    : getOwnerSigner(body.preset);
   const publicClient = getPublicClient();
 
   let hash: `0x${string}`;
   try {
-    hash = await owner.wallet.writeContract({
+    hash = await signer.wallet.writeContract({
       address: realm,
       abi: ecosystemTemplateAbi,
       functionName: "mintAsset",
@@ -246,8 +304,8 @@ export async function POST(req: Request) {
           metadataURI,
         },
       ],
-      account: owner.account,
-      chain: owner.wallet.chain,
+      account: signer.account,
+      chain: signer.wallet.chain,
     });
   } catch (e) {
     return reply(500, {

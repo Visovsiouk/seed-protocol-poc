@@ -35,6 +35,9 @@ export type MintClearReceiptArgs = {
   finalHp: number;
   /** Human-readable realm label baked into the metadata JSON. */
   realmLabel: string;
+  /** Realm address — routes the server signer to the per-realm
+   *  delegate for player realms; ignored for starter realms. */
+  realm: `0x${string}`;
 };
 
 export type MintClearReceiptResult = {
@@ -68,6 +71,7 @@ export function useMintClearReceipt() {
             turns: args.turns,
             finalHp: args.finalHp,
             realmLabel: args.realmLabel,
+            realmAddress: args.realm,
           }),
         });
         const body = (await res.json()) as

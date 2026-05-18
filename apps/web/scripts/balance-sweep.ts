@@ -283,15 +283,40 @@ const STARTER_BOSSES: Record<Preset, string> = {
   cyberpunk: "black_ice",
 };
 
-function main(): void {
-  console.log("# Balance sweep");
-  console.log(
-    `Methodology: T1/T2 synthetic loadout, always-Strike, ${SEEDS_PER_CELL} seeds/cell, sfc32 rng.`,
-  );
-  console.log(
-    "Columns: win% / loss% / stalemate% / mean turns on win / mean player HP on win.",
-  );
+/**
+ * CLI surface:
+ *
+ *   pnpm exec tsx scripts/balance-sweep.ts
+ *     → full sweep (standard rooms + starter bosses) at T1+T2.
+ *
+ *   pnpm exec tsx scripts/balance-sweep.ts --bosses
+ *     → every boss in every flavor bank at T2 only. Used for tuning
+ *       the non-starter (player-realm) boss roster against the
+ *        30–55% win-rate band.
+ *
+ *   pnpm exec tsx scripts/balance-sweep.ts --boss <preset>:<bossId>
+ *     → one boss, T1+T2. Quick re-check after tweaking a single stat.
+ */
+type CliFilter =
+  | { kind: "default" }
+  | { kind: "all-bosses" }
+  | { kind: "single-boss"; preset: Preset; bossId: string };
 
+function parseArgs(argv: string[]): CliFilter {
+  if (argv.includes("--bosses")) return { kind: "all-bosses" };
+  const bossFlagIdx = argv.indexOf("--boss");
+  if (bossFlagIdx >= 0) {
+    const spec = argv[bossFlagIdx + 1];
+    if (!spec) throw new Error("--boss requires <preset>:<bossId>");
+    const [preset, bossId] = spec.split(":") as [Preset, string];
+    if (!PRESETS.includes(preset)) throw new Error(`unknown preset: ${preset}`);
+    if (!bossId) throw new Error(`--boss requires <preset>:<bossId>`);
+    return { kind: "single-boss", preset, bossId };
+  }
+  return { kind: "default" };
+}
+
+function runDefaultSweep(): void {
   for (const preset of PRESETS) {
     const bank = getFlavorBank(preset);
     const standardDepths = [1, 2, 3, 4, 5];
@@ -308,6 +333,39 @@ function main(): void {
       }
       runBoss(preset, STARTER_BOSSES[preset], tier);
     }
+  }
+}
+
+function runAllBosses(): void {
+  for (const preset of PRESETS) {
+    const bank = getFlavorBank(preset);
+    for (const bossId of Object.keys(bank.bosses)) {
+      runBoss(preset, bossId, 2 as Tier);
+    }
+  }
+}
+
+function main(): void {
+  const filter = parseArgs(process.argv.slice(2));
+  console.log("# Balance sweep");
+  console.log(
+    `Methodology: T1/T2 synthetic loadout, always-Strike, ${SEEDS_PER_CELL} seeds/cell, sfc32 rng.`,
+  );
+  console.log(
+    "Columns: win% / loss% / stalemate% / mean turns on win / mean player HP on win.",
+  );
+
+  switch (filter.kind) {
+    case "default":
+      runDefaultSweep();
+      break;
+    case "all-bosses":
+      runAllBosses();
+      break;
+    case "single-boss":
+      runBoss(filter.preset, filter.bossId, 1 as Tier);
+      runBoss(filter.preset, filter.bossId, 2 as Tier);
+      break;
   }
 }
 

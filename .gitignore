@@ -41,5 +41,8 @@ coverage/
 playwright-report/
 test-results/
 
+# sqlite (player-realm metadata)
+apps/web/data/
+
 # reference docs
 docs/
