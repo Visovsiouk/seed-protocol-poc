@@ -26,7 +26,12 @@ import Link from "next/link";
 import { useMemo } from "react";
 import { useAccount } from "wagmi";
 import type { Preset } from "@/lib/engine/types";
-import { useRealms, useTutorialProgress } from "@/lib/reads/hooks";
+import {
+  useRealms,
+  useTutorialProgress,
+  usePlayerRealms,
+  type PlayerRealmMeta,
+} from "@/lib/reads/hooks";
 import {
   buildRealmDisplay,
   type RealmDisplay,
@@ -184,32 +189,72 @@ function StarterCard({
 
 function CreatorCard({
   card,
+  meta,
 }: {
   card: Extract<RealmDisplay, { kind: "creator" }>;
+  /** Sqlite metadata when the realm was registered via /create
+   *. Absent for legacy realms — those still render with
+   *  the trial-mode copy and an address-based title. */
+  meta?: PlayerRealmMeta;
 }) {
-  // Creator realms enter via /play/realm/[address] in trial mode —
-  // see the route header for why we default flavor + bossId until
-  // creators can stamp those on-chain via /create.
+  const isRegistered = !!meta;
+  const title = meta?.name ?? `Realm ${shortAddress(card.address)}`;
+  // Preset-themed palette when registered, neutral dashed border for
+  // trial-mode (legacy) realms so the visual hierarchy still tells
+  // them apart at a glance.
+  const style = isRegistered
+    ? ({
+        background: "var(--color-preset-bg)",
+        color: "var(--color-preset-fg)",
+        border: "1px solid var(--color-preset-accent)",
+      } as const)
+    : ({
+        background: "rgba(255,255,255,0.03)",
+        border: "1px dashed rgba(255,255,255,0.18)",
+      } as const);
+
   return (
     <Link
       href={`/play/realm/${card.address}`}
       data-realm={card.address}
+      data-preset={meta?.preset}
       className="flex flex-col gap-3 p-5 rounded-md transition hover:scale-[1.02] focus:outline-none focus:ring"
-      style={{
-        background: "rgba(255,255,255,0.03)",
-        border: "1px dashed rgba(255,255,255,0.18)",
-      }}
+      style={style}
     >
       <header className="flex items-baseline justify-between gap-2">
-        <h3 className="text-base font-semibold font-mono">
-          Realm {shortAddress(card.address)}
+        <h3
+          className={
+            isRegistered
+              ? "text-lg font-semibold"
+              : "text-base font-semibold font-mono"
+          }
+        >
+          {title}
         </h3>
-        <StatusPill label={card.active ? "Active" : "Inactive"} tone={card.active ? "ok" : "muted"} />
+        {isRegistered ? (
+          <PresetBadge preset={meta.preset} />
+        ) : (
+          <StatusPill
+            label={card.active ? "Active" : "Inactive"}
+            tone={card.active ? "ok" : "muted"}
+          />
+        )}
       </header>
-      <p className="text-sm opacity-70 leading-relaxed">
-        Creator-deployed ecosystem. Owner {shortAddress(card.owner)}. Runs
-        in trial mode (fantasy flavor, no on-chain mints) until the
-        realm carries its own preset metadata.
+      <p className="text-sm opacity-75 leading-relaxed">
+        {isRegistered ? (
+          <>
+            Creator realm · final boss <code>{meta.bossId}</code> · max
+            tier <strong>T{meta.maxTier}</strong>. Owner{" "}
+            <span className="font-mono">{shortAddress(card.owner)}</span>.
+          </>
+        ) : (
+          <>
+            Creator-deployed ecosystem. Owner{" "}
+            <span className="font-mono">{shortAddress(card.owner)}</span>.
+            Runs in trial mode until the realm is registered via
+            <code> /create</code>.
+          </>
+        )}
       </p>
       <footer className="mt-auto flex items-center justify-between gap-2 pt-2">
         <p className="text-[11px] opacity-50 font-mono">
@@ -217,9 +262,13 @@ function CreatorCard({
         </p>
         <span
           className="text-xs uppercase tracking-widest"
-          style={{ color: "var(--color-preset-accent)" }}
+          style={{
+            color: isRegistered
+              ? "var(--color-preset-accent)"
+              : "rgba(255,255,255,0.55)",
+          }}
         >
-          Trial →
+          {isRegistered ? "Enter →" : "Trial →"}
         </span>
       </footer>
     </Link>
@@ -233,16 +282,22 @@ function CreatorCard({
 export function RealmSelector({
   override,
   progressOverride,
+  playerRealmsOverride,
 }: {
   override?: readonly RealmDisplay[];
   /** Test/Storybook hook — bypasses `useTutorialProgress`. */
   progressOverride?: TutorialProgress;
+  /** Test/Storybook hook — bypasses `usePlayerRealms`. */
+  playerRealmsOverride?: ReadonlyMap<string, PlayerRealmMeta>;
 } = {}) {
   const realms = useRealms();
   const { address } = useAccount();
   const tutorialQuery = useTutorialProgress(address);
+  const playerRealms = usePlayerRealms();
   const progress: TutorialProgress =
     progressOverride ?? tutorialQuery.data ?? emptyTutorialProgress();
+  const playerRealmMap: ReadonlyMap<string, PlayerRealmMeta> =
+    playerRealmsOverride ?? playerRealms.data ?? new Map();
 
   const display: readonly RealmDisplay[] = useMemo(() => {
     if (override) return override;
@@ -304,7 +359,11 @@ export function RealmSelector({
               lockState={lockStateFor(card.preset, progress)}
             />
           ) : (
-            <CreatorCard key={`creator:${card.address}`} card={card} />
+            <CreatorCard
+              key={`creator:${card.address}`}
+              card={card}
+              meta={playerRealmMap.get(card.address.toLowerCase())}
+            />
           ),
         )}
         {realms.isLoading && display.length === 0 && (

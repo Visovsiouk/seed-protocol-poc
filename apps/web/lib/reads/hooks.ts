@@ -97,6 +97,48 @@ export function useRealms() {
 }
 
 /**
+ * Player-realm metadata. Reads from the server sqlite store
+ * via `/api/realm/list`. Returns an address-keyed map so callers can
+ * cheaply join against the on-chain `EcosystemRegistry` listing.
+ *
+ * NOT authoritative — the on-chain `owner()` + `minters[...]` are the
+ * security boundary. This is purely for surfacing creator-chosen
+ * cosmetic data (name, preset, bossId) on the landing page.
+ */
+export type PlayerRealmMeta = {
+  address: `0x${string}`;
+  owner: `0x${string}`;
+  preset: Preset;
+  bossId: string;
+  name: string;
+  maxTier: number;
+  createdAt: number;
+};
+
+async function fetchPlayerRealms(): Promise<
+  ReadonlyMap<string, PlayerRealmMeta>
+> {
+  const res = await fetch("/api/realm/list", { cache: "no-store" });
+  const body = (await res.json()) as
+    | { ok: true; realms: PlayerRealmMeta[] }
+    | { ok: false; reason: string; message: string };
+  if (!body.ok) {
+    throw new Error(`player-realms[${body.reason}]: ${body.message}`);
+  }
+  const map = new Map<string, PlayerRealmMeta>();
+  for (const r of body.realms) map.set(r.address.toLowerCase(), r);
+  return map;
+}
+
+export function usePlayerRealms() {
+  return useQuery<ReadonlyMap<string, PlayerRealmMeta>>({
+    queryKey: queryKeys.playerRealms(),
+    queryFn: fetchPlayerRealms,
+    ...defaultReadQueryOptions,
+  });
+}
+
+/**
  * Resolves the configured starter realm for a preset against the live
  * registry. Returns the configured address, bossId, deployment state,
  * and the on-chain summary if registered. The play route uses this to
