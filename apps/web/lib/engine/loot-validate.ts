@@ -17,11 +17,26 @@
  */
 
 import { WEAPON_EFFECTS, ARMOR_EFFECTS, getEffectSpec } from "./catalog";
-import type { CatalogEffect, Element, LootRoll, Slot, Tier } from "./types";
-import { ELEMENTS } from "./types";
+import type { CatalogEffect, LootRoll, Preset, Slot, Tier } from "./types";
+import {
+  CYBERPUNK_ELEMENTS,
+  FANTASY_ELEMENTS,
+  SCIFI_ELEMENTS,
+  elementsFor,
+} from "./types";
 import { tierStats, type Difficulty } from "./tier";
 
-const VALID_ELEMENTS = new Set<Element>(ELEMENTS);
+/**
+ * Union of every preset's vocabulary — used when the caller does not
+ * supply a preset hint. The validator only needs to reject obvious
+ * forgeries ("lava"), so accepting any preset's native name is
+ * permissive but still rejects junk.
+ */
+const ALL_ELEMENTS: ReadonlySet<string> = new Set<string>([
+  ...FANTASY_ELEMENTS,
+  ...SCIFI_ELEMENTS,
+  ...CYBERPUNK_ELEMENTS,
+]);
 
 /** Tier sets that the distribution can produce per difficulty. */
 const TIERS_BY_DIFFICULTY: Record<Difficulty, ReadonlySet<Tier>> = {
@@ -53,7 +68,19 @@ export function validateLootRoll(
   depth: number,
   isBoss: boolean,
   maxTier?: Tier,
+  /**
+   * Preset of the realm the loot was rolled in. When provided, the
+   * element / resistElement value is checked against the *native*
+   * vocabulary of that preset (fantasy: fire/ice/... — scifi:
+   * plasma/cryo/... — cyberpunk: incendiary/cryogenic/...). When
+   * omitted the validator accepts any preset's vocabulary — kept
+   * permissive so legacy callers without a preset hint still work.
+   */
+  preset?: Preset,
 ): string | null {
+  const validElements: ReadonlySet<string> = preset
+    ? new Set(elementsFor(preset))
+    : ALL_ELEMENTS;
   // 1. Tier matches the difficulty distribution.
   const difficulty = difficultyForDepth(depth, isBoss);
   if (!TIERS_BY_DIFFICULTY[difficulty].has(loot.tier)) {
@@ -83,7 +110,7 @@ export function validateLootRoll(
     if (loot.resistElement !== undefined) {
       return `weapon must not carry resistElement (armor field)`;
     }
-    if (loot.element !== undefined && !VALID_ELEMENTS.has(loot.element)) {
+    if (loot.element !== undefined && !validElements.has(loot.element)) {
       return `weapon element "${loot.element}" is not a valid Element value`;
     }
   } else if (loot.slot === "armor") {
@@ -105,7 +132,7 @@ export function validateLootRoll(
     }
     if (
       loot.resistElement !== undefined &&
-      !VALID_ELEMENTS.has(loot.resistElement)
+      !validElements.has(loot.resistElement)
     ) {
       return `armor resistElement "${loot.resistElement}" is not a valid Element value`;
     }

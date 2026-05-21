@@ -253,6 +253,7 @@ export async function POST(req: Request) {
     body.depth,
     body.depth >= BOSS_DEPTH,
     maxTier,
+    effectivePreset,
   );
   if (validationErr) {
     return reply(422, {

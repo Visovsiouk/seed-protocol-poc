@@ -15,22 +15,34 @@ export type Slot = "weapon" | "armor" | "accessory";
 export type DamageDie = 4 | 6 | 8 | 10 | 12;
 
 /**
- * Canonical engine element enum. Mirrors `element` (Fantasy
- * weapon schema) but is preset-neutral on purpose: presets carry parallel
- * enums on-chain (`weapon_type` for Sci-Fi, `damage_type` for Cyberpunk),
- * and the adapters map them onto the same canonical set the engine
- * uses. The engine never branches on preset for element math.
+ * Per-preset element vocabularies. Each realm names its own elemental
+ * lexicon — Fantasy `fire/ice/shock/holy/unholy`, Sci-Fi
+ * `plasma/cryo/ion/photon/void`, Cyberpunk
+ * `incendiary/cryogenic/emp/laser/nano`. None of these names is
+ * privileged: the corresponding on-chain weapon/armor schemas declare
+ * each enum natively, and the 12 ordered-pair adapter contracts
+ * re-encode by index when an asset crosses a preset boundary.
  *
- *   none   — no element; standard mundane swing.
- *   fire   — Fantasy "fire" / Sci-Fi "plasma" / Cyberpunk "incendiary"
- *   ice    — Fantasy "ice"  / Sci-Fi "cryo"   / Cyberpunk "cryogenic"
- *   shock  — Fantasy "shock"/ Sci-Fi "ion"    / Cyberpunk "emp"
- *   holy   — Fantasy "holy" / Sci-Fi "photon" / Cyberpunk "laser"
- *   unholy — Fantasy "unholy"/Sci-Fi "void"   / Cyberpunk "nano"
+ * The engine consumes `Element` as a loose string carrier — combat
+ * math uses string equality only — so a translated card from a
+ * different preset can flow through `combat.ts` without any decoder
+ * indirection. Producers (loot rollers, flavor banks, monster
+ * defs) should use the strict per-preset unions so the wrong vocab
+ * cannot leak into a realm at construction time.
  */
-export type Element = "none" | "fire" | "ice" | "shock" | "holy" | "unholy";
+export type FantasyElement = "none" | "fire" | "ice" | "shock" | "holy" | "unholy";
+export type SciFiElement = "none" | "plasma" | "cryo" | "ion" | "photon" | "void";
+export type CyberpunkElement = "none" | "incendiary" | "cryogenic" | "emp" | "laser" | "nano";
 
-export const ELEMENTS: readonly Element[] = [
+/**
+ * Carrier type for the engine. Intentionally loose — covers any
+ * preset's vocabulary. Mid-flight cards translated across realms
+ * carry the *target* preset's element name, which would not satisfy a
+ * single canonical union but is still mechanically meaningful.
+ */
+export type Element = string;
+
+export const FANTASY_ELEMENTS: readonly FantasyElement[] = [
   "none",
   "fire",
   "ice",
@@ -39,14 +51,94 @@ export const ELEMENTS: readonly Element[] = [
   "unholy",
 ] as const;
 
-/** Combat-affecting elements (excludes "none"). */
-export const COMBAT_ELEMENTS: readonly Exclude<Element, "none">[] = [
+export const SCIFI_ELEMENTS: readonly SciFiElement[] = [
+  "none",
+  "plasma",
+  "cryo",
+  "ion",
+  "photon",
+  "void",
+] as const;
+
+export const CYBERPUNK_ELEMENTS: readonly CyberpunkElement[] = [
+  "none",
+  "incendiary",
+  "cryogenic",
+  "emp",
+  "laser",
+  "nano",
+] as const;
+
+/**
+ * Per-preset combat-element pools (excludes "none"). Loot rollers
+ * use these so a Sci-Fi weapon never rolls "fire" and a Fantasy
+ * weapon never rolls "plasma".
+ */
+export const FANTASY_COMBAT_ELEMENTS: readonly Exclude<FantasyElement, "none">[] = [
   "fire",
   "ice",
   "shock",
   "holy",
   "unholy",
 ] as const;
+export const SCIFI_COMBAT_ELEMENTS: readonly Exclude<SciFiElement, "none">[] = [
+  "plasma",
+  "cryo",
+  "ion",
+  "photon",
+  "void",
+] as const;
+export const CYBERPUNK_COMBAT_ELEMENTS: readonly Exclude<CyberpunkElement, "none">[] = [
+  "incendiary",
+  "cryogenic",
+  "emp",
+  "laser",
+  "nano",
+] as const;
+
+/**
+ * Return the combat-element pool native to a given preset. Used by
+ * the loot roller in `loot.ts` to pick a weapon's element from the
+ * correct vocabulary.
+ */
+export function combatElementsFor(preset: Preset): readonly string[] {
+  if (preset === "fantasy") return FANTASY_COMBAT_ELEMENTS;
+  if (preset === "scifi") return SCIFI_COMBAT_ELEMENTS;
+  return CYBERPUNK_COMBAT_ELEMENTS;
+}
+
+/**
+ * Return the full element pool (with "none") native to a given preset.
+ * Used by validators to check that an off-chain card's element string
+ * is one of the vocabulary entries for its source preset.
+ */
+export function elementsFor(preset: Preset): readonly string[] {
+  if (preset === "fantasy") return FANTASY_ELEMENTS;
+  if (preset === "scifi") return SCIFI_ELEMENTS;
+  return CYBERPUNK_ELEMENTS;
+}
+
+/**
+ * 1:1 PoC element-index mapping. The engine's combat math is purely
+ * string-equality based, but on-chain encoders need to convert a
+ * native string into a numeric enum value. Index parity across the
+ * three preset enums lets us re-encode by ordinal — see the 12
+ * adapter contracts under `contracts/src/adapters/`.
+ */
+export function elementIndex(preset: Preset, element: string): number {
+  const pool = elementsFor(preset);
+  const i = pool.indexOf(element);
+  return i < 0 ? 0 : i;
+}
+
+/**
+ * Inverse of `elementIndex`. Given a numeric enum value and the preset
+ * the schema belongs to, return the native vocabulary string.
+ */
+export function elementFromIndex(preset: Preset, index: number): string {
+  const pool = elementsFor(preset);
+  return pool[index] ?? "none";
+}
 
 export type CatalogEffectName =
   // weapon-slot effects
@@ -216,8 +308,31 @@ export type LootRoll = {
   catalogEffects: CatalogEffect[];
   /** Seed for adjective+noun assembly so the name is deterministic. */
   nameSeed: bigint;
+  /**
+   * Story-object name override. When set, the runtime skips the
+   * realm-themed adjective+noun assembly for this drop and uses this
+   * name verbatim. Reserved for narrative beats like Genesis' Pilgrim's
+   * Brand — generic loot leaves this undefined.
+   */
+  nameOverride?: string;
   extraFields: Record<string, string | number | boolean>;
 };
+
+/**
+ * Per-realm death handling.
+ *
+ *   "permadeath" — default. A monster swing that drops the player to
+ *     ≤ 0 HP ends the run; `defeated` is set and the UI shows the
+ *     defeat panel + restart CTA.
+ *
+ *   "seed-mercy" — Genesis-only. The Seed itself grows the player back
+ *     from its own ground. Death rewinds the run to depth 1 with a
+ *     re-seeded encounter chain, the `runAttempt` counter bumps, and
+ *     the engine emits narrative lines (see `lib/story/genesis.ts`)
+ *     into the feed. `defeated` is NEVER set; the UI keeps playing.
+ *     Equipped gear persists across attempts.
+ */
+export type DefeatMode = "permadeath" | "seed-mercy";
 
 export type RunState = {
   preset: Preset;
@@ -226,6 +341,13 @@ export type RunState = {
   rngSeed: `0x${string}`;
   /** Current room number, 1-indexed. */
   depth: number;
+  /**
+   * Depth at which the boss arrives. Defaults to 6 (the canonical
+   * Reach-and-deeper layout). Genesis sets 5 — the Seed's first skin
+   * is narrower than the shards. Player-built realms scale higher via
+   *.
+   */
+  bossDepth: number;
   encounter: EncounterState | null;
   equipped: { weapon?: AssetCard; armor?: AssetCard; accessory?: AssetCard };
   pendingLoot?: LootRoll;
@@ -238,10 +360,36 @@ export type RunState = {
    * defeat panel with a restart CTA. Gear in `equipped` is retained
    * (a death surrenders progress, not inventory). No clearReceipt is
    * minted, so the realm-progression chain stays put.
+   *
+   * Only set under `defeatMode === "permadeath"`. Under "seed-mercy"
+   * the engine rewinds and emits narration instead.
    */
   defeated: boolean;
   defeatedAtDepth?: number;
   defeatedTurn?: number;
+  /** Per-realm death handling. See `DefeatMode`. */
+  defeatMode: DefeatMode;
+  /**
+   * 1-based attempt counter. Bumps on every seed-mercy respawn so the
+   * narrative voice can escalate (see `genesisRespawnVoice`) and so
+   * the post-reset encounter chain doesn't deterministically replay
+   * the death (the seed gets attempt-salted).
+   */
+  runAttempt: number;
+  /**
+   * When set, the FIRST weapon-slot loot drop of every run-attempt is
+   * coerced to this element regardless of the rolled value. Genesis
+   * uses "fire" so the Hag (`weakTo: fire`) is winnable as a story
+   * beat — the player finds a pilgrim's blade. Cleared on respawn so
+   * each attempt gets its own brand.
+   */
+  forcedFirstWeaponElement?: Exclude<Element, "none">;
+  /**
+   * True once any weapon-slot loot has dropped on this attempt. Gates
+   * `forcedFirstWeaponElement` so the override fires exactly once per
+   * attempt. Reset to false on seed-mercy respawn.
+   */
+  firstWeaponDropped: boolean;
 };
 
 export type ActionChoice =

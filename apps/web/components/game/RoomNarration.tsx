@@ -19,14 +19,21 @@ import { useElementLabel } from "@/lib/contracts/adapters";
 
 /** Per-element accent colours, kept local to this banner (mirror of the
  * inventory AssetCard's palette). Engine doesn't know about presentation;
- * these are pure UI tokens. */
-const ELEMENT_COLOR: Record<Exclude<Element, "none">, { bg: string; fg: string }> = {
-  fire: { bg: "rgba(255,120,40,0.18)", fg: "#ffb38a" },
-  ice: { bg: "rgba(120,200,255,0.18)", fg: "#a8dcff" },
-  shock: { bg: "rgba(255,230,80,0.18)", fg: "#ffeb8a" },
-  holy: { bg: "rgba(255,220,140,0.18)", fg: "#ffd97a" },
-  unholy: { bg: "rgba(180,120,255,0.18)", fg: "#caa6ff" },
+ * these are pure UI tokens. Hue is enum-index-keyed, so
+ * fire / plasma / incendiary share a colour, etc. */
+const EMBER = { bg: "rgba(255,120,40,0.18)", fg: "#ffb38a" };
+const FROST = { bg: "rgba(120,200,255,0.18)", fg: "#a8dcff" };
+const SPARK = { bg: "rgba(255,230,80,0.18)", fg: "#ffeb8a" };
+const GOLD_LIGHT = { bg: "rgba(255,220,140,0.18)", fg: "#ffd97a" };
+const VIOLET = { bg: "rgba(180,120,255,0.18)", fg: "#caa6ff" };
+const ELEMENT_COLOR: Record<string, { bg: string; fg: string }> = {
+  fire: EMBER, plasma: EMBER, incendiary: EMBER,
+  ice: FROST, cryo: FROST, cryogenic: FROST,
+  shock: SPARK, ion: SPARK, emp: SPARK,
+  holy: GOLD_LIGHT, photon: GOLD_LIGHT, laser: GOLD_LIGHT,
+  unholy: VIOLET, void: VIOLET, nano: VIOLET,
 };
+const ELEMENT_COLOR_FALLBACK = { bg: "rgba(180,180,180,0.18)", fg: "#cccccc" };
 
 function ElementTag({
   element,
@@ -39,7 +46,7 @@ function ElementTag({
    * `null` falls back to the canonical name via `useElementLabel`. */
   preset: Preset | null;
 }) {
-  const c = ELEMENT_COLOR[element];
+  const c = ELEMENT_COLOR[element] ?? ELEMENT_COLOR_FALLBACK;
   const elementLabel = useElementLabel(element, preset);
   return (
     <span

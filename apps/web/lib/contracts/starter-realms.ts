@@ -1,4 +1,4 @@
-import type { Preset } from "@/lib/engine/types";
+import type { DefeatMode, Element, Preset } from "@/lib/engine/types";
 import { isStarterRealmDeployed } from "./realm-picker";
 import { getSeededRealm } from "./seeded-realms";
 
@@ -24,12 +24,68 @@ export type StarterRealm = {
   bossId: string;
   name: string;
   tagline: string;
+  /**
+   * Depth at which the boss arrives. Normalized to 5 across all three
+   * starters — the linear forced progression keeps the cadence even,
+   * so the player isn't ambushed by a longer run when they cross a
+   * warp. The post-3-clear free play (and any community realm) can
+   * pick its own depth without touching this baseline.
+   */
+  bossDepth: number;
+  /**
+   * Per-realm death handling. All three starters are seed-mercy: the
+   * PoC has no permadeath anywhere. Death rewinds the run to depth 1,
+   * reseeds, and bumps `runAttempt` so the narration can comment on
+   * the loop. Community realms can still opt in to
+   * `permadeath` if their creator wants higher stakes.
+   */
+  defeatMode: DefeatMode;
+  /**
+   * First-weapon override. Genesis forces `"fire"` so the player
+   * stumbles onto the Pilgrim's Brand — the canonical fire blade that
+   * justifies the Hag's `weakTo: fire` as a narrative beat rather
+   * than a coincidence.
+   */
+  forcedFirstWeaponElement?: Exclude<Element, "none">;
 };
 
 const BOSS_ID_BY_PRESET: Record<Preset, string> = {
   fantasy: "forest_hag",
   scifi: "ai_core",
   cyberpunk: "black_ice",
+};
+
+/**
+ * Per-preset narrative-mechanic config. See `StarterRealm` field docs
+ * for the worldbuilding behind each value.
+ */
+const STARTER_MECHANICS_BY_PRESET: Record<
+  Preset,
+  Pick<StarterRealm, "bossDepth" | "defeatMode" | "forcedFirstWeaponElement">
+> = {
+  // The Hollow Reach — first door. Five rooms, seed-mercy, and a
+  // forced fire first weapon so the player stumbles onto the Pilgrim's
+  // Brand and the Hag's fire-weakness reads as a story beat, not a
+  // coincidence.
+  fantasy: {
+    bossDepth: 5,
+    defeatMode: "seed-mercy",
+    forcedFirstWeaponElement: "fire",
+  },
+  // Black Ice District — second door. Same five-room cadence; the
+  // protocol still holds the player, just in wetter neon. No forced
+  // first weapon — the warp brought the Brand across, translated.
+  cyberpunk: {
+    bossDepth: 5,
+    defeatMode: "seed-mercy",
+  },
+  // Drift Station Ker-7 — third door. Last starter; the corridor is
+  // longer but the cadence stays even. The protocol respawns the
+  // player here too.
+  scifi: {
+    bossDepth: 5,
+    defeatMode: "seed-mercy",
+  },
 };
 
 const STARTER_DISPLAY_BY_PRESET: Record<Preset, { name: string; tagline: string }> = {
@@ -63,6 +119,7 @@ export function getStarterRealm(preset: Preset): StarterRealm {
     bossId: BOSS_ID_BY_PRESET[preset],
     name: STARTER_DISPLAY_BY_PRESET[preset].name,
     tagline: STARTER_DISPLAY_BY_PRESET[preset].tagline,
+    ...STARTER_MECHANICS_BY_PRESET[preset],
   };
 }
 

@@ -23,7 +23,7 @@
  */
 
 import Link from "next/link";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useAccount } from "wagmi";
 import type { Preset } from "@/lib/engine/types";
 import {
@@ -42,10 +42,17 @@ import {
   isPlayable,
   lockStateFor,
   lockTeaseFor,
-  STORY_HERO_GENESIS,
+  nextStarterFor,
+  REALM_ORDER,
   STORY_HERO_OPEN,
   type RealmLockState,
 } from "@/lib/story/progression";
+import {
+  LedgerBody,
+  LedgerRule,
+  LedgerStamp,
+} from "@/components/ledger/Ledger";
+import { ColdOpenBook, hasConsumedColdOpen } from "@/components/story/ColdOpenBook";
 
 function PresetBadge({ preset }: { preset: Preset }) {
   const label =
@@ -122,17 +129,29 @@ function StarterCard({
   const inner = (
     <>
       <header className="flex items-baseline justify-between gap-2">
-        <h3 className="text-lg font-semibold">{card.name}</h3>
+        <h3
+          className="font-mono text-lg font-medium"
+          style={{ letterSpacing: "-0.01em" }}
+        >
+          {card.name}
+        </h3>
         <PresetBadge preset={card.preset} />
       </header>
-      <p className="text-sm opacity-80 leading-relaxed">
-        {tease ?? card.tagline}
-      </p>
+      {tease ? (
+        <div className="flex flex-col gap-2">
+          <LedgerStamp>Sealed · note left on the door</LedgerStamp>
+          <LedgerRule tone="muted" />
+          <LedgerBody size="sm">{tease}</LedgerBody>
+        </div>
+      ) : (
+        <LedgerBody size="sm">{card.tagline}</LedgerBody>
+      )}
       <footer className="mt-auto flex items-center justify-between gap-2 pt-2">
         <StatusPill label={status.label} tone={status.tone} />
         <span
-          className="text-xs uppercase tracking-widest"
+          className="font-mono text-xs uppercase"
           style={{
+            letterSpacing: "0.22em",
             color: playable
               ? "var(--color-preset-accent)"
               : "rgba(255,255,255,0.35)",
@@ -307,37 +326,16 @@ export function RealmSelector({
     });
   }, [override, realms.data]);
 
-  const fantasyCleared = progress.cleared.some((c) => c.preset === "fantasy");
-  // Pre-Genesis the picker collapses to a single door — every other
-  // realm (starter or community) is hidden so the world feels narrow
-  // and the player can't wander past the Reach.
-  if (!fantasyCleared) {
-    const fantasy = display.find(
-      (c) => c.kind === "starter" && c.preset === "fantasy",
-    ) as Extract<RealmDisplay, { kind: "starter" }> | undefined;
+  // Pre-3-clear the picker is replaced by the forced linear walk: the
+  // cold-open Book on first arrival, then a single Continue card that
+  // points the player at whichever starter is up next. No other realms
+  // (starter or community) are visible — the world is meant to feel
+  // narrow, and the protocol nouns stay off-screen.
+  if (progress.starterClears < REALM_ORDER.length) {
     return (
-      <section
-        aria-label="Genesis"
-        className="flex flex-col gap-8 w-full max-w-3xl"
-        data-preset="fantasy"
-      >
-        <GenesisHero />
-        <div className="grid">
-          {fantasy ? (
-            <GenesisCard card={fantasy} />
-          ) : realms.isLoading ? (
-            <p className="text-sm opacity-60">Loading Genesis…</p>
-          ) : (
-            <p className="text-sm" style={{ color: "#f77" }}>
-              Genesis realm config missing. Run <code>pnpm seed</code>.
-            </p>
-          )}
-        </div>
-        <p className="text-[11px] opacity-50 leading-relaxed max-w-prose">
-          More doors will open once the Reach falls. Some of them were built
-          by other players.
-        </p>
-      </section>
+      <PreArcLanding
+        progress={progress}
+      />
     );
   }
 
@@ -379,40 +377,128 @@ export function RealmSelector({
   );
 }
 
-function GenesisHero() {
-  return (
-    <header className="flex flex-col gap-3 max-w-2xl">
-      <span
-        className="text-[11px] uppercase tracking-[0.3em] opacity-70"
-        style={{ color: "var(--color-preset-accent)" }}
+/**
+ * Pre-arc landing: cold open on first arrival, then a single Continue
+ * card for the next starter in `REALM_ORDER`. Renders no other realms
+ * and uses no protocol vocabulary.
+ *
+ * The cold-open flag is read from localStorage; we mirror it into
+ * state on mount so the SSR pass + first client render don't disagree
+ * about which branch to show.
+ */
+function PreArcLanding({ progress }: { progress: TutorialProgress }) {
+  const [showBook, setShowBook] = useState<boolean | null>(null);
+  useEffect(() => {
+    // Only ever show the Book on the player's very first arrival
+    // (zero starters cleared, no consumed flag). Once they've stepped
+    // through it we never want it to re-appear, even between realms.
+    if (progress.starterClears === 0 && !hasConsumedColdOpen()) {
+      setShowBook(true);
+    } else {
+      setShowBook(false);
+    }
+  }, [progress.starterClears]);
+
+  // Stable shape during the pre-mount pass — avoids a flash of the
+  // Continue card on first paint when the Book is about to show.
+  if (showBook === null) {
+    return (
+      <section
+        aria-label="Loading"
+        className="flex flex-col gap-6 w-full max-w-2xl"
+      />
+    );
+  }
+
+  if (showBook) {
+    return (
+      <section
+        aria-label="Cold open"
+        className="flex flex-col gap-6 w-full max-w-2xl"
+        data-preset="fantasy"
       >
-        {STORY_HERO_GENESIS.eyebrow}
-      </span>
-      <h2 className="text-3xl font-semibold leading-tight">
-        {STORY_HERO_GENESIS.title}
-      </h2>
-      <p className="text-base opacity-80 leading-relaxed">
-        {STORY_HERO_GENESIS.body}
-      </p>
-    </header>
+        <ColdOpenBook wakeHref="/play/fantasy" />
+      </section>
+    );
+  }
+
+  // Returning visitor with the cold open consumed but the arc not yet
+  // finished — show a single Continue card to whichever starter is up
+  // next. Realm names stay generic so the next-door surprise survives.
+  const nextPreset = nextStarterFor(progress.starterClears);
+  const stepLabel = ["Door I", "Door II", "Door III"][progress.starterClears] ?? "The next door";
+  return (
+    <section
+      aria-label="Continue"
+      className="flex flex-col gap-6 w-full max-w-2xl"
+      data-preset={nextPreset ?? "fantasy"}
+    >
+      <header className="flex flex-col gap-4 max-w-2xl">
+        <LedgerRule />
+        <LedgerStamp>Field record · the walk continues</LedgerStamp>
+        <h2
+          className="font-mono text-xl leading-snug font-medium"
+          style={{ letterSpacing: "-0.015em" }}
+        >
+          {progress.starterClears === 0
+            ? "You wake in mud."
+            : "The ground is different. The mark on your hand is the same."}
+        </h2>
+        <LedgerBody size="sm">
+          {progress.starterClears === 0
+            ? "Walk forward. The ground here remembers you."
+            : "Keep walking. There are more doors. The protocol is still counting."}
+        </LedgerBody>
+        <LedgerRule tone="muted" />
+      </header>
+
+      {nextPreset ? (
+        <Link
+          href={`/play/${nextPreset}`}
+          data-preset={nextPreset}
+          className="group flex flex-col gap-3 p-6 rounded-md transition hover:scale-[1.01] focus:outline-none focus:ring"
+          style={{
+            background: "var(--color-preset-bg)",
+            color: "var(--color-preset-fg)",
+            border: "1px solid var(--color-preset-accent)",
+          }}
+        >
+          <div className="flex items-baseline justify-between gap-3">
+            <LedgerStamp>{stepLabel}</LedgerStamp>
+            <span
+              className="font-mono text-xs uppercase"
+              style={{
+                letterSpacing: "0.22em",
+                color: "var(--color-preset-accent)",
+              }}
+            >
+              Walk in →
+            </span>
+          </div>
+        </Link>
+      ) : (
+        <p className="text-sm opacity-60">No further door is open yet.</p>
+      )}
+    </section>
   );
 }
 
 function OpenPickerHero({ progress }: { progress: TutorialProgress }) {
   return (
-    <header className="flex flex-col gap-2 max-w-3xl">
-      <div className="flex items-center gap-3">
-        <span className="text-[11px] uppercase tracking-widest opacity-60">
-          {STORY_HERO_OPEN.eyebrow}
-        </span>
+    <header className="flex flex-col gap-4 max-w-3xl">
+      <LedgerRule />
+      <div className="flex items-center justify-between gap-3">
+        <LedgerStamp>{STORY_HERO_OPEN.eyebrow}</LedgerStamp>
         <ShardTrack shards={progress.distinctClears} />
       </div>
-      <h2 className="text-xl font-semibold leading-snug">
+      <h2
+        className="font-mono text-xl leading-snug font-medium"
+        style={{ letterSpacing: "-0.01em" }}
+      >
         {STORY_HERO_OPEN.title}
       </h2>
-      <p className="text-sm opacity-70 leading-relaxed">
-        {STORY_HERO_OPEN.body}
-      </p>
+      <LedgerBody size="sm">{STORY_HERO_OPEN.body}</LedgerBody>
+      <LedgerRule tone="muted" />
     </header>
   );
 }
@@ -445,63 +531,3 @@ function ShardTrack({ shards }: { shards: number }) {
   );
 }
 
-/**
- * Cinematic Genesis card. Larger than a grid cell; uses preset
- * variables so the page can theme it via the body `data-preset`.
- */
-function GenesisCard({
-  card,
-}: {
-  card: Extract<RealmDisplay, { kind: "starter" }>;
-}) {
-  return (
-    <Link
-      href={`/play/${card.preset}`}
-      data-preset={card.preset}
-      className="group relative flex flex-col gap-4 p-8 rounded-lg overflow-hidden transition hover:scale-[1.01] focus:outline-none focus:ring"
-      style={{
-        background:
-          "radial-gradient(120% 80% at 20% 0%, rgba(255,255,255,0.10) 0%, var(--color-preset-bg) 60%)",
-        color: "var(--color-preset-fg)",
-        border: "1px solid var(--color-preset-accent)",
-        boxShadow: "0 0 40px -20px var(--color-preset-accent)",
-      }}
-    >
-      <span
-        aria-hidden
-        className="absolute inset-0 pointer-events-none opacity-30 transition group-hover:opacity-50"
-        style={{
-          background:
-            "repeating-linear-gradient(115deg, transparent 0 18px, rgba(255,255,255,0.04) 18px 19px)",
-        }}
-      />
-      <div className="relative flex flex-col gap-3">
-        <header className="flex items-baseline justify-between gap-3">
-          <h3 className="text-2xl font-semibold tracking-tight">
-            {card.name}
-          </h3>
-          <span
-            className="text-[10px] uppercase tracking-[0.25em] opacity-70"
-            style={{ color: "var(--color-preset-accent)" }}
-          >
-            Genesis
-          </span>
-        </header>
-        <p className="text-sm opacity-85 leading-relaxed max-w-prose">
-          {card.tagline}
-        </p>
-        <footer className="flex items-center justify-between pt-2">
-          <span className="text-[11px] uppercase tracking-widest opacity-60">
-            Six rooms. One Hag. One first step.
-          </span>
-          <span
-            className="text-sm uppercase tracking-widest font-medium"
-            style={{ color: "var(--color-preset-accent)" }}
-          >
-            Walk in →
-          </span>
-        </footer>
-      </div>
-    </Link>
-  );
-}

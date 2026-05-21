@@ -11,7 +11,8 @@
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",
     "wagmi:gen": "pnpm --filter web wagmi:gen",
-    "seed": "pnpm --filter web seed"
+    "seed": "pnpm --filter web seed",
+    "bring-up": "bash scripts/bring-up.sh"
   },
   "engines": {
     "node": ">=20"

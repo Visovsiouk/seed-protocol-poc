@@ -53,14 +53,29 @@ const TIER_LABEL: Record<number, string> = {
 
 /** Per-element accent colours for the inline element chip. Kept in this
  * component (rather than globals.css) because the engine itself never
- * needs to know about presentation — these are pure UI tokens. */
-const ELEMENT_COLOR: Record<Exclude<Element, "none">, { bg: string; fg: string }> = {
-  fire: { bg: "rgba(255,120,40,0.18)", fg: "#ffb38a" },
-  ice: { bg: "rgba(120,200,255,0.18)", fg: "#a8dcff" },
-  shock: { bg: "rgba(255,230,80,0.18)", fg: "#ffeb8a" },
-  holy: { bg: "rgba(255,220,140,0.18)", fg: "#ffd97a" },
-  unholy: { bg: "rgba(180,120,255,0.18)", fg: "#caa6ff" },
+ * needs to know about presentation — these are pure UI tokens.
+ *
+ * The three preset vocabularies share enum indices 1..5,
+ * so all three names at a given index share a hue:
+ *   1: fire / plasma / incendiary    → ember
+ *   2: ice / cryo / cryogenic        → frost
+ *   3: shock / ion / emp             → spark
+ *   4: holy / photon / laser         → gold-light
+ *   5: unholy / void / nano          → violet
+ */
+const EMBER = { bg: "rgba(255,120,40,0.18)", fg: "#ffb38a" };
+const FROST = { bg: "rgba(120,200,255,0.18)", fg: "#a8dcff" };
+const SPARK = { bg: "rgba(255,230,80,0.18)", fg: "#ffeb8a" };
+const GOLD_LIGHT = { bg: "rgba(255,220,140,0.18)", fg: "#ffd97a" };
+const VIOLET = { bg: "rgba(180,120,255,0.18)", fg: "#caa6ff" };
+const ELEMENT_COLOR: Record<string, { bg: string; fg: string }> = {
+  fire: EMBER, plasma: EMBER, incendiary: EMBER,
+  ice: FROST, cryo: FROST, cryogenic: FROST,
+  shock: SPARK, ion: SPARK, emp: SPARK,
+  holy: GOLD_LIGHT, photon: GOLD_LIGHT, laser: GOLD_LIGHT,
+  unholy: VIOLET, void: VIOLET, nano: VIOLET,
 };
+const ELEMENT_COLOR_FALLBACK = { bg: "rgba(180,180,180,0.18)", fg: "#cccccc" };
 
 function ElementChip({
   element,
@@ -78,7 +93,7 @@ function ElementChip({
    */
   preset: Preset | null;
 }) {
-  const c = ELEMENT_COLOR[element];
+  const c = ELEMENT_COLOR[element] ?? ELEMENT_COLOR_FALLBACK;
   const label = useElementLabel(element, preset);
   return (
     <span

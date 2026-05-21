@@ -5,8 +5,8 @@
  *
  * Deployment cardinality (12 contracts total):
  *
- *   PresetWeaponAdapter × 6 ordered preset pairs
- *   PresetArmorAdapter  × 6 ordered preset pairs
+ *   6 weapon adapters — one Solidity type per ordered preset pair
+ *   6 armor  adapters — one Solidity type per ordered preset pair
  *
  *   The 6 ordered pairs are every (source, target) combination from
  *   {fantasy, scifi, cyberpunk} where source != target:
@@ -15,7 +15,10 @@
  *     fantasy → cyberpunk, cyberpunk → fantasy
  *     scifi   → cyberpunk, cyberpunk → scifi
  *
- *   Each adapter is bound at construction to the actual on-chain loot
+ *   Each adapter is a *distinct contract* — e.g. `FantasyToSciFiWeaponAdapter`
+ *   knows how to decode the Fantasy weapon schema and re-encode against
+ *   the Sci-Fi weapon schema (with any direction-specific rebalance baked
+ *   in). At construction time it's bound to the actual on-chain loot
  *   schema ids (read from `.seeded-realms.json`) and then registered in
  *   AdapterRegistry under that same (source, target) pair so any
  *   ecosystem on-chain can discover them via `getAdapters(sourceSchemaId)`.
@@ -79,17 +82,26 @@ type WalletClientT = any;
 const PRESETS = ["fantasy", "scifi", "cyberpunk"] as const;
 type Preset = (typeof PRESETS)[number];
 
-// Must match `contracts/src/PresetTypes.sol :: Preset` enum order:
-// Fantasy=0, SciFi=1, Cyberpunk=2. The adapter constructor consumes this
-// as a uint8, so the value is on-chain meaningful, not just a label.
-const PRESET_ENUM: Record<Preset, number> = {
-  fantasy: 0,
-  scifi: 1,
-  cyberpunk: 2,
-};
-
 type Slot = "weapon" | "armor";
 const SLOTS: readonly Slot[] = ["weapon", "armor"] as const;
+
+// Solidity contract names are PascalCase by convention; the forge
+// artifact path mirrors the file name (`Foo.sol/Foo.json`). The contracts
+// live under `contracts/src/adapters/{weapon,armor}/`.
+const PRESET_PASCAL: Record<Preset, string> = {
+  fantasy: "Fantasy",
+  scifi: "SciFi",
+  cyberpunk: "Cyberpunk",
+};
+
+const SLOT_PASCAL: Record<Slot, string> = {
+  weapon: "Weapon",
+  armor: "Armor",
+};
+
+function adapterContractName(slot: Slot, src: Preset, tgt: Preset): string {
+  return `${PRESET_PASCAL[src]}To${PRESET_PASCAL[tgt]}${SLOT_PASCAL[slot]}Adapter`;
+}
 
 // Forge artifact paths. The script reads bytecode + ABI straight from
 // the build output — there's no need to re-compile or duplicate the ABI.
@@ -102,18 +114,18 @@ const CONTRACTS_OUT = resolve(
   "out",
 );
 
-const ARTIFACT_PATH: Record<Slot, string> = {
-  weapon: resolve(CONTRACTS_OUT, "PresetWeaponAdapter.sol", "PresetWeaponAdapter.json"),
-  armor: resolve(CONTRACTS_OUT, "PresetArmorAdapter.sol", "PresetArmorAdapter.json"),
-};
+function artifactPath(slot: Slot, src: Preset, tgt: Preset): string {
+  const name = adapterContractName(slot, src, tgt);
+  return resolve(CONTRACTS_OUT, `${name}.sol`, `${name}.json`);
+}
 
 type ForgeArtifact = {
   abi: Abi;
   bytecode: { object: Hex };
 };
 
-function loadArtifact(slot: Slot): ForgeArtifact {
-  const path = ARTIFACT_PATH[slot];
+function loadArtifact(slot: Slot, src: Preset, tgt: Preset): ForgeArtifact {
+  const path = artifactPath(slot, src, tgt);
   if (!existsSync(path)) {
     throw new Error(
       `Missing forge artifact at ${path} — run \`forge build\` in contracts/ first`,
@@ -271,7 +283,7 @@ async function deployAdapter(
   publicClient: PublicClientT,
   admin: Signer,
   artifact: ForgeArtifact,
-  args: readonly [bigint, bigint, number, number],
+  args: readonly [bigint, bigint],
   label: string,
 ): Promise<Address> {
   const hash = await admin.wallet.deployContract({
@@ -362,10 +374,10 @@ async function main() {
   for (const p of PRESETS) console.log(`  ${p.padEnd(9)} = ${lootSchemas[p]}`);
   console.log("");
 
-  const artifacts: Record<Slot, ForgeArtifact> = {
-    weapon: loadArtifact("weapon"),
-    armor: loadArtifact("armor"),
-  };
+  // Each (slot, src, tgt) is a *distinct* compiled contract now, so
+  // artifacts are loaded per-pair rather than once-per-slot. Lazy-load
+  // inside the loop to keep the failure mode local — missing one
+  // artifact shouldn't block reporting the rest of the work.
 
   // Hydrate existing state so re-runs are idempotent at slot×pair granularity.
   const doc = loadAdaptersFile();
@@ -377,6 +389,7 @@ async function main() {
       for (const tgt of PRESETS) {
         if (src === tgt) continue;
         const label = `${slot} ${src}→${tgt}`;
+        const artifact = loadArtifact(slot, src, tgt);
         const prior = existing.adapters[slot][src][tgt];
         if (prior && prior !== ZERO) {
           // Probe bytecode — handles the "Anvil restarted but JSON
@@ -385,18 +398,19 @@ async function main() {
           if (!priorCode || priorCode === "0x") {
             console.log(`  stale ${label} at ${prior} (no code) — redeploying`);
           } else {
-            // Probe `elementLabel` to detect outdated bytecode (the view
-            // was added after the first seed). If the call reverts the
-            // contract is from an older deploy and we redeploy in place.
-            // PresetTypes.Preset.Fantasy = 0, Element.None = 0; result
-            // must be the literal "none" per `PresetElementLabels`.
+            // Probe `sourceElementLabel(0)` to detect outdated bytecode
+            // (the dual label-view surface was added when the per-pair
+            // adapter split landed). Every schema library defines
+            // `Element.None = 0` with label `"none"`, so a current
+            // contract returns the literal "none". A revert means the
+            // address holds an older deploy that predates the views.
             let outdated = false;
             try {
               const out = (await publicClient.readContract({
                 address: prior,
-                abi: artifacts[slot].abi,
-                functionName: "elementLabel",
-                args: [0, 0],
+                abi: artifact.abi,
+                functionName: "sourceElementLabel",
+                args: [0],
               })) as string;
               if (out !== "none") outdated = true;
             } catch {
@@ -407,7 +421,7 @@ async function main() {
               continue;
             }
             console.log(
-              `  stale ${label} at ${prior} (missing elementLabel) — redeploying`,
+              `  stale ${label} at ${prior} (missing sourceElementLabel) — redeploying`,
             );
           }
         }
@@ -416,8 +430,8 @@ async function main() {
         const addr = await deployAdapter(
           publicClient,
           admin,
-          artifacts[slot],
-          [sourceSchemaId, targetSchemaId, PRESET_ENUM[src], PRESET_ENUM[tgt]],
+          artifact,
+          [sourceSchemaId, targetSchemaId],
           label,
         );
         await registerAdapter(

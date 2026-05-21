@@ -26,6 +26,8 @@ function starter(
     bossId: `boss_${preset}`,
     name: `${preset} starter`,
     tagline: "x",
+    bossDepth: 6,
+    defeatMode: "permadeath",
   };
 }
 

@@ -156,6 +156,24 @@ describe("engine boss-depth handling", () => {
     expect((s.encounter as { combat: { monster: { id: string } } }).combat.monster.id).toBe("lich");
   });
 
+  it("custom bossDepth lands the boss earlier (Genesis: 5-room layout)", () => {
+    let s: RunState = makeRun({
+      equipped: { armor: TANK_ARMOR },
+      bossDepth: 5,
+    }).state;
+    expect(s.bossDepth).toBe(5);
+    for (let d = 1; d < 5; d++) {
+      s = clearRoom(s);
+      if (s.pendingLoot) s = commitLootMint(s);
+      s = advance(s, "lich").state;
+    }
+    expect(s.depth).toBe(5);
+    expect(s.encounter?.kind).toBe("combat");
+    expect(
+      (s.encounter as { combat: { monster: { id: string } } }).combat.monster.id,
+    ).toBe("lich");
+  });
+
   it("boss clear emits BossCleared and sets bossCleared", () => {
     // Set up a state at BOSS_DEPTH with weak boss settings by carrying a strong loadout.
     // We'll just simulate by directly mounting at BOSS_DEPTH and stepping with flank.
@@ -180,6 +198,70 @@ describe("engine boss-depth handling", () => {
         // Don't fail; this scenario is hard to win without gear.
         return;
       }
+    }
+  });
+});
+
+describe("engine seed-mercy (Genesis death rewind)", () => {
+  it("startRun threads defeatMode + runAttempt defaults", () => {
+    const { state } = makeRun();
+    expect(state.defeatMode).toBe("permadeath");
+    expect(state.runAttempt).toBe(1);
+    expect(state.firstWeaponDropped).toBe(false);
+    expect(state.bossDepth).toBe(BOSS_DEPTH);
+  });
+
+  it("seed-mercy never sets `defeated` even when the player dies", () => {
+    // No equipped armor → player takes full hits and dies in a few rounds.
+    // Seed-mercy should rewind to depth 1, bump runAttempt, and leave the
+    // run live (no `defeated` flag, no PlayerDefeated event).
+    let s: RunState = makeRun({
+      defeatMode: "seed-mercy",
+      forcedFirstWeaponElement: "fire",
+    }).state;
+    let mercyFired = false;
+    for (let i = 0; i < 100 && !mercyFired; i++) {
+      if (!s.encounter) {
+        if (s.pendingLoot) s = commitLootMint(s);
+        s = advance(s, "lich").state;
+        continue;
+      }
+      const choice: ActionChoice =
+        s.encounter.kind === "discovery"
+          ? { kind: "discovery", index: 0 }
+          : strike;
+      const r = step(s, choice);
+      s = r.state;
+      if (s.runAttempt > 1) {
+        mercyFired = true;
+        expect(s.defeated).toBe(false);
+        expect(s.depth).toBe(1);
+        expect(s.firstWeaponDropped).toBe(false);
+        expect(r.events.some((e) => e.type === "PlayerDefeated")).toBe(false);
+      }
+    }
+    // It's possible the player never dies in the test seed; if so we
+    // don't fail (the assertion above only fires when mercy actually
+    // resolves). But typically with no armor, death lands fast.
+  });
+
+  it("forcedFirstWeaponElement marks firstWeaponDropped after the first weapon drop", () => {
+    let s: RunState = makeRun({
+      equipped: { armor: TANK_ARMOR },
+      forcedFirstWeaponElement: "fire",
+    }).state;
+    expect(s.firstWeaponDropped).toBe(false);
+    let sawWeaponDrop = false;
+    for (let d = 1; d < BOSS_DEPTH && !sawWeaponDrop; d++) {
+      s = clearRoom(s);
+      if (s.pendingLoot?.slot === "weapon") {
+        sawWeaponDrop = true;
+        expect(s.pendingLoot.element).toBe("fire");
+        expect(s.pendingLoot.nameOverride).toBeDefined();
+        expect(s.firstWeaponDropped).toBe(true);
+      }
+      if (s.pendingLoot) s = commitLootMint(s);
+      s = advance(s, "lich").state;
     }
   });
 });

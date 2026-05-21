@@ -9,7 +9,12 @@ vi.hoisted(() => {
 });
 
 import { __internal } from "./adapters";
-import type { AssetCard } from "@/lib/engine/types";
+import type { AssetCard, Preset } from "@/lib/engine/types";
+import {
+  FANTASY_ELEMENTS,
+  SCIFI_ELEMENTS,
+  CYBERPUNK_ELEMENTS,
+} from "@/lib/engine/types";
 
 const { encodeWeaponExt, encodeArmorExt, decodeWeaponExt, decodeArmorExt } =
   __internal;
@@ -34,7 +39,7 @@ function baseCard(overrides: Partial<AssetCard>): AssetCard {
 }
 
 describe("weapon extension codec round-trip", () => {
-  it("preserves stats across encode/decode for each die size", () => {
+  it("preserves stats across encode/decode for each die size (fantasy)", () => {
     for (const die of [4, 6, 8, 10, 12] as const) {
       const card = baseCard({
         damageDie: die,
@@ -42,8 +47,8 @@ describe("weapon extension codec round-trip", () => {
         damageBonus: -1,
         element: "fire",
       });
-      const encoded = encodeWeaponExt(card);
-      const decoded = decodeWeaponExt(encoded);
+      const encoded = encodeWeaponExt(card, "fantasy");
+      const decoded = decodeWeaponExt(encoded, "fantasy");
       expect(decoded.damageDie).toBe(die);
       expect(decoded.attackBonus).toBe(2);
       expect(decoded.damageBonus).toBe(-1);
@@ -51,29 +56,44 @@ describe("weapon extension codec round-trip", () => {
     }
   });
 
-  it("preserves each Element across encode/decode", () => {
-    for (const element of [
-      "none",
-      "fire",
-      "ice",
-      "shock",
-      "holy",
-      "unholy",
-    ] as const) {
-      const card = baseCard({
-        damageDie: 6,
-        attackBonus: 0,
-        damageBonus: 0,
-        element,
-      });
-      const decoded = decodeWeaponExt(encodeWeaponExt(card));
-      expect(decoded.element).toBe(element);
+  it("preserves each native Element when source and target preset match", () => {
+    const cases: { preset: Preset; vocab: readonly string[] }[] = [
+      { preset: "fantasy", vocab: FANTASY_ELEMENTS },
+      { preset: "scifi", vocab: SCIFI_ELEMENTS },
+      { preset: "cyberpunk", vocab: CYBERPUNK_ELEMENTS },
+    ];
+    for (const { preset, vocab } of cases) {
+      for (const element of vocab) {
+        const card = baseCard({
+          damageDie: 6,
+          attackBonus: 0,
+          damageBonus: 0,
+          element,
+        });
+        const decoded = decodeWeaponExt(encodeWeaponExt(card, preset), preset);
+        expect(decoded.element).toBe(element);
+      }
     }
+  });
+
+  it("re-encodes the same enum index across presets (index-identity rule)", () => {
+    // Encode fantasy `fire` (index 1) under fantasy, decode under scifi —
+    // the same on-chain enum value (1) should map to the scifi vocab's
+    // index-1 entry, which is `plasma`.
+    const card = baseCard({
+      damageDie: 8,
+      attackBonus: 1,
+      damageBonus: 0,
+      element: "fire",
+    });
+    const encoded = encodeWeaponExt(card, "fantasy");
+    expect(decodeWeaponExt(encoded, "scifi").element).toBe("plasma");
+    expect(decodeWeaponExt(encoded, "cyberpunk").element).toBe("incendiary");
   });
 
   it("defaults missing weapon fields to zero/none with D6", () => {
     const card = baseCard({});
-    const decoded = decodeWeaponExt(encodeWeaponExt(card));
+    const decoded = decodeWeaponExt(encodeWeaponExt(card, "fantasy"), "fantasy");
     expect(decoded.damageDie).toBe(6);
     expect(decoded.attackBonus).toBe(0);
     expect(decoded.damageBonus).toBe(0);
@@ -89,7 +109,7 @@ describe("armor extension codec round-trip", () => {
       hpBonus: 7,
       resistElement: "ice",
     });
-    const decoded = decodeArmorExt(encodeArmorExt(card));
+    const decoded = decodeArmorExt(encodeArmorExt(card, "fantasy"), "fantasy");
     expect(decoded.acBonus).toBe(3);
     expect(decoded.hpBonus).toBe(7);
     expect(decoded.resistElement).toBe("ice");
@@ -102,15 +122,28 @@ describe("armor extension codec round-trip", () => {
       hpBonus: 5,
       resistElement: "none",
     });
-    const decoded = decodeArmorExt(encodeArmorExt(card));
+    const decoded = decodeArmorExt(encodeArmorExt(card, "fantasy"), "fantasy");
     expect(decoded.acBonus).toBe(-1);
     expect(decoded.hpBonus).toBe(5);
     expect(decoded.resistElement).toBe("none");
   });
 
+  it("re-encodes the same resist-element enum index across presets", () => {
+    // fantasy `ice` (index 2) → scifi index 2 = `cryo`
+    const card = baseCard({
+      slot: "armor",
+      acBonus: 2,
+      hpBonus: 5,
+      resistElement: "ice",
+    });
+    const encoded = encodeArmorExt(card, "fantasy");
+    expect(decodeArmorExt(encoded, "scifi").resistElement).toBe("cryo");
+    expect(decodeArmorExt(encoded, "cyberpunk").resistElement).toBe("cryogenic");
+  });
+
   it("defaults missing armor fields to zero/none", () => {
     const card = baseCard({ slot: "armor" });
-    const decoded = decodeArmorExt(encodeArmorExt(card));
+    const decoded = decodeArmorExt(encodeArmorExt(card, "fantasy"), "fantasy");
     expect(decoded.acBonus).toBe(0);
     expect(decoded.hpBonus).toBe(0);
     expect(decoded.resistElement).toBe("none");
@@ -136,7 +169,9 @@ describe("buildTranslatedMetadataURI", () => {
         damageDie: 6,
         attackBonus: 3,
         damageBonus: 2,
-        element: "fire",
+        // Translated card carries the *target* preset's vocab — this
+        // is what `decodeWeaponExt(_, "scifi")` would have returned.
+        element: "plasma",
       },
     });
     const rebuilt = buildAssetCardFromMetadata({
@@ -152,7 +187,7 @@ describe("buildTranslatedMetadataURI", () => {
     expect(rebuilt.damageDie).toBe(6);
     expect(rebuilt.attackBonus).toBe(3);
     expect(rebuilt.damageBonus).toBe(2);
-    expect(rebuilt.element).toBe("fire");
+    expect(rebuilt.element).toBe("plasma");
   });
 
   it("emits a data: URI whose payload decodes back to the translated stats", () => {
@@ -171,7 +206,7 @@ describe("buildTranslatedMetadataURI", () => {
         damageDie: 6,
         attackBonus: 2,
         damageBonus: 2,
-        element: "fire",
+        element: "plasma",
       },
     });
     expect(uri.startsWith("data:application/json;base64,")).toBe(true);
@@ -188,7 +223,7 @@ describe("buildTranslatedMetadataURI", () => {
     for (const a of json.attributes) traits[a.trait_type] = a.value;
     expect(traits.damage_die).toBe(6);
     expect(traits.attack_bonus).toBe(2);
-    expect(traits.element).toBe("fire");
+    expect(traits.element).toBe("plasma");
     expect(traits.lifesteal).toBe(5);
   });
 });

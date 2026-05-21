@@ -86,10 +86,14 @@ export function buildLootMetadataURI(args: {
   if (loot.hpBonus !== undefined) {
     attributes.push({ trait_type: "hp_bonus", value: loot.hpBonus });
   }
-  // Element fields are preset-neutral on the canonical engine side. Adapters
-  // map preset-specific schema names (`weapon_type`,
-  // `damage_type`, `school_resist`, `energy_resist`, `tech_resist`) onto
-  // these two traits so the engine never branches on preset.
+  // Element fields carry the realm's *native* vocabulary (Fantasy:
+  // fire/ice/shock/holy/unholy — Sci-Fi: plasma/cryo/ion/photon/void
+  // — Cyberpunk: incendiary/cryogenic/emp/laser/nano). Loot is rolled
+  // in `lib/engine/loot.ts` against the preset's element pool, so the
+  // metadata writer just passes the string through. Cross-realm
+  // translation re-encodes the index against the target preset's
+  // vocabulary via the on-chain adapter — see
+  // `lib/contracts/adapters.ts`.
   if (loot.element !== undefined && loot.element !== "none") {
     attributes.push({ trait_type: "element", value: loot.element });
   }

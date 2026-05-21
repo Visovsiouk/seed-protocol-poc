@@ -12,6 +12,7 @@
 import { useRealmAssets } from "@/lib/reads/hooks";
 import { AssetCard } from "@/components/inventory/AssetCard";
 import type { Preset } from "@/lib/engine/types";
+import { LedgerStamp } from "@/components/ledger/Ledger";
 
 export function RealmAssetsGrid({
   realm,
@@ -34,9 +35,7 @@ export function RealmAssetsGrid({
       }}
     >
       <header className="flex items-baseline justify-between gap-2">
-        <h3 className="text-xs uppercase tracking-widest opacity-60">
-          Assets minted by this realm
-        </h3>
+        <LedgerStamp>Assets minted by this realm</LedgerStamp>
         <span className="text-[10px] opacity-50">
           {assets.data?.length ?? 0} shown · newest first
         </span>

@@ -40,6 +40,7 @@ import { ecosystemTemplateAbi } from "@abis/generated";
 import { ConnectButton } from "@/components/wallet/ConnectButton";
 import { useCreateEcosystem } from "@/lib/contracts/factory";
 import { useTutorialProgress } from "@/lib/reads/hooks";
+import { ProtocolSurfaceGate } from "@/components/guards/ProtocolSurfaceGate";
 import { getFlavorBank } from "@/lib/flavor";
 import type { Preset } from "@/lib/engine/types";
 
@@ -219,6 +220,7 @@ export default function CreatePage() {
   const onReset = () => setStep({ kind: "form" });
 
   return (
+    <ProtocolSurfaceGate>
     <main className="min-h-screen px-6 py-10">
       <header className="mx-auto mb-8 flex max-w-3xl items-center justify-between">
         <Link href="/" className="text-sm opacity-70 hover:opacity-100">
@@ -503,6 +505,7 @@ export default function CreatePage() {
         )}
       </section>
     </main>
+    </ProtocolSurfaceGate>
   );
 }
 

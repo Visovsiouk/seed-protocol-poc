@@ -33,6 +33,7 @@ describe("rollLoot", () => {
       difficulty: "standard",
       slot: "weapon",
       schemas: canonical,
+      preset: "fantasy",
     });
     expect(l.slot).toBe("weapon");
     expect(l.damageDie).toBeDefined();
@@ -50,6 +51,7 @@ describe("rollLoot", () => {
       difficulty: "standard",
       slot: "armor",
       schemas: canonical,
+      preset: "fantasy",
     });
     expect(l.acBonus).toBeDefined();
     expect(l.hpBonus).toBeDefined();
@@ -63,6 +65,7 @@ describe("rollLoot", () => {
       difficulty: "standard",
       slot: "weapon",
       schemas: canonical,
+      preset: "fantasy",
     });
     expect(l.schemaId).toBe(1);
     expect(l.catalogEffects).toEqual([]);
@@ -74,6 +77,7 @@ describe("rollLoot", () => {
       difficulty: "standard",
       slot: "weapon",
       schemas: signatureLifesteal,
+      preset: "fantasy",
     });
     expect(l.schemaId).toBe(100);
     expect(l.catalogEffects.map((e) => e.name)).toEqual(["lifesteal", "crit_chance"]);
@@ -88,12 +92,14 @@ describe("rollLoot", () => {
       difficulty: "standard",
       slot: "weapon",
       schemas: signatureLifesteal,
+      preset: "fantasy",
     });
     const b = rollLoot({
       rng: createRng(SEED),
       difficulty: "standard",
       slot: "weapon",
       schemas: signatureLifesteal,
+      preset: "fantasy",
     });
     expect(a).toEqual(b);
   });
@@ -106,6 +112,7 @@ describe("rollLoot", () => {
         difficulty: "standard",
         slot: "weapon",
         schemas: canonical,
+        preset: "fantasy",
       });
       set.add(l.nameSeed.toString());
     }
@@ -121,12 +128,14 @@ describe("rollLoot", () => {
         difficulty: "standard",
         slot: "weapon",
         schemas: canonical,
+        preset: "fantasy",
       }).tier;
       bossTotal += rollLoot({
         rng: createRng(seedHex(i + 100000)),
         difficulty: "boss",
         slot: "weapon",
         schemas: canonical,
+        preset: "fantasy",
       }).tier;
     }
     expect(bossTotal).toBeGreaterThan(stdTotal);
@@ -138,6 +147,7 @@ describe("rollLoot", () => {
       difficulty: "standard",
       slot: "weapon",
       schemas: canonical,
+      preset: "fantasy",
     });
     expect(l.element).toBeDefined();
     expect(["none", "fire", "ice", "shock", "holy", "unholy"]).toContain(l.element);
@@ -150,6 +160,7 @@ describe("rollLoot", () => {
       difficulty: "standard",
       slot: "armor",
       schemas: canonical,
+      preset: "fantasy",
     });
     expect(l.resistElement).toBeDefined();
     expect(["none", "fire", "ice", "shock", "holy", "unholy"]).toContain(
@@ -166,6 +177,7 @@ describe("rollLoot", () => {
         difficulty: "standard",
         slot: "weapon",
         schemas: canonical,
+        preset: "fantasy",
       });
       const key = l.element ?? "missing";
       counts[key] = (counts[key] ?? 0) + 1;
@@ -186,6 +198,7 @@ describe("rollLoot", () => {
       difficulty: "standard",
       slot: "weapon",
       schemas: canonical,
+      preset: "fantasy",
     });
     expect(typeof l.nameSeed).toBe("bigint");
     expect(l.nameSeed).toBeGreaterThanOrEqual(0n);

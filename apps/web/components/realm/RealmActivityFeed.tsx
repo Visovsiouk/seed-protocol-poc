@@ -15,9 +15,21 @@
 import { useRealmActivity } from "@/lib/reads/hooks";
 import type { Preset } from "@/lib/engine/types";
 import type { RealmActivityEntry } from "@/lib/reads/realm-activity";
+import { LedgerStamp } from "@/components/ledger/Ledger";
 
 function short(addr: `0x${string}`): string {
   return `${addr.slice(0, 6)}…${addr.slice(-4)}`;
+}
+
+/**
+ * Render a keccak-derived `bigint` tokenId as a short hex tag. The raw
+ * decimal form is a 70+ digit uint256 that overflows the row and reads
+ * as a wall of noise; hex-shortened (`#0xABCD…1234`) it matches the
+ * recipient address shortening and parses at a glance.
+ */
+function shortTokenId(id: bigint): string {
+  const hex = id.toString(16).padStart(64, "0");
+  return `#0x${hex.slice(0, 4)}…${hex.slice(-4)}`;
 }
 
 function KindBadge({ kind }: { kind: RealmActivityEntry["kind"] }) {
@@ -75,9 +87,7 @@ export function RealmActivityFeed({
       }}
     >
       <header className="flex items-baseline justify-between gap-2">
-        <h3 className="text-xs uppercase tracking-widest opacity-60">
-          Recent activity
-        </h3>
+        <LedgerStamp>Recent activity</LedgerStamp>
         {activity.isFetching && (
           <span className="text-[10px] opacity-50">refreshing…</span>
         )}
@@ -106,11 +116,11 @@ export function RealmActivityFeed({
             >
               <div className="flex items-baseline gap-2 min-w-0">
                 <KindBadge kind={e.kind} />
-                <span className="font-mono opacity-80 truncate">
+                <span className="font-mono opacity-80 shrink-0">
                   {short(e.recipient)}
                 </span>
-                <span className="opacity-50">
-                  · token #{e.tokenId.toString()}
+                <span className="font-mono opacity-50 truncate min-w-0">
+                  · token {shortTokenId(e.tokenId)}
                 </span>
               </div>
               <span className="text-[10px] opacity-50 font-mono shrink-0">

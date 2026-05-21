@@ -153,18 +153,31 @@ export default function PlayPage() {
   // from the chain via `onchain.data`; keeping the local accumulator
   // around lets the player play offline without losing drops.
   const [localInventory, setLocalInventory] = useState<AssetCardType[]>([]);
-  // Equipped slots. Hydrated from localStorage on mount so gear earned in
-  // one realm carries into the next (the play state is reset on every
-  // mount, but the persistence layer survives). The initial useState falls
-  // back to starter gear so SSR + first paint render a coherent HUD; the
-  // post-mount effect below swaps in the saved snapshot if there is one.
+  // Equipped slots — *native* cards. Hydrated from localStorage on mount
+  // so gear earned in one realm carries into the next. This is the
+  // canonical, persisted shape: we always store the native card (source
+  // realm + native stats), never a translated copy. WarpInterstitial and
+  // InventoryDrawer read this directly — their AssetCard renders use
+  // `targetRealm` to do the display-side translation, so they need the
+  // native source to start from.
   const [equipped, setEquipped] = useState<{
+    weapon?: AssetCardType;
+    armor?: AssetCardType;
+  }>({ weapon: starterGear.weapon, armor: starterGear.armor });
+  // Equipped slots as the *engine* sees them — translated for the active
+  // realm so combat rolls the same numbers the HUD displays. NOT persisted
+  // (the next realm hop derives a fresh translation off `equipped`). When
+  // a card is native to `cfg.realm`, this mirrors `equipped`; when it's
+  // foreign, the hydration / equip handlers populate this with the
+  // adapter-translated stats.
+  const [equippedForEngine, setEquippedForEngine] = useState<{
     weapon?: AssetCardType;
     armor?: AssetCardType;
   }>({ weapon: starterGear.weapon, armor: starterGear.armor });
   // The equipped state used at run-start. Captured once at hydration time
   // so subsequent equip changes (from drawer clicks or auto-equip on
-  // mint) don't restart the run.
+  // mint) don't restart the run. Holds *translated* cards so the engine
+  // is initialised against the right numbers.
   const [runStartEquipped, setRunStartEquipped] = useState<{
     weapon?: AssetCardType;
     armor?: AssetCardType;
@@ -183,6 +196,13 @@ export default function PlayPage() {
         armor: runStartEquipped.armor,
       },
       bossId: cfg.bossId,
+      // Per-realm narrative-mechanic surface (see `StarterRealm`). Genesis
+      // ships `bossDepth: 5`, `defeatMode: "seed-mercy"`, and forces the
+      // first weapon to "fire" so the Pilgrim's Brand lands as story; the
+      // sci-fi/cyberpunk shards default to permadeath at depth 6.
+      bossDepth: cfg.bossDepth,
+      defeatMode: cfg.defeatMode,
+      forcedFirstWeaponElement: cfg.forcedFirstWeaponElement,
       // Starter realms cap rolls at T2 to preserve the seed-liquidity floor:
       // the bank should fill up with T1/T2 gear from tutorials, and T3+ is
       // reserved for player-authored realms. The server mirrors
@@ -199,18 +219,61 @@ export default function PlayPage() {
   const seedReady =
     mounted && !!initial && (!walletConnected || !!commitment.data);
 
-  // One-shot hydration: read the persisted snapshot, swap it into both the
-  // live equipped state and the run-start snapshot. Guarded so it only
-  // fires on first mount — re-running would clobber drawer equip choices.
+  // One-shot hydration: read the persisted snapshot (native cards),
+  // translate each slot against the active realm's adapter, then pin
+  // `equipped` (native), `equippedForEngine` (translated), and the
+  // run-start snapshot together. Guarded so it only fires on first mount
+  // — re-running would clobber drawer equip choices.
+  //
+  // We *await* the translations before pinning `runStartEquipped` so the
+  // engine never boots a run against native stats it'll then drift away
+  // from. While the translate calls are in flight, `seedReady` stays
+  // false (it gates on `initial`, which gates on `runStartEquipped`), so
+  // the player sees the "Pinning run seed…" placeholder instead of a
+  // half-equipped HUD.
   useEffect(() => {
     if (runStartEquipped !== null) return;
+    let cancelled = false;
     const stored = loadEquipped();
-    const initial = stored ?? {
+    const nativeBaseline = stored ?? {
       weapon: starterGear.weapon,
       armor: starterGear.armor,
     };
-    setEquipped(initial);
-    setRunStartEquipped(initial);
+    // Native baseline goes into `equipped` immediately so the drawer +
+    // warp interstitial render against the right shape from frame one.
+    setEquipped(nativeBaseline);
+
+    const translateOne = async (
+      slot: "weapon" | "armor",
+      card: AssetCardType | undefined,
+    ): Promise<AssetCardType | undefined> => {
+      if (!card || !publicClient) return card;
+      try {
+        return await translateCardForRealm({
+          card,
+          targetRealm: cfg.realm,
+          publicClient,
+        });
+      } catch {
+        // Adapter missing / reverted — fall back to native stats. Same
+        // policy as `handleEquip`'s catch arm.
+        return card;
+      }
+    };
+
+    void Promise.all([
+      translateOne("weapon", nativeBaseline.weapon),
+      translateOne("armor", nativeBaseline.armor),
+    ]).then(([w, a]) => {
+      if (cancelled) return;
+      const translated = { weapon: w, armor: a };
+      setEquippedForEngine(translated);
+      setRunStartEquipped(translated);
+    });
+
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -272,7 +335,14 @@ export default function PlayPage() {
       weapon: isStale(equipped.weapon) ? starterGear.weapon : equipped.weapon,
       armor: isStale(equipped.armor) ? starterGear.armor : equipped.armor,
     };
+    // Starter gear is native to `cfg.realm`, so engine-side mirrors the
+    // same shape. For the non-stale slot we keep whatever
+    // `equippedForEngine` already had (its translation, if any).
     setEquipped(reconciled);
+    setEquippedForEngine((prev) => ({
+      weapon: isStale(equipped.weapon) ? starterGear.weapon : prev.weapon,
+      armor: isStale(equipped.armor) ? starterGear.armor : prev.armor,
+    }));
     setRunStartEquipped(reconciled);
   }, [
     walletConnected,
@@ -313,7 +383,12 @@ export default function PlayPage() {
     // drawer's equip path. Per spec the active CombatState's stats
     // stay frozen until the next room, so this can't yank gear mid-fight.
     if (newCard.slot === "weapon" || newCard.slot === "armor") {
-      setEquipped((prev) => ({ ...prev, [newCard.slot as "weapon" | "armor"]: newCard }));
+      // Newly-minted gear is native to `cfg.realm` (we just minted it
+      // here), so the engine-side and persisted-native shapes are the
+      // same card — no adapter hop required.
+      const slot = newCard.slot as "weapon" | "armor";
+      setEquipped((prev) => ({ ...prev, [slot]: newCard }));
+      setEquippedForEngine((prev) => ({ ...prev, [slot]: newCard }));
     }
   };
 
@@ -329,16 +404,23 @@ export default function PlayPage() {
     slot: "weapon" | "armor",
     card: AssetCardType,
   ) => {
-    // Native cards equip immediately. Foreign cards (different source
-    // preset) need the on-chain adapter translation; we equip with the
-    // native stats first so the drawer's selection state reconciles
-    // instantly, then swap in the translated card when it lands.
+    // `equipped` always tracks the *native* card (source realm, native
+    // stats) so localStorage stays free of mutated translations — a
+    // translated card persisted here would cause stat drift on the next
+    // realm hop (the realm field is preserved by the adapter, so we
+    // couldn't tell it apart from a fresh native card next time around).
     setEquipped((prev) => ({ ...prev, [slot]: card }));
+    // Engine-side: optimistically equip with native stats so the HUD
+    // doesn't blank; the translation below swaps in the adapter's stats
+    // when it lands. If the card is already native to `cfg.realm`,
+    // `translateCardForRealm` short-circuits and returns the same ref —
+    // engine state stays correct in one frame.
+    setEquippedForEngine((prev) => ({ ...prev, [slot]: card }));
     if (!publicClient) return;
     const key = `${card.tokenId.toString()}::${cfg.realm.toLowerCase()}`;
     const cached = translationCache.get(key);
     if (cached) {
-      setEquipped((prev) => ({ ...prev, [slot]: cached }));
+      setEquippedForEngine((prev) => ({ ...prev, [slot]: cached }));
       return;
     }
     void translateCardForRealm({
@@ -351,10 +433,14 @@ export default function PlayPage() {
         // adapter, or revert — see `translateCardForRealm` fallbacks).
         if (translated === card) return;
         translationCache.set(key, translated);
-        // Only apply if this slot still holds the card the user picked —
-        // they may have clicked something else in the meantime.
-        setEquipped((prev) =>
-          prev[slot]?.tokenId === card.tokenId ? { ...prev, [slot]: translated } : prev,
+        // Only apply if this slot still holds the card the user picked
+        // — they may have clicked something else in the meantime. The
+        // optimistic write above put `card` itself into `prev[slot]`,
+        // so a tokenId match means no later click has overwritten it.
+        setEquippedForEngine((prev) =>
+          prev[slot]?.tokenId === card.tokenId
+            ? { ...prev, [slot]: translated }
+            : prev,
         );
       })
       .catch(() => {
@@ -369,6 +455,14 @@ export default function PlayPage() {
   // wait for the on-chain receipt — the narrative beat is engine-truth
   // and should land instantly.
   const [bossClearedThisRun, setBossClearedThisRun] = useState(false);
+
+  // Page-level mirror of the engine's current depth so the title bar
+  // can hide the realm name until the player has crossed at least one
+  // room. EncounterFrame owns the live RunState; we shadow it via the
+  // `RoomCleared` event stream so the chrome can react without
+  // reaching into engine internals. Starts at 1 (wake) and bumps to
+  // `event.depth + 1` on each room clear.
+  const [currentDepth, setCurrentDepth] = useState(1);
 
   // Status of the clearReceipt mint that fires when the engine emits
   // BossCleared. The run-over panel in `<EncounterFrame/>` reads this
@@ -391,6 +485,7 @@ export default function PlayPage() {
     setRestartSeed(fallbackSeed());
     setBossClearedThisRun(false);
     setClearReceipt(undefined);
+    setCurrentDepth(1);
     setRunEpoch((e) => e + 1);
   }, []);
 
@@ -400,6 +495,12 @@ export default function PlayPage() {
   // past Act 3 until the player plays a connected run on a deployed
   // starter realm.
   const handleEngineEvent = (event: EngineEvent) => {
+    if (event.type === "RoomCleared") {
+      // `event.depth` is the depth that was just cleared. The player
+      // is now stepping into `depth + 1` (or the boss room).
+      setCurrentDepth(event.depth + 1);
+      return;
+    }
     if (event.type !== "BossCleared") return;
     if (!initial) return;
     setBossClearedThisRun(true);
@@ -469,22 +570,35 @@ export default function PlayPage() {
       ...tutorial.cleared,
       { realm: cfg.realm, preset, ts: Math.floor(Date.now() / 1000) },
     ];
-    const distinct = Math.min(3, cleared.length);
+    // The starter set is closed at three known addresses; this play
+    // route only ever runs against a starter, so the just-cleared
+    // realm always bumps `starterClears`. The community tier is
+    // unchanged by definition here — we leave it as-is.
+    const starterClears = Math.min(3, tutorial.starterClears + 1);
+    const communityClears = tutorial.communityClears;
+    const communityRealmCount = tutorial.communityRealmCount;
+    const communityRequirement = Math.min(3, communityRealmCount);
     const act: TutorialProgress["act"] = tutorial.hasSeed
       ? 5
-      : distinct >= 3
+      : starterClears >= 3
         ? 4
-        : distinct === 2
+        : starterClears === 2
           ? 3
-          : distinct === 1
+          : starterClears === 1
             ? 2
             : 1;
     return {
       ...tutorial,
       cleared,
-      distinctClears: distinct,
+      starterClears,
+      communityClears,
+      communityRealmCount,
+      distinctClears: starterClears,
       act,
-      eligibleForSeed: !tutorial.hasSeed && distinct >= 3,
+      eligibleForSeed:
+        !tutorial.hasSeed &&
+        starterClears >= 3 &&
+        communityClears >= communityRequirement,
     };
   }, [bossClearedThisRun, tutorial, preset, cfg.realm]);
 
@@ -495,6 +609,14 @@ export default function PlayPage() {
   // must pass the *exact* object `startRun` returned so the engine's
   // SCHEMA_STORE WeakMap lookup in `step()` resolves.
   const initialState: RunState | null = initial?.state ?? null;
+
+  // The realm announces itself only after the first room — the cold
+  // open lands the player in an unnamed somewhere, and the name
+  // becomes legible once they've taken a step. Applied universally
+  // (all three starters); cleared starters reveal it instantly via
+  // the engine narration drop, but the title bar still gates on
+  // engine truth.
+  const realmDisplayName = currentDepth >= 2 ? cfg.name : "???";
 
   // Wallet gate. The play loop mints loot and clearReceipts the moment
   // they're earned; without a connected account those go nowhere visible
@@ -508,7 +630,7 @@ export default function PlayPage() {
           <Link href="/" className="text-sm opacity-70 hover:opacity-100">
             ← Realms
           </Link>
-          <h1 className="text-2xl font-semibold tracking-tight">{cfg.name}</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">{realmDisplayName}</h1>
           <ConnectButton />
         </header>
         <section
@@ -548,7 +670,7 @@ export default function PlayPage() {
           <Link href="/" className="text-sm opacity-70 hover:opacity-100">
             ← Realms
           </Link>
-          <h1 className="text-2xl font-semibold tracking-tight">{cfg.name}</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">{realmDisplayName}</h1>
           <ConnectButton />
         </header>
         <section
@@ -591,9 +713,9 @@ export default function PlayPage() {
         </Link>
         <div className="flex flex-col items-center gap-1">
           <h1 className="text-2xl font-semibold tracking-tight">
-            {cfg.name}
+            {realmDisplayName}
           </h1>
-          {isStarterRealmDeployed(cfg.realm) && (
+          {isStarterRealmDeployed(cfg.realm) && currentDepth >= 2 && (
             <Link
               href={`/realm/${cfg.realm}`}
               className="text-[11px] uppercase tracking-widest opacity-60 hover:opacity-100"
@@ -649,7 +771,7 @@ export default function PlayPage() {
               initialState={initialState}
               initialLines={initial.lines}
               bossId={cfg.bossId}
-              equipped={equipped}
+              equipped={equippedForEngine}
               activePreset={preset}
               onEvent={handleEngineEvent}
               onLootMinted={handleLootMinted}
@@ -660,6 +782,7 @@ export default function PlayPage() {
                   <RealmClearedInterstitial
                     justCleared={preset}
                     projected={projectedProgress}
+                    equipped={equipped}
                     onClaimSeed={handleClaimSeed}
                   />
                 ) : null

@@ -4,6 +4,7 @@ import { RecentSalesFeed } from "@/components/bazaar/RecentSalesFeed";
 import { ListButton } from "@/components/bazaar/ListButton";
 import { RealmLeaderboards } from "@/components/bazaar/RealmLeaderboards";
 import { ConnectButton } from "@/components/wallet/ConnectButton";
+import { ProtocolSurfaceGate } from "@/components/guards/ProtocolSurfaceGate";
 
 export const metadata = {
   title: "Bazaar — Realms",
@@ -15,6 +16,7 @@ export const metadata = {
  */
 export default function BazaarPage() {
   return (
+    <ProtocolSurfaceGate>
     <main className="min-h-screen px-6 py-10">
       <header className="mx-auto mb-10 flex max-w-6xl items-center justify-between">
         <Link href="/" className="text-sm opacity-70 hover:opacity-100">
@@ -45,5 +47,6 @@ export default function BazaarPage() {
         </aside>
       </section>
     </main>
+    </ProtocolSurfaceGate>
   );
 }

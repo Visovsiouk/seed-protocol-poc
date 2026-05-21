@@ -15,6 +15,7 @@
 import { useAccount } from "wagmi";
 import { useRealmStats } from "@/lib/reads/hooks";
 import type { Preset } from "@/lib/engine/types";
+import { LedgerStamp } from "@/components/ledger/Ledger";
 
 function short(addr: `0x${string}`): string {
   return `${addr.slice(0, 6)}…${addr.slice(-4)}`;
@@ -41,9 +42,7 @@ export function BossLeaderboard({
       }}
     >
       <header className="flex items-baseline justify-between gap-2">
-        <h3 className="text-xs uppercase tracking-widest opacity-60">
-          Boss leaderboard
-        </h3>
+        <LedgerStamp>Boss leaderboard</LedgerStamp>
         <span className="text-[10px] opacity-50">fewest turns wins</span>
       </header>
 

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { GenesisStatusCard } from "@/components/genesis/GenesisStatusCard";
 import { ConnectButton } from "@/components/wallet/ConnectButton";
+import { ProtocolSurfaceGate } from "@/components/guards/ProtocolSurfaceGate";
 
 export const metadata = {
   title: "Genesis — Realms",
@@ -16,6 +17,7 @@ export const metadata = {
  */
 export default function GenesisPage() {
   return (
+    <ProtocolSurfaceGate>
     <main className="min-h-screen px-6 py-10">
       <header className="mx-auto mb-10 flex max-w-3xl items-center justify-between">
         <Link href="/" className="text-sm opacity-70 hover:opacity-100">
@@ -29,5 +31,6 @@ export default function GenesisPage() {
         <GenesisStatusCard />
       </section>
     </main>
+    </ProtocolSurfaceGate>
   );
 }

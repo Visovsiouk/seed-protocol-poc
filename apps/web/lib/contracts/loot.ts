@@ -64,11 +64,20 @@ export function useMintLoot() {
       // Pre-compute the assembled display name on the client where the
       // flavor bank is already loaded — saves the server from importing
       // every preset's bank just to render the metadata JSON.
+      //
+      // Story-object overrides (Genesis' Pilgrim's Brand) ship the name
+      // verbatim on the LootRoll. When present, it skips both the realm
+      // flavor assembly AND the generic `Loot #…` fallback so the on-
+      // chain asset reads as "The Pilgrim's Brand" / "Ember-Wake" /
+      // etc., matching the in-feed narration. The same override is
+      // applied client-side in `lootRollToMockCard`, keeping the local
+      // card and the chain-minted card naming-consistent.
       const bank = getFlavorBank(args.preset);
       const assembledName =
-        args.loot.slot === "weapon" || args.loot.slot === "armor"
+        args.loot.nameOverride ??
+        (args.loot.slot === "weapon" || args.loot.slot === "armor"
           ? assembleLootName(bank, args.loot.slot, args.loot.nameSeed)
-          : `Loot #${args.loot.nameSeed.toString(16).slice(0, 8)}`;
+          : `Loot #${args.loot.nameSeed.toString(16).slice(0, 8)}`);
 
       setPending(true);
       setError(null);

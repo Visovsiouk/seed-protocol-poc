@@ -76,10 +76,16 @@ function Cell({
         opacity: muted ? 0.55 : 1,
       }}
     >
-      <span className="text-[10px] uppercase tracking-widest opacity-60">
+      <span
+        className="font-mono text-[10px] uppercase opacity-65"
+        style={{
+          letterSpacing: "0.28em",
+          color: "var(--color-preset-accent)",
+        }}
+      >
         {label}
       </span>
-      <span className="text-xl font-semibold tabular-nums">
+      <span className="font-mono text-xl font-medium tabular-nums">
         {loading ? "—" : value}
       </span>
     </div>

@@ -18,7 +18,11 @@ import type {
   Slot,
   Tier,
 } from "@/lib/engine/types";
-import { ELEMENTS } from "@/lib/engine/types";
+import {
+  CYBERPUNK_ELEMENTS,
+  FANTASY_ELEMENTS,
+  SCIFI_ELEMENTS,
+} from "@/lib/engine/types";
 import { decodeMetadataURI } from "./decode";
 
 const CATALOG_EFFECT_NAMES: readonly CatalogEffectName[] = [
@@ -50,7 +54,19 @@ const CANONICAL_STAT_KEYS = new Set([
 
 const VALID_DAMAGE_DIES: ReadonlySet<number> = new Set([4, 6, 8, 10, 12]);
 
-const VALID_ELEMENTS: ReadonlySet<string> = new Set<string>(ELEMENTS);
+/**
+ * Union of every preset's native element vocabulary. Each asset is
+ * minted under one realm's schema and carries that schema's
+ * vocabulary natively — but cards are decoded here without preset
+ * context, so we accept any preset's vocab and let downstream
+ * (`useTranslatedCard`) re-encode if the card is rendered against a
+ * different realm.
+ */
+const VALID_ELEMENTS: ReadonlySet<string> = new Set<string>([
+  ...FANTASY_ELEMENTS,
+  ...SCIFI_ELEMENTS,
+  ...CYBERPUNK_ELEMENTS,
+]);
 
 function asNumber(v: string | number): number | undefined {
   if (typeof v === "number") return Number.isFinite(v) ? v : undefined;

@@ -175,16 +175,18 @@ export function lootRollToMockCard(
   opts?: { tokenId?: bigint },
 ): AssetCardType {
   const bank = getFlavorBank(preset);
+  // Story-object drops (e.g. Genesis' Pilgrim's Brand) ship with a name
+  // override on the LootRoll; skip the realm-themed adjective+noun assembly
+  // so the card reads as the named object the narration just described.
+  const assembledName =
+    loot.nameOverride ??
+    assembleLootName(bank, loot.slot as "weapon" | "armor", loot.nameSeed);
   return lootRoundtripToCard({
     loot,
     preset,
     realm,
     realmName,
-    assembledName: assembleLootName(
-      bank,
-      loot.slot as "weapon" | "armor",
-      loot.nameSeed,
-    ),
+    assembledName,
     tokenId: opts?.tokenId ?? nextMockTokenId++,
   });
 }

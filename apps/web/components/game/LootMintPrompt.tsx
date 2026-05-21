@@ -10,13 +10,22 @@
  */
 
 import { useState } from "react";
-import type { LootRoll } from "@/lib/engine/types";
+import type { Element, LootRoll, Preset } from "@/lib/engine/types";
 import { assembleLootName } from "@/lib/flavor";
 import type { FlavorBank } from "@/lib/flavor/types";
+import { useElementLabel } from "@/lib/contracts/adapters";
 
 type Props = {
   loot: LootRoll;
   bank: FlavorBank;
+  /**
+   * The preset whose vocabulary should label the element / resist
+   * fields. The canonical element keys ("fire", "ice", …) flow
+   * through the on-chain `elementLabel(preset, element)` view so the
+   * drop reads in the current realm's voice — fire → incendiary in
+   * cyberpunk, holy → divine-light in sci-fi, etc.
+   */
+  preset: Preset;
   onMint: () => Promise<void> | void;
   onSkip: () => void;
 };
@@ -30,7 +39,28 @@ function StatRow({ label, value }: { label: string; value: string | number }) {
   );
 }
 
-export function LootMintPrompt({ loot, bank, onMint, onSkip }: Props) {
+/**
+ * Element value row. The canonical element key ("fire", "ice", …) is
+ * the on-chain truth; the human-facing label is read live from the
+ * adapter via `useElementLabel(preset, element)` so a fantasy "fire"
+ * drop reads as "incendiary" in cyberpunk / "thermal" in sci-fi, etc.
+ * The hook returns the canonical key as a synchronous placeholder
+ * before the chain read resolves — so we never render a blank value.
+ */
+function ElementRow({
+  label,
+  element,
+  preset,
+}: {
+  label: string;
+  element: Element;
+  preset: Preset;
+}) {
+  const vocab = useElementLabel(element, preset);
+  return <StatRow label={label} value={vocab} />;
+}
+
+export function LootMintPrompt({ loot, bank, preset, onMint, onSkip }: Props) {
   const [minting, setMinting] = useState(false);
   // The engine's `pickSlot` only returns weapon|armor; the wider `Slot` type
   // on `LootRoll` is for type-surface consistency with `AssetCard`.
@@ -95,10 +125,14 @@ export function LootMintPrompt({ loot, bank, onMint, onSkip }: Props) {
           <StatRow label="HP" value={`+${loot.hpBonus}`} />
         )}
         {loot.element !== undefined && loot.element !== "none" && (
-          <StatRow label="Element" value={loot.element} />
+          <ElementRow label="Element" element={loot.element} preset={preset} />
         )}
         {loot.resistElement !== undefined && loot.resistElement !== "none" && (
-          <StatRow label="Resists" value={loot.resistElement} />
+          <ElementRow
+            label="Resists"
+            element={loot.resistElement}
+            preset={preset}
+          />
         )}
       </div>
 

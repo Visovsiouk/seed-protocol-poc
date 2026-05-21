@@ -32,6 +32,11 @@ import { RoyaltyEarnedDemo } from "@/components/realm/RoyaltyEarnedDemo";
 import { useRealms } from "@/lib/reads/hooks";
 import { listStarterRealms } from "@/lib/contracts/starter-realms";
 import { resolveRealmDetail, type RealmDetail } from "@/lib/contracts/realm-detail";
+import {
+  LedgerBody,
+  LedgerRule,
+  LedgerStamp,
+} from "@/components/ledger/Ledger";
 
 function shortAddress(addr: `0x${string}`): string {
   return `${addr.slice(0, 6)}…${addr.slice(-4)}`;
@@ -82,11 +87,14 @@ function KindPill({ detail }: { detail: RealmDetail }) {
 
 function Field({ label, value }: { label: string; value: React.ReactNode }) {
   return (
-    <div className="flex flex-col gap-1">
-      <span className="text-[10px] uppercase tracking-widest opacity-50">
+    <div className="flex flex-col gap-1 min-w-0">
+      <span
+        className="font-mono text-[10px] uppercase opacity-55"
+        style={{ letterSpacing: "0.28em" }}
+      >
         {label}
       </span>
-      <span className="text-sm">{value}</span>
+      <span className="text-sm min-w-0">{value}</span>
     </div>
   );
 }
@@ -168,31 +176,41 @@ export default function RealmDashboardPage() {
               border: "1px solid rgba(255,255,255,0.10)",
             }}
           >
-            <header className="flex flex-wrap items-baseline justify-between gap-3">
-              <div className="flex flex-col gap-1">
-                <h2 className="text-lg font-semibold">
+            <header className="flex flex-col gap-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <LedgerStamp>
                   {detail.kind === "starter"
-                    ? detail.name
+                    ? "Door · field record"
                     : detail.kind === "creator"
-                      ? `Realm ${shortAddress(detail.address)}`
-                      : "Unknown realm"}
-                </h2>
-                {detail.kind === "starter" && (
-                  <p className="text-sm opacity-80 leading-relaxed">
-                    {detail.tagline}
-                  </p>
-                )}
+                      ? "Door · raised by another hand"
+                      : "Door · unrecognized"}
+                </LedgerStamp>
+                <div className="flex items-center gap-2">
+                  <KindPill detail={detail} />
+                  {detail.kind !== "unknown" && (
+                    <StatusPill
+                      label={detail.onchain.active ? "Active" : "Inactive"}
+                      tone={detail.onchain.active ? "ok" : "warn"}
+                    />
+                  )}
+                  {isOwner && <StatusPill label="You own this" tone="ok" />}
+                </div>
               </div>
-              <div className="flex items-center gap-2">
-                <KindPill detail={detail} />
-                {detail.kind !== "unknown" && (
-                  <StatusPill
-                    label={detail.onchain.active ? "Active" : "Inactive"}
-                    tone={detail.onchain.active ? "ok" : "warn"}
-                  />
-                )}
-                {isOwner && <StatusPill label="You own this" tone="ok" />}
-              </div>
+              <LedgerRule />
+              <h2
+                className="font-mono text-2xl font-medium"
+                style={{ letterSpacing: "-0.015em" }}
+              >
+                {detail.kind === "starter"
+                  ? detail.name
+                  : detail.kind === "creator"
+                    ? `Realm ${shortAddress(detail.address)}`
+                    : "Unknown realm"}
+              </h2>
+              {detail.kind === "starter" && (
+                <LedgerBody>{detail.tagline}</LedgerBody>
+              )}
+              <LedgerRule tone="muted" />
             </header>
 
             {detail.kind === "unknown" ? (

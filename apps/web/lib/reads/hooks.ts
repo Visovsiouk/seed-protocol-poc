@@ -11,6 +11,7 @@ import {
   type StarterRealmResolution,
 } from "./realms";
 import { fetchBossClears, fetchHasSeed } from "./boss-clears";
+import { listStarterRealms } from "@/lib/contracts/starter-realms";
 import {
   fetchRealmActivity,
   type RealmActivityEntry,
@@ -187,14 +188,38 @@ export function useTutorialProgress(player: `0x${string}` | undefined) {
     ),
     enabled: !!player,
     queryFn: async () => {
+      const starterRealmAddresses = new Set(
+        listStarterRealms()
+          .map((r) => r.realm.toLowerCase())
+          .filter((addr) => addr !== "0x0000000000000000000000000000000000000000"),
+      );
       if (!player) {
-        return deriveTutorialProgress({ hasSeed: false, events: [] });
+        return deriveTutorialProgress({
+          hasSeed: false,
+          events: [],
+          starterRealmAddresses,
+          communityRealmCount: 0,
+        });
       }
-      const [events, hasSeed] = await Promise.all([
+      const [events, hasSeed, registry] = await Promise.all([
         fetchBossClears(player),
         fetchHasSeed(player),
+        // Registry list drives the community-realm count for the
+        // second-tier Seed gate. Tolerant of a failed read — fall back
+        // to zero so the player at least sees the first-tier progress.
+        fetchRealms().catch(() => [] as RealmSummary[]),
       ]);
-      return deriveTutorialProgress({ hasSeed, events });
+      const communityRealmCount = registry.reduce(
+        (n, r) =>
+          starterRealmAddresses.has(r.address.toLowerCase()) ? n : n + 1,
+        0,
+      );
+      return deriveTutorialProgress({
+        hasSeed,
+        events,
+        starterRealmAddresses,
+        communityRealmCount,
+      });
     },
     ...defaultReadQueryOptions,
   });

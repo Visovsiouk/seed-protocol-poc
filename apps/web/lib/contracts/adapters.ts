@@ -1,37 +1,43 @@
 /**
  * Off-chain adapter integration.
  *
- * When a player carries a card minted under one preset's loot schema
- * into another preset's realm, the engine still needs to read canonical
- * stats off the card. The adapters live on-chain — one
- * `PresetWeaponAdapter` / `PresetArmorAdapter` per ordered preset pair,
- * registered against the `AdapterRegistry` by `pnpm seed:adapters`.
+ * Each preset is now its own schema family — the weapon/armor extension
+ * structs are declared natively per preset (Fantasy {fire/ice/...},
+ * Sci-Fi {plasma/cryo/...}, Cyberpunk {incendiary/cryogenic/...}). The
+ * three structs are *shape-identical* on the wire (the PoC has 1:1
+ * stat parity), but the element enum names differ. The 12
+ * ordered-pair adapter contracts under `contracts/src/adapters/`
+ * encode the schema crossing — each adapter decodes its source
+ * schema, applies its hard-coded rebalance (cyberpunk-direction for
+ * weapons, fantasy-direction for armor), and re-encodes against its
+ * target schema.
  *
- * This module is the read-side bridge:
+ * This module is the off-chain mirror:
  *
  *   1. `presetForRealm(realm)` resolves a card's source preset by
  *      address (uses the seeded-realms map).
  *
- *   2. `encodeWeaponExt` / `encodeArmorExt` pack a card's stats into the
- *      ABI shape the adapter expects on `extensionData`. The shape mirrors
- *      `contracts/src/PresetTypes.sol :: WeaponExt / ArmorExt` exactly —
- *      changing either side without the other will produce a
- *      `BufferUnderrunError` at decode time.
+ *   2. `encodeWeaponExt(card, sourcePreset)` / `encodeArmorExt(card,
+ *      sourcePreset)` pack a card's stats into the ABI shape the
+ *      adapter expects on `extensionData`. The wire shape mirrors any
+ *      one of the three weapon/armor schemas (all three are
+ *      shape-identical) — what differs is the element index, which is
+ *      taken from the source preset's native vocabulary.
  *
- *   3. `translateCardForRealm({card, targetRealm, publicClient})` calls
- *      `IAdapter.translate` (a `view`), takes the resulting metadata URI
- *      back through the same `buildAssetCardFromMetadata` path on-chain
- *      cards use, and returns the translated card. The card's
- *      `metadataURI` is rewritten so metadata-as-truth is preserved — the
- *      engine reads translated stats the same way it reads native ones.
+ *   3. `translateCardForRealm({card, targetRealm, publicClient})`
+ *      picks the right (slot, source→target) adapter from the seeded
+ *      map, calls `IAdapter.translate` (a `view`), and rebuilds an
+ *      `AssetCard` with the target preset's native vocabulary
+ *      (decoding the element index against `elementsFor(targetPreset)`).
  *
- *   4. `useTranslatedCard(card, targetRealm)` wraps (3) in a React Query
- *      that caches by `(tokenId, targetSchemaId)` — re-equipping the same
- *      card across realm hops doesn't re-hit the chain.
+ *   4. `useTranslatedCard(card, targetRealm)` wraps (3) in a React
+ *      Query keyed by `(tokenId, targetRealm)`.
  *
- * No translation happens for native cards (`card.realm === targetRealm`
- * by preset, or the preset can't be resolved). The hook returns the
- * input card unchanged in that case.
+ * No translation happens for native cards (same preset) or for cards
+ * whose source preset cannot be resolved (the realm is not in the
+ * seeded map). The hook returns the input card unchanged in those
+ * cases — the caller's UI continues to render the card's native
+ * vocabulary.
  */
 
 import { useQuery } from "@tanstack/react-query";
@@ -49,122 +55,19 @@ import type {
   Preset,
   Tier,
 } from "@/lib/engine/types";
+import { elementFromIndex, elementIndex } from "@/lib/engine/types";
 import { buildAssetCardFromMetadata } from "@/lib/metadata/asset-card";
 import { adapterAbi } from "./adapter-abi";
 import { getAdapterAddress } from "./seeded-adapters";
 import { getSeededRealm } from "./seeded-realms";
 
+const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as const;
+
 // ---------------------------------------------------------------------------
-// Preset/element/die enum encoders. Order MUST match the Solidity enums in
-// contracts/src/PresetTypes.sol — changing either side without the other
-// silently produces wrong stats. The Solidity enums are documented as
-// "matches off-chain order"; this module is the off-chain side of that pact.
+// DamageDie enum (shared library DamageDie.sol). Identical across every
+// weapon schema — the die ladder is the unit of combat math.
 // ---------------------------------------------------------------------------
 
-const PRESET_TO_ONCHAIN: Record<Preset, number> = {
-  fantasy: 0,
-  scifi: 1,
-  cyberpunk: 2,
-};
-
-const ELEMENT_TO_ONCHAIN: Record<Element, number> = {
-  none: 0,
-  fire: 1,
-  ice: 2,
-  shock: 3,
-  holy: 4,
-  unholy: 5,
-};
-
-const ONCHAIN_TO_ELEMENT: readonly Element[] = [
-  "none",
-  "fire",
-  "ice",
-  "shock",
-  "holy",
-  "unholy",
-] as const;
-
-/**
- * Element vocabulary lookup.
- *
- * The on-chain source of truth lives in the adapter contracts: each
- * `PresetWeaponAdapter` and `PresetArmorAdapter` exposes a pure
- * `elementLabel(preset, element)` view backed by the shared
- * `PresetElementLabels` library. Off-chain renders read labels from
- * any deployed adapter via `useElementLabel` below.
- *
- * No client-side map. If the on-chain call hasn't resolved yet, the
- * hook returns the canonical name (`"fire"`, `"holy"`, …) as a
- * placeholder so the UI never blanks out.
- */
-
-/** Pick any deployed adapter as a label oracle — all adapters answer label queries identically (pure library call). */
-function anyDeployedAdapter(): `0x${string}` | null {
-  // Cheapest enumeration: walk slot/source/target until we hit a
-  // non-zero entry. Returns null when nothing has been seeded yet
-  // (callers fall through to canonical names).
-  const slots = ["weapon", "armor"] as const;
-  for (const slot of slots) {
-    for (const src of PRESETS) {
-      for (const tgt of PRESETS) {
-        if (src === tgt) continue;
-        const addr = getAdapterAddress(slot, src, tgt);
-        if (addr !== "0x0000000000000000000000000000000000000000") {
-          return addr;
-        }
-      }
-    }
-  }
-  return null;
-}
-
-/**
- * Reads the on-chain label for `(preset, element)` from any deployed
- * adapter. Result is cached forever via React Query — labels are a
- * `pure` function so they never change without a redeploy. The hook
- * returns `element` itself as a synchronous placeholder while the
- * read resolves; UIs render that briefly and swap to the on-chain
- * value once the query lands.
- */
-export function useElementLabel(
-  element: Element,
-  preset: Preset | null,
-): string {
-  const publicClient = usePublicClient();
-  const adapter = anyDeployedAdapter();
-  const presetIdx =
-    preset === null ? null : PRESET_TO_ONCHAIN[preset];
-  const elementIdx = ELEMENT_TO_ONCHAIN[element];
-
-  const query = useQuery<string>({
-    queryKey: [
-      "elementLabel",
-      adapter?.toLowerCase() ?? "none",
-      presetIdx ?? "none",
-      elementIdx,
-    ],
-    enabled: !!publicClient && !!adapter && presetIdx !== null,
-    staleTime: Infinity,
-    retry: false,
-    queryFn: async () => {
-      const label = (await publicClient!.readContract({
-        address: adapter!,
-        abi: adapterAbi,
-        functionName: "elementLabel",
-        args: [presetIdx!, elementIdx],
-      })) as string;
-      return label;
-    },
-  });
-
-  // Disconnected mode or pre-fetch: render the canonical name. It's
-  // the source preset's name under fantasy, so it's always a valid
-  // English word — never garbles the UI.
-  return query.data ?? element;
-}
-
-// DamageDie enum: 0=D4, 1=D6, 2=D8, 3=D10, 4=D12 (PresetTypes.sol).
 const DIE_TO_ONCHAIN: Record<number, number> = { 4: 0, 6: 1, 8: 2, 10: 3, 12: 4 };
 const ONCHAIN_TO_DIE: readonly number[] = [4, 6, 8, 10, 12];
 
@@ -184,13 +87,13 @@ const PRESETS: readonly Preset[] = ["fantasy", "scifi", "cyberpunk"] as const;
 
 /**
  * Maps a realm address (the card's `mintedBy`) back to its preset by
- * scanning the seeded-realms map. Returns null when the realm isn't one
- * of the three starter realms — for the PoC this also means "we have no
- * adapter for it" since adapters are deployed only against the canonical
- * preset schemas.
+ * scanning the seeded-realms map. Returns null when the realm isn't
+ * one of the three starter realms — for the PoC this also means "we
+ * have no adapter for it" since adapters are deployed only against
+ * the canonical preset schemas.
  */
 export function presetForRealm(realm: `0x${string}`): Preset | null {
-  if (!realm || realm === "0x0000000000000000000000000000000000000000") return null;
+  if (!realm || realm === ZERO_ADDRESS) return null;
   const target = realm.toLowerCase();
   for (const p of PRESETS) {
     if (getSeededRealm(p).toLowerCase() === target) return p;
@@ -199,12 +102,91 @@ export function presetForRealm(realm: `0x${string}`): Preset | null {
 }
 
 // ---------------------------------------------------------------------------
+// Element label lookup
+// ---------------------------------------------------------------------------
+
+/**
+ * Picks a deployed adapter that *names* `preset` in either its source
+ * or target schema, and reports which view (`sourceElementLabel` vs
+ * `targetElementLabel`) maps a numeric index onto a string in that
+ * vocabulary. Used by the on-chain label lookup below. Returns null
+ * when nothing has been seeded yet.
+ */
+function findLabelAdapter(
+  preset: Preset,
+): { adapter: `0x${string}`; view: "sourceElementLabel" | "targetElementLabel" } | null {
+  // Prefer the weapon-slot adapter where `preset` is the source.
+  for (const tgt of PRESETS) {
+    if (tgt === preset) continue;
+    const addr = getAdapterAddress("weapon", preset, tgt);
+    if (addr !== ZERO_ADDRESS) return { adapter: addr, view: "sourceElementLabel" };
+  }
+  // Fall back to where `preset` is the target.
+  for (const src of PRESETS) {
+    if (src === preset) continue;
+    const addr = getAdapterAddress("weapon", src, preset);
+    if (addr !== ZERO_ADDRESS) return { adapter: addr, view: "targetElementLabel" };
+  }
+  return null;
+}
+
+/**
+ * Reads the on-chain label for `(preset, element)` from a deployed
+ * adapter that names `preset` in its schema family.
+ *
+ * Note: in the post-refactor world, `card.element` already carries
+ * the *native* string for its source preset, so most UIs can just
+ * render `card.element` directly without consulting this hook.
+ * Kept for components that want to verify "this element index, as
+ * read by the on-chain schema, renders as X" — a contract-anchored
+ * cross-check rather than a routine display path.
+ *
+ * The synchronous placeholder while the read resolves is `element`
+ * itself, which is already a valid display string post-refactor.
+ */
+export function useElementLabel(
+  element: Element,
+  preset: Preset | null,
+): string {
+  const publicClient = usePublicClient();
+  const labelAdapter = preset ? findLabelAdapter(preset) : null;
+  const elementIdx = preset ? elementIndex(preset, element) : 0;
+
+  const query = useQuery<string>({
+    queryKey: [
+      "elementLabel",
+      labelAdapter?.adapter.toLowerCase() ?? "none",
+      labelAdapter?.view ?? "none",
+      preset ?? "none",
+      elementIdx,
+    ],
+    enabled: !!publicClient && !!labelAdapter && preset !== null,
+    staleTime: Infinity,
+    retry: false,
+    queryFn: async () => {
+      const label = (await publicClient!.readContract({
+        address: labelAdapter!.adapter,
+        abi: adapterAbi,
+        functionName: labelAdapter!.view,
+        args: [elementIdx],
+      })) as string;
+      return label;
+    },
+  });
+
+  return query.data ?? element;
+}
+
+// ---------------------------------------------------------------------------
 // Extension data codec
 // ---------------------------------------------------------------------------
 
-// Tuple shapes mirror `contracts/src/PresetTypes.sol`:
-//   WeaponExt { DamageDie damageDie; int8 attackBonus; int8 damageBonus; Element element; }
-//   ArmorExt  { int8 acBonus; int8 hpBonus; Element resistElement; }
+// Wire tuple shape — identical across every preset's weapon schema (the
+// three schemas declare structurally identical structs over their own
+// native element enums).
+//
+//   WeaponSchema.Ext { DamageDie damageDie; int8 attackBonus; int8 damageBonus; Element element; }
+//   ArmorSchema.Ext  { int8 acBonus; int8 hpBonus; Element resistElement; }
 const WEAPON_EXT_TUPLE = parseAbiParameters(
   "(uint8 damageDie, int8 attackBonus, int8 damageBonus, uint8 element)",
 );
@@ -212,12 +194,14 @@ const ARMOR_EXT_TUPLE = parseAbiParameters(
   "(int8 acBonus, int8 hpBonus, uint8 resistElement)",
 );
 
-function encodeWeaponExt(card: AssetCard): `0x${string}` {
-  // Default die is D6 if absent. Real on-chain cards always have one (the
-  // mint route's bounds validator requires it), but starter-gear cards
-  // emitted by `runtime.ts` can technically omit it. We never call the
-  // adapter on starter gear (it has schemaId=0, no preset match), so this
-  // is a defensive default rather than an expected code path.
+/**
+ * Pack a weapon card's stats into the on-chain extension bytes the
+ * adapter expects. `sourcePreset` selects which preset's vocabulary
+ * the `element` string is interpreted against — the resulting enum
+ * index is whatever that preset's `Element` enum has at the matching
+ * position.
+ */
+function encodeWeaponExt(card: AssetCard, sourcePreset: Preset): `0x${string}` {
   const die = card.damageDie ?? 6;
   const dieOnchain = DIE_TO_ONCHAIN[die];
   if (dieOnchain === undefined) {
@@ -228,17 +212,17 @@ function encodeWeaponExt(card: AssetCard): `0x${string}` {
       damageDie: dieOnchain,
       attackBonus: card.attackBonus ?? 0,
       damageBonus: card.damageBonus ?? 0,
-      element: ELEMENT_TO_ONCHAIN[card.element ?? "none"],
+      element: elementIndex(sourcePreset, card.element ?? "none"),
     },
   ]);
 }
 
-function encodeArmorExt(card: AssetCard): `0x${string}` {
+function encodeArmorExt(card: AssetCard, sourcePreset: Preset): `0x${string}` {
   return encodeAbiParameters(ARMOR_EXT_TUPLE, [
     {
       acBonus: card.acBonus ?? 0,
       hpBonus: card.hpBonus ?? 0,
-      resistElement: ELEMENT_TO_ONCHAIN[card.resistElement ?? "none"],
+      resistElement: elementIndex(sourcePreset, card.resistElement ?? "none"),
     },
   ]);
 }
@@ -251,7 +235,16 @@ type DecodedWeaponStats = {
 };
 type DecodedArmorStats = { acBonus: number; hpBonus: number; resistElement: Element };
 
-function decodeWeaponExt(data: `0x${string}`): DecodedWeaponStats {
+/**
+ * Decode the adapter's returned extension bytes back into a JS object.
+ * `targetPreset` selects which preset's vocabulary the element index
+ * maps onto — same index, different name across presets (PoC's
+ * index-identity rule).
+ */
+function decodeWeaponExt(
+  data: `0x${string}`,
+  targetPreset: Preset,
+): DecodedWeaponStats {
   const [ext] = decodeAbiParameters(WEAPON_EXT_TUPLE, data);
   const dieOnchain = Number(ext.damageDie);
   const elemOnchain = Number(ext.element);
@@ -259,27 +252,27 @@ function decodeWeaponExt(data: `0x${string}`): DecodedWeaponStats {
     damageDie: ONCHAIN_TO_DIE[dieOnchain] ?? 6,
     attackBonus: Number(ext.attackBonus),
     damageBonus: Number(ext.damageBonus),
-    element: ONCHAIN_TO_ELEMENT[elemOnchain] ?? "none",
+    element: elementFromIndex(targetPreset, elemOnchain),
   };
 }
 
-function decodeArmorExt(data: `0x${string}`): DecodedArmorStats {
+function decodeArmorExt(
+  data: `0x${string}`,
+  targetPreset: Preset,
+): DecodedArmorStats {
   const [ext] = decodeAbiParameters(ARMOR_EXT_TUPLE, data);
   const elemOnchain = Number(ext.resistElement);
   return {
     acBonus: Number(ext.acBonus),
     hpBonus: Number(ext.hpBonus),
-    resistElement: ONCHAIN_TO_ELEMENT[elemOnchain] ?? "none",
+    resistElement: elementFromIndex(targetPreset, elemOnchain),
   };
 }
 
 // ---------------------------------------------------------------------------
-// Metadata rebuild — the translated stats need to become a new metadata
-// URI so the card we hand back to the engine is *decoded* the same way as
-// every other AssetCard. We rebuild a minimal data: URI here rather than
-// reusing `buildLootMetadataURI` from loot-derive, because we don't have a
-// `LootRoll` in hand (and don't want to invent one) — the input is the
-// decoded translation tuple plus the original card's name/realm/tier.
+// Metadata rebuild — translated stats become a new metadata URI so the
+// returned card is decoded via the same `buildAssetCardFromMetadata`
+// path every other card uses.
 // ---------------------------------------------------------------------------
 
 function b64(s: string): string {
@@ -290,13 +283,6 @@ function b64(s: string): string {
   return btoa(bin);
 }
 
-/**
- * Minimal inline SVG. `decodeMetadataURI` validates that
- * `json.image` is a base64 SVG data URI and throws otherwise — and
- * `buildAssetCardFromMetadata` silently swallows that throw and returns
- * a stat-less card. Translated cards don't surface an image anywhere,
- * but the contract has to be honoured.
- */
 const TRANSLATED_PLACEHOLDER_SVG_URI =
   "data:image/svg+xml;base64," +
   (typeof Buffer !== "undefined"
@@ -344,9 +330,6 @@ function buildTranslatedMetadataURI(args: {
     seed_protocol: {
       schemaId: translatedSchemaId,
       tier: original.tier,
-      // The original realm label is kept so the inventory drawer can still
-      // surface "Minted in <foreign realm>" — translation doesn't change
-      // provenance, only stats.
       minted_by_realm_label: original.realmName,
       translated_target_preset: targetPreset,
     },
@@ -365,12 +348,6 @@ export type TranslateArgs = {
   publicClient: PublicClient;
 };
 
-/**
- * Thrown when the adapter `view` call reverts or the address has no
- * bytecode. The most common cause in dev is `.seeded-adapters.json`
- * pointing at addresses on a stale Anvil instance — re-run
- * `pnpm --filter web seed:adapters` after restarting the chain.
- */
 export class AdapterCallFailed extends Error {
   readonly adapter: `0x${string}`;
   constructor(adapter: `0x${string}`, cause: unknown) {
@@ -380,21 +357,6 @@ export class AdapterCallFailed extends Error {
   }
 }
 
-/**
- * Returns a new `AssetCard` whose metadata URI carries the target
- * preset's translated stats, or the input card unchanged when no
- * translation is needed / possible:
- *
- *   - Source preset can't be resolved from `card.realm` (foreign realm
- *     not in the seeded map).
- *   - Source and target are the same preset.
- *   - Adapter is not registered for the (slot, source, target) triple.
- *   - Adapter call reverts.
- *
- * In every fall-back case the original card flows through unchanged, so
- * a missing adapter degrades to "use native stats" rather than blocking
- * the equip.
- */
 export async function translateCardForRealm({
   card,
   targetRealm,
@@ -407,10 +369,12 @@ export async function translateCardForRealm({
   if (card.slot !== "weapon" && card.slot !== "armor") return card;
 
   const adapter = getAdapterAddress(card.slot, sourcePreset, targetPreset);
-  if (adapter === "0x0000000000000000000000000000000000000000") return card;
+  if (adapter === ZERO_ADDRESS) return card;
 
   const extensionData =
-    card.slot === "weapon" ? encodeWeaponExt(card) : encodeArmorExt(card);
+    card.slot === "weapon"
+      ? encodeWeaponExt(card, sourcePreset)
+      : encodeArmorExt(card, sourcePreset);
 
   let translated: readonly [
     { tier: number; extensionSchemaId: bigint; metadataURI: string },
@@ -432,11 +396,6 @@ export async function translateCardForRealm({
       ],
     })) as typeof translated;
   } catch (err) {
-    // Adapter unavailable / reverted / RPC dropped. Surface as a thrown
-    // error so the React Query layer can flip `isError` and the UI strip
-    // can distinguish "translating…" from "tried and failed". Callers
-    // outside the hook (e.g. `handleEquip`) catch and fall back to the
-    // native card themselves.
     throw new AdapterCallFailed(adapter, err);
   }
 
@@ -445,8 +404,8 @@ export async function translateCardForRealm({
 
   let weapon: DecodedWeaponStats | undefined;
   let armor: DecodedArmorStats | undefined;
-  if (card.slot === "weapon") weapon = decodeWeaponExt(translatedExt);
-  else armor = decodeArmorExt(translatedExt);
+  if (card.slot === "weapon") weapon = decodeWeaponExt(translatedExt, targetPreset);
+  else armor = decodeArmorExt(translatedExt, targetPreset);
 
   const metadataURI = buildTranslatedMetadataURI({
     original: card,
@@ -456,8 +415,6 @@ export async function translateCardForRealm({
     armor,
   });
 
-  // Hand the URI back through the canonical decoder so the translated
-  // card has the same shape as a freshly-minted one.
   return buildAssetCardFromMetadata({
     tokenId: card.tokenId,
     tier: onchainToTier(Number(translatedAttrs.tier)),
@@ -468,19 +425,9 @@ export async function translateCardForRealm({
 }
 
 // ---------------------------------------------------------------------------
-// React hook — caches by (tokenId, targetSchemaId).
+// React hook — caches by (tokenId, targetRealm).
 // ---------------------------------------------------------------------------
 
-/**
- * Resolves a translated card for the target realm. Returns the original
- * card synchronously when no translation is needed; otherwise issues a
- * `view` call against the adapter and caches the result by
- * `(tokenId, targetSchemaId)` so re-equipping is free.
- *
- * Returns `data: card` when no translation is in-flight — the caller can
- * always read `data` and trust it's either the native card or the
- * translated one. `isFetching` is exposed for "translating…" UI affordances.
- */
 export function useTranslatedCard(
   card: AssetCard | undefined,
   targetRealm: `0x${string}`,
@@ -496,11 +443,6 @@ export function useTranslatedCard(
     sourcePreset !== targetPreset &&
     (card.slot === "weapon" || card.slot === "armor");
 
-  // Cache key uses (tokenId, targetRealm). tokenId is unique per asset
-  // and targetRealm carries the targetSchemaId implicitly via the
-  // adapter map — so re-equipping the same card across the same hop
-  // re-uses the cached translation, but a fresh mint with a different
-  // tokenId triggers a new lookup.
   const query = useQuery<AssetCard | undefined>({
     queryKey: [
       "translatedCard",

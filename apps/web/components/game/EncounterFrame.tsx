@@ -350,6 +350,7 @@ export function EncounterFrame({
         <LootMintPrompt
           loot={state.pendingLoot}
           bank={bank}
+          preset={activePreset ?? state.preset}
           onMint={handleMint}
           onSkip={handleSkip}
         />

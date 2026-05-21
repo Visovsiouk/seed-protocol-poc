@@ -64,7 +64,7 @@ const monsters = {
       "converges with a buzzing whine for {dmg}",
       "boxes you in; rotor wash cuts your cheek for {dmg}",
     ],
-    weakTo: "shock",
+    weakTo: "emp",
   },
   netrunner: {
     id: "netrunner",
@@ -77,8 +77,8 @@ const monsters = {
       "shorts your subdermals for {dmg}",
       "pushes a fake heartbeat onto your monitor for {dmg}",
     ],
-    element: "shock",
-    weakTo: "shock",
+    element: "emp",
+    weakTo: "emp",
   },
   enforcer: {
     id: "enforcer",
@@ -91,7 +91,7 @@ const monsters = {
       "checks you into the wall for {dmg}",
       "deploys a riot drone that tags you for {dmg}",
     ],
-    weakTo: "shock",
+    weakTo: "emp",
   },
   // Phase-4 additions below — round out the roster to 12.
   ad_mascot: {
@@ -127,8 +127,8 @@ const monsters = {
       "whirls; a mirrored heel finds your jaw for {dmg}",
       "exhales a calmed breath and the floor leaves you for {dmg}",
     ],
-    weakTo: "shock",
-    resistTo: "fire",
+    weakTo: "emp",
+    resistTo: "incendiary",
   },
   ice_sentinel: {
     id: "ice_sentinel",
@@ -140,9 +140,9 @@ const monsters = {
       "scans you; a numeric lash flays your nerves for {dmg}",
       "throws a packet that detonates between your eyes for {dmg}",
     ],
-    element: "ice",
-    weakTo: "fire",
-    resistTo: "ice",
+    element: "cryogenic",
+    weakTo: "incendiary",
+    resistTo: "cryogenic",
   },
   corp_assassin: {
     id: "corp_assassin",
@@ -166,8 +166,8 @@ const monsters = {
       "lifts you; servos hum, joints fail somewhere for {dmg}",
       "speaks your name in a voice you knew once for {dmg}",
     ],
-    weakTo: "shock",
-    resistTo: "fire",
+    weakTo: "emp",
+    resistTo: "incendiary",
   },
 } as const;
 
@@ -182,9 +182,9 @@ const bosses = {
     bakedEffects: ["crit_chance", "armor_pierce"] as ["crit_chance", "armor_pierce"],
     phase2NarrationKey: "black_ice_phase2",
     phase2AttackDie: 8 as const,
-    element: "ice" as const,
-    weakTo: "fire" as const,
-    resistTo: "ice" as const,
+    element: "cryogenic" as const,
+    weakTo: "incendiary" as const,
+    resistTo: "cryogenic" as const,
   },
   //  tuning: non-starter bosses match the starter recipe
   // (attackDie 6 / phase2 8); baseHp scales against effect severity.
@@ -199,7 +199,7 @@ const bosses = {
     phase2NarrationKey: "ceo_phase2",
     phase2AttackDie: 8 as const,
     phase2SuppressEffect: "dodge_chance" as const,
-    weakTo: "shock" as const,
+    weakTo: "emp" as const,
   },
   ghost: {
     id: "ghost",
@@ -211,9 +211,9 @@ const bosses = {
     bakedEffects: ["multi_hit", "bleed"] as ["multi_hit", "bleed"],
     phase2NarrationKey: "ghost_phase2",
     phase2AttackDie: 8 as const,
-    element: "unholy" as const,
-    weakTo: "holy" as const,
-    resistTo: "unholy" as const,
+    element: "nano" as const,
+    weakTo: "laser" as const,
+    resistTo: "nano" as const,
   },
   rogue_god: {
     id: "rogue_god",
@@ -225,8 +225,8 @@ const bosses = {
     bakedEffects: ["damage_reduction", "thorns"] as ["damage_reduction", "thorns"],
     phase2NarrationKey: "rogue_god_phase2",
     phase2AttackDie: 8 as const,
-    element: "shock" as const,
-    weakTo: "shock" as const,
+    element: "emp" as const,
+    weakTo: "emp" as const,
   },
   matron: {
     id: "matron",
@@ -239,7 +239,7 @@ const bosses = {
     phase2NarrationKey: "matron_phase2",
     phase2AttackDie: 8 as const,
     phase2SuppressEffect: "regen" as const,
-    weakTo: "fire" as const,
+    weakTo: "incendiary" as const,
   },
 } as const;
 

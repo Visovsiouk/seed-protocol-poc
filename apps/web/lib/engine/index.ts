@@ -24,6 +24,8 @@ import type {
   ActionChoice,
   AssetCard,
   CombatState,
+  DefeatMode,
+  Element,
   EncounterState,
   EngineEvent,
   LootRoll,
@@ -48,9 +50,34 @@ import type { Difficulty } from "./tier";
 import { getFlavorBank } from "../flavor";
 import { pickVariant, render } from "./narration";
 import type { FlavorBank } from "../flavor/types";
+import { pilgrimsBrand, respawnVoiceFor } from "../story/genesis";
 
-/** Depth at which the per-realm boss arrives. */
+/**
+ * Default depth at which the per-realm boss arrives. Realm-specific
+ * configs (see `StartRunArgs.bossDepth`) override this — Genesis uses
+ * 5 because the Reach is the narrowest skin the Seed ever wore; the
+ * other starters and player realms stay at 6.
+ */
 export const BOSS_DEPTH = 6;
+
+/**
+ * XOR the attempt counter into the run seed so a seed-mercy respawn
+ * doesn't deterministically replay the same encounter chain that just
+ * killed the player. Only the tail 12 bytes are touched, matching the
+ * mask `subSeed` uses for (depth, step) — the cascade-mix loader fans
+ * single-byte changes back across every lane.
+ */
+function reseedForAttempt(
+  seed: `0x${string}`,
+  attempt: number,
+): `0x${string}` {
+  if (attempt <= 1) return seed;
+  const hex = seed.slice(2);
+  const head = hex.slice(0, 40);
+  const tail = BigInt("0x" + hex.slice(40, 64)) ^ BigInt(attempt);
+  const tailHex = tail.toString(16).padStart(24, "0");
+  return ("0x" + head + tailHex) as `0x${string}`;
+}
 
 /**
  * Derive a sub-seed from (rngSeed, depth, stepInRoom). XOR-in the salts
@@ -131,8 +158,8 @@ function generateEncounter(
   const lines: NarrationLine[] = [];
 
   // Boss room.
-  if (state.depth >= BOSS_DEPTH) {
-    if (!bossId) throw new Error("generateEncounter: bossId required at BOSS_DEPTH");
+  if (state.depth >= state.bossDepth) {
+    if (!bossId) throw new Error("generateEncounter: bossId required at bossDepth");
     const boss = bank.bosses[bossId];
     if (!boss) throw new Error(`generateEncounter: unknown bossId "${bossId}"`);
     const player = playerStartHp(state.equipped);
@@ -214,9 +241,25 @@ export type StartRunArgs = {
   realm: `0x${string}`;
   rngSeed: `0x${string}`;
   equipped: RunState["equipped"];
-  /** Required for boss-depth generation; ignored before BOSS_DEPTH. */
+  /** Required for boss-depth generation; ignored before bossDepth. */
   bossId: string;
   schemas: RealmSchemas;
+  /**
+   * Depth at which the boss arrives. Defaults to `BOSS_DEPTH` (6).
+   * Genesis passes 5 — the Seed's first skin is narrower than the rest.
+   */
+  bossDepth?: number;
+  /**
+   * Per-realm death handling. Defaults to `"permadeath"`. Genesis
+   * passes `"seed-mercy"`; see `DefeatMode` for the contract.
+   */
+  defeatMode?: DefeatMode;
+  /**
+   * If set, the first weapon-slot loot drop of each run-attempt is
+   * coerced to this element. Genesis uses `"fire"` (the Hag is weakTo
+   * fire; the player finds a pilgrim's blade).
+   */
+  forcedFirstWeaponElement?: Exclude<Element, "none">;
 };
 
 /** Internal: schema info is needed by `step` for loot rolls; we stash it on state. */
@@ -229,10 +272,15 @@ export function startRun(args: StartRunArgs): { state: RunState; lines: Narratio
     realm: args.realm,
     rngSeed: args.rngSeed,
     depth: 1,
+    bossDepth: args.bossDepth ?? BOSS_DEPTH,
     encounter: null,
     equipped: args.equipped,
     bossCleared: false,
     defeated: false,
+    defeatMode: args.defeatMode ?? "permadeath",
+    runAttempt: 1,
+    forcedFirstWeaponElement: args.forcedFirstWeaponElement,
+    firstWeaponDropped: false,
   };
   const gen = generateEncounter(baseState, args.bossId);
   const state: RunState = { ...baseState, encounter: gen.encounter };
@@ -282,7 +330,7 @@ export function step(state: RunState, choice: ActionChoice): StepResult {
     const playerDefeated = result.playerDefeated;
 
     // Phase transition for bosses (only if both combatants are still standing).
-    if (!monsterDefeated && !playerDefeated && state.depth >= BOSS_DEPTH) {
+    if (!monsterDefeated && !playerDefeated && state.depth >= state.bossDepth) {
       const pt = checkPhaseTransition(combat);
       if (pt.transitioned) {
         combat = pt.state;
@@ -291,17 +339,42 @@ export function step(state: RunState, choice: ActionChoice): StepResult {
     }
 
     if (monsterDefeated) {
-      const isBoss = state.depth >= BOSS_DEPTH;
+      const isBoss = state.depth >= state.bossDepth;
       lines.push({
         text: isBoss ? `${combat.monster.name} falls. The realm is cleared.` : `${combat.monster.name} falls.`,
         emphasis: "drama",
       });
-      const loot = rollLoot({
+      let loot = rollLoot({
         rng,
         difficulty: difficultyFor(state.depth, isBoss),
         slot: pickSlot(rng),
         schemas,
+        preset: state.preset,
       });
+      // Forced-first-weapon override (Genesis: Pilgrim's Brand). Fires
+      // at most once per attempt — the first time a weapon-slot drop
+      // lands, we coerce its element and tag the card with a name
+      // override + an in-feed narration line.
+      let nextFirstWeaponDropped = state.firstWeaponDropped;
+      if (
+        loot.slot === "weapon" &&
+        !state.firstWeaponDropped &&
+        state.forcedFirstWeaponElement
+      ) {
+        const pick = rng.nextInt(0x100000000);
+        const brand = pilgrimsBrand(pick);
+        loot = {
+          ...loot,
+          element: state.forcedFirstWeaponElement,
+          nameOverride: brand.name,
+        };
+        lines.push({ text: brand.narration, emphasis: "drama" });
+        nextFirstWeaponDropped = true;
+      } else if (loot.slot === "weapon" && !state.firstWeaponDropped) {
+        // Even without a forced element, mark the first weapon dropped
+        // so the override (if any) is a once-per-attempt thing.
+        nextFirstWeaponDropped = true;
+      }
       events.push({ type: "LootDropped", loot });
       if (isBoss) {
         events.push({ type: "BossCleared", finalHp: combat.playerHp, turns: combat.turn });
@@ -313,6 +386,7 @@ export function step(state: RunState, choice: ActionChoice): StepResult {
         encounter: null,
         pendingLoot: loot,
         bossCleared: state.bossCleared || isBoss,
+        firstWeaponDropped: nextFirstWeaponDropped,
         ...(isBoss
           ? { bossClearedTimestamp: Date.now(), bossClearedTurns: combat.turn }
           : {}),
@@ -322,11 +396,48 @@ export function step(state: RunState, choice: ActionChoice): StepResult {
     }
 
     if (playerDefeated) {
-      // Roguelike permadeath. Run is over: encounter stays in place so the
-      // UI can re-render the last combat frame under the defeat panel, but
-      // the terminator flag short-circuits further `step()` calls. No
-      // clearReceipt, no boss-clear flag mutation, no loot. Equipped gear
-      // is retained — death surrenders progress, not inventory.
+      // Seed mercy (Genesis): the Seed grows the player back from its
+      // own ground. Bump the attempt counter, reseed the run so the
+      // encounter chain doesn't replay the death, regenerate depth 1,
+      // and emit the death + respawn narration as a single block. No
+      // `defeated` flag, no PlayerDefeated event, no UI defeat panel —
+      // the run keeps going. Equipped gear carries across attempts.
+      if (state.defeatMode === "seed-mercy") {
+        const nextAttempt = state.runAttempt + 1;
+        const voice = respawnVoiceFor(state.preset, nextAttempt);
+        lines.push({ text: voice.death, emphasis: "drama" });
+        for (const r of voice.respawn) {
+          lines.push({ text: r, emphasis: "info" });
+        }
+        const reseeded = reseedForAttempt(state.rngSeed, nextAttempt);
+        const seededBase: RunState = {
+          ...state,
+          rngSeed: reseeded,
+          depth: 1,
+          encounter: null,
+          runAttempt: nextAttempt,
+          firstWeaponDropped: false,
+          // pendingLoot from a prior room never makes it past death; if
+          // the death came on a loot prompt, drop it. The carried gear
+          // (state.equipped) is preserved.
+          pendingLoot: undefined,
+        };
+        SCHEMA_STORE.set(seededBase, schemas);
+        const gen = generateEncounter(seededBase, undefined);
+        // The room intro line from `generateEncounter` lands after the
+        // respawn voice so the player reads death → reset → new room.
+        lines.push(...gen.lines);
+        const nextState: RunState = { ...seededBase, encounter: gen.encounter };
+        SCHEMA_STORE.set(nextState, schemas);
+        return { state: nextState, outcome: lines, events };
+      }
+
+      // Default: permadeath. Run is over. Encounter stays in place so
+      // the UI can re-render the last combat frame under the defeat
+      // panel; the terminator flag short-circuits further `step()`
+      // calls. No clearReceipt, no boss-clear flag mutation, no loot.
+      // Equipped gear is retained — death surrenders progress, not
+      // inventory.
       lines.push({
         text: `You fall. ${combat.monster.name} stands over you.`,
         emphasis: "drama",
@@ -370,6 +481,7 @@ export function step(state: RunState, choice: ActionChoice): StepResult {
         difficulty: "trivial",
         slot: pickSlot(rng),
         schemas,
+        preset: state.preset,
       });
       events.push({ type: "LootDropped", loot });
       events.push({ type: "RoomCleared", depth: state.depth });

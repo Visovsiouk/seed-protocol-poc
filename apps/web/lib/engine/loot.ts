@@ -22,10 +22,11 @@ import type {
   CatalogEffectName,
   Element,
   LootRoll,
+  Preset,
   Slot,
   Tier,
 } from "./types";
-import { COMBAT_ELEMENTS } from "./types";
+import { combatElementsFor } from "./types";
 import type { Rng } from "./rng";
 import { rollEffectValue } from "./catalog";
 import { type Difficulty, rollTier, tierStats } from "./tier";
@@ -35,12 +36,17 @@ import { type Difficulty, rollTier, tierStats } from "./tier";
  * (and likewise armor resists); the other half stay mundane so the bank
  * doesn't drown in elemental gear. Kept deterministic on the same `rng`
  * the rest of the loot draws share.
+ *
+ * The pool is preset-native: a fantasy realm draws from
+ * `fire/ice/shock/holy/unholy`, sci-fi from `plasma/cryo/...`, cyberpunk
+ * from `incendiary/cryogenic/...`. The 12 ordered-pair adapter
+ * contracts translate by index when an asset crosses a realm.
  */
 const ELEMENT_DROP_CHANCE = 0.5;
 
-function rollElement(rng: Rng): Element {
+function rollElement(rng: Rng, preset: Preset): Element {
   if (!rng.chance(ELEMENT_DROP_CHANCE)) return "none";
-  return rng.pick(COMBAT_ELEMENTS);
+  return rng.pick(combatElementsFor(preset)) as Element;
 }
 
 export type SchemaSpec = {
@@ -86,8 +92,16 @@ export function rollLoot(args: {
   difficulty: Difficulty;
   slot: Exclude<Slot, "accessory">;
   schemas: RealmSchemas;
+  /**
+   * The preset whose vocabulary the rolled element should be drawn
+   * from. Required: every realm in the PoC has exactly one preset,
+   * and the loot's element name must match its source schema so the
+   * on-chain encoder (`encodeWeaponExt` / `encodeArmorExt` in
+   * `lib/contracts/adapters.ts`) maps it to a valid enum index.
+   */
+  preset: Preset;
 }): LootRoll {
-  const { rng, difficulty, slot, schemas } = args;
+  const { rng, difficulty, slot, schemas, preset } = args;
   const tier = rollTier(rng, difficulty, schemas.maxTier);
   const stats = tierStats(tier, slot);
   const schema = schemas[slot];
@@ -101,7 +115,7 @@ export function rollLoot(args: {
   // tests still produce the same tier/stats/effect sequence; only the post-
   // effect draws shift. Weapons carry a damage element; armor carries a
   // resist element.
-  const element: Element = rollElement(rng);
+  const element: Element = rollElement(rng, preset);
 
   // Name seed: 256-bit value drawn from 8 successive uint32s. Combines
   // tier/slot/effect rolls into a single bigint we can ship to the mint
