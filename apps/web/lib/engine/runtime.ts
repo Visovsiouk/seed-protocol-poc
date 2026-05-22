@@ -21,7 +21,7 @@
 
 import type { AssetCard as AssetCardType, LootRoll, Preset } from "@/lib/engine/types";
 import type { RealmSchemas } from "@/lib/engine/loot";
-import { assembleLootName, getFlavorBank } from "@/lib/flavor";
+import { lootName } from "@/lib/loot/names";
 import { buildLootMetadataURI } from "@/lib/contracts/loot-derive";
 import { buildAssetCardFromMetadata } from "@/lib/metadata/asset-card";
 
@@ -86,6 +86,21 @@ export function makeStarterGear(
   realmName: string,
 ): { weapon: AssetCardType; armor: AssetCardType } {
   const names = STARTER_NAMES[preset];
+  // Starters carry a slot-index-2 archetype (the "light" lane in every
+  // preset) so the adapter's `name(type, tier)` view has something to
+  // resolve when the player crosses realms. In the home realm the
+  // hand-authored `assembledName` wins; cross-realm translation falls
+  // back to the on-chain ladder.
+  const starterWeaponType: Record<Preset, NonNullable<LootRoll["weaponType"]>> = {
+    fantasy: "sword",
+    scifi: "pistol",
+    cyberpunk: "knife",
+  };
+  const starterArmorType: Record<Preset, NonNullable<LootRoll["armorType"]>> = {
+    fantasy: "mail",
+    scifi: "carapace",
+    cyberpunk: "vest",
+  };
   const weaponLoot: LootRoll = {
     tier: 1,
     slot: "weapon",
@@ -93,6 +108,7 @@ export function makeStarterGear(
     damageDie: 4,
     attackBonus: 0,
     damageBonus: 0,
+    weaponType: starterWeaponType[preset],
     catalogEffects: [],
     nameSeed: 0n,
     extraFields: {},
@@ -103,6 +119,7 @@ export function makeStarterGear(
     schemaId: 0,
     acBonus: 1,
     hpBonus: 5,
+    armorType: starterArmorType[preset],
     catalogEffects: [],
     nameSeed: 0n,
     extraFields: {},
@@ -174,13 +191,14 @@ export function lootRollToMockCard(
   realmName: string,
   opts?: { tokenId?: bigint },
 ): AssetCardType {
-  const bank = getFlavorBank(preset);
   // Story-object drops (e.g. Genesis' Pilgrim's Brand) ship with a name
-  // override on the LootRoll; skip the realm-themed adjective+noun assembly
-  // so the card reads as the named object the narration just described.
+  // override on the LootRoll; skip the schema-native `name(type, tier)`
+  // ladder so the card reads as the named object the narration just
+  // described.
+  const archetype = loot.slot === "weapon" ? loot.weaponType : loot.armorType;
   const assembledName =
     loot.nameOverride ??
-    assembleLootName(bank, loot.slot as "weapon" | "armor", loot.nameSeed);
+    lootName(preset, loot.slot as "weapon" | "armor", archetype, loot.tier);
   return lootRoundtripToCard({
     loot,
     preset,

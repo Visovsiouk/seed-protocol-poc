@@ -140,6 +140,176 @@ export function elementFromIndex(preset: Preset, index: number): string {
   return pool[index] ?? "none";
 }
 
+// ---------------------------------------------------------------------------
+// Per-preset weapon/armor archetype vocabularies.
+//
+// Mirrors the on-chain `WeaponType` / `ArmorType` enums in each schema
+// library. Index 0 is always "none" so loot can roll an un-archetyped
+// item without bottoming out the cast. The remaining indexes line up
+// across presets as archetype "lanes":
+//
+//   Weapons:  1=heavy   2=light   3=mid     4=ranged  5=exotic
+//   Armor:    1=heavy   2=medium  3=light
+//
+// Lane parity means the uint8 cast from `FantasyWeaponSchema.WeaponType`
+// to `CyberpunkWeaponSchema.WeaponType` (etc.) lands on a semantically
+// sensible target — Axe↔Shotgun (both heavy), Dagger↔Knife (both light),
+// and so on. Per-(adapter, sourceType) stat deltas in the on-chain
+// adapters supply the archetype flavor on top of the base rebalance.
+// ---------------------------------------------------------------------------
+
+export type FantasyWeaponType = "none" | "axe" | "dagger" | "sword" | "bow" | "staff";
+export type SciFiWeaponType = "none" | "cannon" | "pistol" | "rifle" | "beam" | "railgun";
+export type CyberpunkWeaponType =
+  | "none"
+  | "shotgun"
+  | "knife"
+  | "katana"
+  | "smartsmg"
+  | "monowire";
+
+export type FantasyArmorType = "none" | "plate" | "mail" | "robe";
+export type SciFiArmorType = "none" | "exosuit" | "carapace" | "cloak";
+export type CyberpunkArmorType = "none" | "riotfit" | "vest" | "weave";
+
+export const FANTASY_WEAPON_TYPES: readonly FantasyWeaponType[] = [
+  "none",
+  "axe",
+  "dagger",
+  "sword",
+  "bow",
+  "staff",
+] as const;
+export const SCIFI_WEAPON_TYPES: readonly SciFiWeaponType[] = [
+  "none",
+  "cannon",
+  "pistol",
+  "rifle",
+  "beam",
+  "railgun",
+] as const;
+export const CYBERPUNK_WEAPON_TYPES: readonly CyberpunkWeaponType[] = [
+  "none",
+  "shotgun",
+  "knife",
+  "katana",
+  "smartsmg",
+  "monowire",
+] as const;
+
+export const FANTASY_ARMOR_TYPES: readonly FantasyArmorType[] = [
+  "none",
+  "plate",
+  "mail",
+  "robe",
+] as const;
+export const SCIFI_ARMOR_TYPES: readonly SciFiArmorType[] = [
+  "none",
+  "exosuit",
+  "carapace",
+  "cloak",
+] as const;
+export const CYBERPUNK_ARMOR_TYPES: readonly CyberpunkArmorType[] = [
+  "none",
+  "riotfit",
+  "vest",
+  "weave",
+] as const;
+
+/** Combat pools (no "none") used by the loot type roller. */
+export const FANTASY_COMBAT_WEAPON_TYPES: readonly Exclude<FantasyWeaponType, "none">[] = [
+  "axe",
+  "dagger",
+  "sword",
+  "bow",
+  "staff",
+] as const;
+export const SCIFI_COMBAT_WEAPON_TYPES: readonly Exclude<SciFiWeaponType, "none">[] = [
+  "cannon",
+  "pistol",
+  "rifle",
+  "beam",
+  "railgun",
+] as const;
+export const CYBERPUNK_COMBAT_WEAPON_TYPES: readonly Exclude<CyberpunkWeaponType, "none">[] =
+  ["shotgun", "knife", "katana", "smartsmg", "monowire"] as const;
+
+export const FANTASY_COMBAT_ARMOR_TYPES: readonly Exclude<FantasyArmorType, "none">[] = [
+  "plate",
+  "mail",
+  "robe",
+] as const;
+export const SCIFI_COMBAT_ARMOR_TYPES: readonly Exclude<SciFiArmorType, "none">[] = [
+  "exosuit",
+  "carapace",
+  "cloak",
+] as const;
+export const CYBERPUNK_COMBAT_ARMOR_TYPES: readonly Exclude<CyberpunkArmorType, "none">[] = [
+  "riotfit",
+  "vest",
+  "weave",
+] as const;
+
+/**
+ * Loose carrier types — same rationale as `Element`. An asset
+ * translated across presets carries the *target* preset's archetype
+ * string at runtime, which would not satisfy a single canonical
+ * union. Producers should still use the strict per-preset unions so a
+ * stray vocab can't leak in at construction time.
+ */
+export type WeaponType = string;
+export type ArmorType = string;
+
+export function weaponTypesFor(preset: Preset): readonly string[] {
+  if (preset === "fantasy") return FANTASY_WEAPON_TYPES;
+  if (preset === "scifi") return SCIFI_WEAPON_TYPES;
+  return CYBERPUNK_WEAPON_TYPES;
+}
+
+export function combatWeaponTypesFor(preset: Preset): readonly string[] {
+  if (preset === "fantasy") return FANTASY_COMBAT_WEAPON_TYPES;
+  if (preset === "scifi") return SCIFI_COMBAT_WEAPON_TYPES;
+  return CYBERPUNK_COMBAT_WEAPON_TYPES;
+}
+
+export function armorTypesFor(preset: Preset): readonly string[] {
+  if (preset === "fantasy") return FANTASY_ARMOR_TYPES;
+  if (preset === "scifi") return SCIFI_ARMOR_TYPES;
+  return CYBERPUNK_ARMOR_TYPES;
+}
+
+export function combatArmorTypesFor(preset: Preset): readonly string[] {
+  if (preset === "fantasy") return FANTASY_COMBAT_ARMOR_TYPES;
+  if (preset === "scifi") return SCIFI_COMBAT_ARMOR_TYPES;
+  return CYBERPUNK_COMBAT_ARMOR_TYPES;
+}
+
+/**
+ * uint8 index for a weapon archetype string, against `preset`'s native
+ * vocabulary. Unknown strings fall back to 0 = "none".
+ */
+export function weaponTypeIndex(preset: Preset, weaponType: string): number {
+  const pool = weaponTypesFor(preset);
+  const i = pool.indexOf(weaponType);
+  return i < 0 ? 0 : i;
+}
+
+export function weaponTypeFromIndex(preset: Preset, index: number): string {
+  const pool = weaponTypesFor(preset);
+  return pool[index] ?? "none";
+}
+
+export function armorTypeIndex(preset: Preset, armorType: string): number {
+  const pool = armorTypesFor(preset);
+  const i = pool.indexOf(armorType);
+  return i < 0 ? 0 : i;
+}
+
+export function armorTypeFromIndex(preset: Preset, index: number): string {
+  const pool = armorTypesFor(preset);
+  return pool[index] ?? "none";
+}
+
 export type CatalogEffectName =
   // weapon-slot effects
   | "lifesteal"
@@ -190,6 +360,19 @@ export type AssetCard = {
    * map onto this canonical field via adapters.
    */
   resistElement?: Element;
+  /**
+   * Weapon-slot only: archetype lane (Axe/Pistol/Katana/...) drawn from
+   * the source preset's vocabulary. Drives the on-chain tier-scaled
+   * name lookup and the per-(adapter, sourceType) stat-delta table.
+   * "none" or absent → un-archetyped legacy / story-object loot.
+   */
+  weaponType?: WeaponType;
+  /**
+   * Armor-slot only: archetype lane (Plate/ExoSuit/Weave/...) drawn
+   * from the source preset's vocabulary. Same mechanic as
+   * `weaponType` for armor.
+   */
+  armorType?: ArmorType;
   /** Catalog effects, read by the engine regardless of source realm. */
   catalogEffects: CatalogEffect[];
   /** Non-canonical fields — displayed on the asset card, ignored by combat. */
@@ -305,8 +488,17 @@ export type LootRoll = {
   element?: Element;
   /** Armor-slot only: rolled resistance element. */
   resistElement?: Element;
+  /** Weapon-slot only: rolled archetype. "none" → un-archetyped. */
+  weaponType?: WeaponType;
+  /** Armor-slot only: rolled archetype. */
+  armorType?: ArmorType;
   catalogEffects: CatalogEffect[];
-  /** Seed for adjective+noun assembly so the name is deterministic. */
+  /**
+   * Seed for legacy adjective+noun assembly. Retained so existing
+   * deterministic tests keep their seed budget — the runtime now
+   * derives the name from `(weaponType|armorType, tier)` via the
+   * schema-native ladder, not from this seed.
+   */
   nameSeed: bigint;
   /**
    * Story-object name override. When set, the runtime skips the

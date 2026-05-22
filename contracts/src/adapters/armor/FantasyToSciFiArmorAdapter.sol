@@ -8,9 +8,8 @@ import {SciFiArmorSchema} from "../../schemas/SciFiArmorSchema.sol";
 
 /// @title  FantasyToSciFiArmorAdapter
 /// @notice Translates Fantasy armor into Sci-Fi armor. OUT of Fantasy
-///         reverses the fantasy plate trade: +1 AC, -5 HP. Resist
-///         vocabulary re-encoded by index (fire → plasma, ice →
-///         cryo, etc.).
+///         reverses the fantasy plate trade: +1 AC, -5 HP. Per-source-
+///         type deltas below add a small archetype flavor on top.
 contract FantasyToSciFiArmorAdapter is IAdapter {
     uint256 public immutable sourceSchemaId;
     uint256 public immutable targetSchemaId;
@@ -26,17 +25,28 @@ contract FantasyToSciFiArmorAdapter is IAdapter {
         return (sourceSchemaId, targetSchemaId);
     }
 
+    /// @dev (acDelta, hpDelta) keyed by source FantasyArmorSchema.ArmorType.
+    ///      Stacks on the +1 AC / -5 HP OUT-of-fantasy base rebalance.
+    function _typeDelta(uint8 sourceType) internal pure returns (int8, int8) {
+        if (sourceType == uint8(FantasyArmorSchema.ArmorType.Plate)) return (0,  1); // → ExoSuit
+        if (sourceType == uint8(FantasyArmorSchema.ArmorType.Mail))  return (0,  0); // → Carapace
+        if (sourceType == uint8(FantasyArmorSchema.ArmorType.Robe))  return (0, -1); // → Cloak
+        return (0, 0);
+    }
+
     function translate(
         uint256, /* tokenId */
         SeedTypes.CoreAttributes calldata sourceAttrs,
         bytes calldata extensionData
     ) external view returns (SeedTypes.CoreAttributes memory, bytes memory) {
         FantasyArmorSchema.Ext memory src = abi.decode(extensionData, (FantasyArmorSchema.Ext));
+        (int8 acD, int8 hpD) = _typeDelta(uint8(src.armorType));
 
         SciFiArmorSchema.Ext memory dst = SciFiArmorSchema.Ext({
-            acBonus: src.acBonus + 1,
-            hpBonus: src.hpBonus - 5,
-            resistElement: SciFiArmorSchema.Element(uint8(src.resistElement))
+            acBonus: src.acBonus + 1 + acD,
+            hpBonus: src.hpBonus - 5 + hpD,
+            resistElement: SciFiArmorSchema.Element(uint8(src.resistElement)),
+            armorType: SciFiArmorSchema.ArmorType(uint8(src.armorType))
         });
 
         SeedTypes.CoreAttributes memory translatedAttrs = SeedTypes.CoreAttributes({
@@ -49,10 +59,32 @@ contract FantasyToSciFiArmorAdapter is IAdapter {
     }
 
     function sourceElementLabel(uint8 element) external pure returns (string memory) {
-        return FantasyArmorSchema.label(FantasyArmorSchema.Element(element));
+        return FantasyArmorSchema.elementLabel(FantasyArmorSchema.Element(element));
     }
 
     function targetElementLabel(uint8 element) external pure returns (string memory) {
-        return SciFiArmorSchema.label(SciFiArmorSchema.Element(element));
+        return SciFiArmorSchema.elementLabel(SciFiArmorSchema.Element(element));
+    }
+
+    function sourceTypeLabel(uint8 armorType) external pure returns (string memory) {
+        return FantasyArmorSchema.typeLabel(FantasyArmorSchema.ArmorType(armorType));
+    }
+
+    function targetTypeLabel(uint8 armorType) external pure returns (string memory) {
+        return SciFiArmorSchema.typeLabel(SciFiArmorSchema.ArmorType(armorType));
+    }
+
+    function sourceName(uint8 armorType, uint8 tier) external pure returns (string memory) {
+        return FantasyArmorSchema.name(
+            FantasyArmorSchema.ArmorType(armorType),
+            SeedTypes.Tier(tier)
+        );
+    }
+
+    function targetName(uint8 armorType, uint8 tier) external pure returns (string memory) {
+        return SciFiArmorSchema.name(
+            SciFiArmorSchema.ArmorType(armorType),
+            SeedTypes.Tier(tier)
+        );
     }
 }

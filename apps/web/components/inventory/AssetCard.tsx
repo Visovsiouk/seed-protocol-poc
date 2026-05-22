@@ -114,6 +114,28 @@ function shortAddr(addr: `0x${string}`): string {
 }
 
 /**
+ * Neutral chip for the archetype lane (weaponType / armorType). The
+ * label is the schema-native lowercase string ("axe", "exosuit",
+ * "monowire", …) drawn from the source/target preset's vocabulary.
+ * Colour is intentionally generic so the element chip remains the
+ * eye-catching one.
+ */
+function TypeChip({ label }: { label: string }) {
+  return (
+    <span
+      className="text-[10px] px-1.5 py-0.5 rounded uppercase tracking-wider font-semibold"
+      style={{
+        background: "rgba(220,220,220,0.10)",
+        color: "#dddddd",
+        border: "1px solid rgba(220,220,220,0.25)",
+      }}
+    >
+      {label}
+    </span>
+  );
+}
+
+/**
  * Strip rendered below the active-realm stats showing the card's
  * *original* (source-preset) stats and element vocabulary. Only renders
  * when a real translation hop applies. Loading / missing-adapter /
@@ -328,8 +350,20 @@ export function AssetCard({
         (!isWeapon &&
           displayCard.resistElement &&
           displayCard.resistElement !== "none") ||
+        (isWeapon && displayCard.weaponType && displayCard.weaponType !== "none") ||
+        (!isWeapon && displayCard.armorType && displayCard.armorType !== "none") ||
         displayCard.catalogEffects.length > 0) && (
         <div className="flex flex-wrap gap-1">
+          {isWeapon &&
+            displayCard.weaponType &&
+            displayCard.weaponType !== "none" && (
+              <TypeChip label={displayCard.weaponType} />
+            )}
+          {!isWeapon &&
+            displayCard.armorType &&
+            displayCard.armorType !== "none" && (
+              <TypeChip label={displayCard.armorType} />
+            )}
           {isWeapon &&
             displayCard.element &&
             displayCard.element !== "none" && (

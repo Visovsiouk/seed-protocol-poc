@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createRng } from "./rng";
 import { pickSlot, rollLoot, type RealmSchemas } from "./loot";
+import { combatArmorTypesFor, combatWeaponTypesFor } from "./types";
 
 const seedHex = (i: number) => ("0x" + i.toString(16).padStart(64, "0")) as `0x${string}`;
 const SEED = seedHex(0x123456);
@@ -190,6 +191,52 @@ describe("rollLoot", () => {
       (e) => (counts[e] ?? 0) > 0,
     );
     expect(combatSeen.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("weapon roll carries a weaponType drawn from the preset's combat pool", () => {
+    for (const preset of ["fantasy", "scifi", "cyberpunk"] as const) {
+      const pool = combatWeaponTypesFor(preset);
+      const seen = new Set<string>();
+      for (let i = 1; i <= 200; i++) {
+        const l = rollLoot({
+          rng: createRng(seedHex(i)),
+          difficulty: "standard",
+          slot: "weapon",
+          schemas: canonical,
+          preset,
+        });
+        expect(l.weaponType).toBeDefined();
+        expect(l.weaponType).not.toBe("none");
+        expect(pool).toContain(l.weaponType!);
+        expect(l.armorType).toBeUndefined();
+        seen.add(l.weaponType!);
+      }
+      // At least 3 of the 5 combat archetypes should show up across 200 rolls.
+      expect(seen.size).toBeGreaterThanOrEqual(3);
+    }
+  });
+
+  it("armor roll carries an armorType drawn from the preset's combat pool", () => {
+    for (const preset of ["fantasy", "scifi", "cyberpunk"] as const) {
+      const pool = combatArmorTypesFor(preset);
+      const seen = new Set<string>();
+      for (let i = 1; i <= 200; i++) {
+        const l = rollLoot({
+          rng: createRng(seedHex(i)),
+          difficulty: "standard",
+          slot: "armor",
+          schemas: canonical,
+          preset,
+        });
+        expect(l.armorType).toBeDefined();
+        expect(l.armorType).not.toBe("none");
+        expect(pool).toContain(l.armorType!);
+        expect(l.weaponType).toBeUndefined();
+        seen.add(l.armorType!);
+      }
+      // Armor pools are size-3 — observe at least 2 of them across 200 rolls.
+      expect(seen.size).toBeGreaterThanOrEqual(2);
+    }
   });
 
   it("nameSeed is a 256-bit positive bigint", () => {

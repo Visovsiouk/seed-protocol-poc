@@ -81,4 +81,50 @@ export const adapterAbi = [
     inputs: [{ name: "element", type: "uint8" }],
     outputs: [{ name: "label", type: "string" }],
   },
+  // ---- Archetype-lane vocabulary ----------------------------------------
+  // Per-schema `typeLabel(uint8)` view, exposed through each adapter for
+  // either its source or target schema. Same lookup convention as the
+  // element labels above: the adapter just delegates to the underlying
+  // schema library. Used by UI components that want the on-chain string
+  // for a `weaponType`/`armorType` enum value.
+  {
+    type: "function",
+    name: "sourceTypeLabel",
+    stateMutability: "pure",
+    inputs: [{ name: "typeIndex", type: "uint8" }],
+    outputs: [{ name: "label", type: "string" }],
+  },
+  {
+    type: "function",
+    name: "targetTypeLabel",
+    stateMutability: "pure",
+    inputs: [{ name: "typeIndex", type: "uint8" }],
+    outputs: [{ name: "label", type: "string" }],
+  },
+  // ---- Tier-scaled archetype names --------------------------------------
+  // `name(type, tier)` from each weapon/armor schema library, exposed via
+  // the adapter so the UI can pull a tier-scaled display name (e.g. Plate
+  // T1 = "Cuirass", T5 = "Drakeplate") without owning its own copy of the
+  // table. The off-chain mirror in `lib/loot/names.ts` is the same data;
+  // this on-chain view exists for protocol-anchored cross-checks.
+  {
+    type: "function",
+    name: "sourceName",
+    stateMutability: "pure",
+    inputs: [
+      { name: "typeIndex", type: "uint8" },
+      { name: "tier", type: "uint8" },
+    ],
+    outputs: [{ name: "label", type: "string" }],
+  },
+  {
+    type: "function",
+    name: "targetName",
+    stateMutability: "pure",
+    inputs: [
+      { name: "typeIndex", type: "uint8" },
+      { name: "tier", type: "uint8" },
+    ],
+    outputs: [{ name: "label", type: "string" }],
+  },
 ] as const;

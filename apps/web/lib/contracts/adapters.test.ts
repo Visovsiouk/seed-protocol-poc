@@ -46,6 +46,7 @@ describe("weapon extension codec round-trip", () => {
         attackBonus: 2,
         damageBonus: -1,
         element: "fire",
+        weaponType: "sword",
       });
       const encoded = encodeWeaponExt(card, "fantasy");
       const decoded = decodeWeaponExt(encoded, "fantasy");
@@ -53,7 +54,20 @@ describe("weapon extension codec round-trip", () => {
       expect(decoded.attackBonus).toBe(2);
       expect(decoded.damageBonus).toBe(-1);
       expect(decoded.element).toBe("fire");
+      expect(decoded.weaponType).toBe("sword");
     }
+  });
+
+  it("re-encodes weaponType across presets by index-identity", () => {
+    // Fantasy "axe" (index 1) → Cyberpunk index 1 = "shotgun"; → SciFi index 1 = "cannon".
+    const card = baseCard({
+      damageDie: 6,
+      element: "none",
+      weaponType: "axe",
+    });
+    const encoded = encodeWeaponExt(card, "fantasy");
+    expect(decodeWeaponExt(encoded, "cyberpunk").weaponType).toBe("shotgun");
+    expect(decodeWeaponExt(encoded, "scifi").weaponType).toBe("cannon");
   });
 
   it("preserves each native Element when source and target preset match", () => {
@@ -108,11 +122,27 @@ describe("armor extension codec round-trip", () => {
       acBonus: 3,
       hpBonus: 7,
       resistElement: "ice",
+      armorType: "plate",
     });
     const decoded = decodeArmorExt(encodeArmorExt(card, "fantasy"), "fantasy");
     expect(decoded.acBonus).toBe(3);
     expect(decoded.hpBonus).toBe(7);
     expect(decoded.resistElement).toBe("ice");
+    expect(decoded.armorType).toBe("plate");
+  });
+
+  it("re-encodes armorType across presets by index-identity", () => {
+    // Fantasy "plate" (index 1) → SciFi index 1 = "exosuit"; → Cyberpunk index 1 = "riotfit".
+    const card = baseCard({
+      slot: "armor",
+      acBonus: 0,
+      hpBonus: 0,
+      resistElement: "none",
+      armorType: "plate",
+    });
+    const encoded = encodeArmorExt(card, "fantasy");
+    expect(decodeArmorExt(encoded, "scifi").armorType).toBe("exosuit");
+    expect(decodeArmorExt(encoded, "cyberpunk").armorType).toBe("riotfit");
   });
 
   it("preserves negative int8 bonuses (fantasy delta ac-1)", () => {
@@ -147,6 +177,7 @@ describe("armor extension codec round-trip", () => {
     expect(decoded.acBonus).toBe(0);
     expect(decoded.hpBonus).toBe(0);
     expect(decoded.resistElement).toBe("none");
+    expect(decoded.armorType).toBe("none");
   });
 });
 
@@ -160,6 +191,7 @@ describe("buildTranslatedMetadataURI", () => {
       attackBonus: 2,
       damageBonus: 2,
       element: "fire",
+      weaponType: "axe",
     });
     const uri = __internal.buildTranslatedMetadataURI({
       original: card,
@@ -172,6 +204,8 @@ describe("buildTranslatedMetadataURI", () => {
         // Translated card carries the *target* preset's vocab — this
         // is what `decodeWeaponExt(_, "scifi")` would have returned.
         element: "plasma",
+        // Fantasy "axe" (index 1) decoded under scifi == "cannon".
+        weaponType: "cannon",
       },
     });
     const rebuilt = buildAssetCardFromMetadata({
@@ -188,6 +222,10 @@ describe("buildTranslatedMetadataURI", () => {
     expect(rebuilt.attackBonus).toBe(3);
     expect(rebuilt.damageBonus).toBe(2);
     expect(rebuilt.element).toBe("plasma");
+    expect(rebuilt.weaponType).toBe("cannon");
+    // Name should be re-labeled with the target preset's tier-3 cannon
+    // entry from lib/loot/names.ts (mirror of the on-chain `name()`).
+    expect(rebuilt.name).toBe("Plasma Cannon");
   });
 
   it("emits a data: URI whose payload decodes back to the translated stats", () => {
@@ -196,6 +234,7 @@ describe("buildTranslatedMetadataURI", () => {
       attackBonus: 1,
       damageBonus: 2,
       element: "fire",
+      weaponType: "axe",
       catalogEffects: [{ name: "lifesteal", value: 5 }],
     });
     const uri = __internal.buildTranslatedMetadataURI({
@@ -207,6 +246,7 @@ describe("buildTranslatedMetadataURI", () => {
         attackBonus: 2,
         damageBonus: 2,
         element: "plasma",
+        weaponType: "cannon",
       },
     });
     expect(uri.startsWith("data:application/json;base64,")).toBe(true);
@@ -219,11 +259,14 @@ describe("buildTranslatedMetadataURI", () => {
     expect(json.seed_protocol.schemaId).toBe(4);
     expect(json.seed_protocol.translated_target_preset).toBe("scifi");
     expect(json.seed_protocol.minted_by_realm_label).toBe("Test Realm");
+    // Tier-3 scifi cannon ladder entry from lib/loot/names.ts.
+    expect(json.name).toBe("Plasma Cannon");
     const traits: Record<string, string | number> = {};
     for (const a of json.attributes) traits[a.trait_type] = a.value;
     expect(traits.damage_die).toBe(6);
     expect(traits.attack_bonus).toBe(2);
     expect(traits.element).toBe("plasma");
+    expect(traits.weapon_type).toBe("cannon");
     expect(traits.lifesteal).toBe(5);
   });
 });

@@ -10,6 +10,7 @@
  */
 
 import type {
+  ArmorType,
   AssetCard,
   CatalogEffect,
   CatalogEffectName,
@@ -17,11 +18,18 @@ import type {
   Element,
   Slot,
   Tier,
+  WeaponType,
 } from "@/lib/engine/types";
 import {
+  CYBERPUNK_ARMOR_TYPES,
   CYBERPUNK_ELEMENTS,
+  CYBERPUNK_WEAPON_TYPES,
+  FANTASY_ARMOR_TYPES,
   FANTASY_ELEMENTS,
+  FANTASY_WEAPON_TYPES,
+  SCIFI_ARMOR_TYPES,
   SCIFI_ELEMENTS,
+  SCIFI_WEAPON_TYPES,
 } from "@/lib/engine/types";
 import { decodeMetadataURI } from "./decode";
 
@@ -45,6 +53,8 @@ const CANONICAL_STAT_KEYS = new Set([
   "hp_bonus",
   "element",
   "resist_element",
+  "weapon_type",
+  "armor_type",
   "slot",
   // Tier/Schema are surfaced separately on the card; the renderer also
   // emits them as attributes so we filter them out of `extraFields`.
@@ -66,6 +76,18 @@ const VALID_ELEMENTS: ReadonlySet<string> = new Set<string>([
   ...FANTASY_ELEMENTS,
   ...SCIFI_ELEMENTS,
   ...CYBERPUNK_ELEMENTS,
+]);
+
+/** Same rationale as `VALID_ELEMENTS` — union of every preset's archetype vocab. */
+const VALID_WEAPON_TYPES: ReadonlySet<string> = new Set<string>([
+  ...FANTASY_WEAPON_TYPES,
+  ...SCIFI_WEAPON_TYPES,
+  ...CYBERPUNK_WEAPON_TYPES,
+]);
+const VALID_ARMOR_TYPES: ReadonlySet<string> = new Set<string>([
+  ...FANTASY_ARMOR_TYPES,
+  ...SCIFI_ARMOR_TYPES,
+  ...CYBERPUNK_ARMOR_TYPES,
 ]);
 
 function asNumber(v: string | number): number | undefined {
@@ -112,6 +134,8 @@ export function buildAssetCardFromMetadata(args: {
   let hpBonus: number | undefined;
   let element: Element | undefined;
   let resistElement: Element | undefined;
+  let weaponType: WeaponType | undefined;
+  let armorType: ArmorType | undefined;
   let attrSlot: string | undefined;
 
   try {
@@ -159,6 +183,16 @@ export function buildAssetCardFromMetadata(args: {
         if (VALID_ELEMENTS.has(v)) resistElement = v as Element;
         continue;
       }
+      if (key === "weapon_type" && typeof attr.value === "string") {
+        const v = attr.value.toLowerCase();
+        if (VALID_WEAPON_TYPES.has(v)) weaponType = v as WeaponType;
+        continue;
+      }
+      if (key === "armor_type" && typeof attr.value === "string") {
+        const v = attr.value.toLowerCase();
+        if (VALID_ARMOR_TYPES.has(v)) armorType = v as ArmorType;
+        continue;
+      }
       if (
         CATALOG_EFFECT_NAMES.includes(key as CatalogEffectName) &&
         numeric !== undefined
@@ -204,6 +238,10 @@ export function buildAssetCardFromMetadata(args: {
     // here so a malformed legacy metadata URI doesn't confuse the engine.
     element: slot === "weapon" ? element : undefined,
     resistElement: slot === "armor" ? resistElement : undefined,
+    // Same slot-locking discipline for archetype: only a weapon carries a
+    // weaponType; only armor carries an armorType.
+    weaponType: slot === "weapon" ? weaponType : undefined,
+    armorType: slot === "armor" ? armorType : undefined,
     catalogEffects,
     extraFields,
     metadataURI,

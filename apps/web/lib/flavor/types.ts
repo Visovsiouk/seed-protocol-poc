@@ -12,9 +12,10 @@
  *     (see `pickVariant`).
  *   - Monsters carry their own attack-verb banks; bosses carry phase-2
  *     narration as a separate key on `bossPhases`.
- *   - `adjectives` and `nouns` are split by slot — weapons get sharp
- *     adjectives, armor gets durable ones. Names are assembled by the
- *     engine via `assembleLootName(bank, slot, nameSeed)`.
+ *   - Loot names are no longer assembled from this bank — they come
+ *     from the schema-native tier-scaled `name(type, tier)` ladder in
+ *     `lib/loot/names.ts` (mirror of each weapon/armor schema's
+ *     on-chain view).
  */
 
 import type { BossDef, MonsterDef, RoomTemplate } from "../engine/types";
@@ -39,12 +40,6 @@ export type FlavorBank = {
   /** Discovery outcome variants — short, mood-setting. */
   discoveryRefund: readonly string[];
   discoveryLore: readonly string[];
-
-  /** Adjective + noun banks for loot naming. */
-  weaponAdjectives: readonly string[];
-  weaponNouns: readonly string[];
-  armorAdjectives: readonly string[];
-  armorNouns: readonly string[];
 
   /** Room templates for this preset's run. */
   roomTemplates: readonly RoomTemplate[];

@@ -30,7 +30,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { notFound, useParams } from "next/navigation";
+import { notFound, useParams, useRouter } from "next/navigation";
 import { useAccount, usePublicClient } from "wagmi";
 import type {
   AssetCard as AssetCardType,
@@ -65,17 +65,22 @@ import { useClaimSeed } from "@/lib/contracts/seed-claim";
 import { useRunSeedCommitment } from "@/lib/contracts/run-seed";
 import { getStarterRealm, isStarterRealmDeployed } from "@/lib/contracts/starter-realms";
 import { translateCardForRealm } from "@/lib/contracts/adapters";
-import { loadEquipped, saveEquipped } from "@/lib/persistence/equipped";
+import {
+  type EquippedSnapshot,
+  loadEquipped,
+  saveEquipped,
+} from "@/lib/persistence/equipped";
 import {
   REALM_ORDER,
+  isPlayable,
   lockStateFor,
-  lockTeaseFor,
 } from "@/lib/story/progression";
 
 export default function PlayPage() {
   const params = useParams<{ preset: string }>();
   const preset = params.preset as Preset;
   if (!VALID_PRESETS.has(preset)) notFound();
+  const router = useRouter();
 
   // Starter realm address + bossId come from per-chain config
   // (`lib/contracts/starter-realms.ts`); deploy state + active flag come
@@ -219,6 +224,21 @@ export default function PlayPage() {
   const seedReady =
     mounted && !!initial && (!walletConnected || !!commitment.data);
 
+  // Lock verdict, hoisted up so the hydration + save effects below can
+  // bail before they ever persist a starter for a sealed preset. We
+  // treat the verdict as definitive once either (a) the player isn't
+  // connected (tutorial query is idle — falls back to empty progress
+  // and the first realm in `REALM_ORDER` is the only playable one) or
+  // (b) the tutorial query has resolved. Otherwise we wait — flashing
+  // a redirect mid-load would be worse than a one-frame stall.
+  // `tutorial` is shared with the overlay below — same fallback either
+  // way (empty progress while the query is mid-flight or the player is
+  // disconnected).
+  const tutorial = tutorialQuery.data ?? emptyTutorialProgress();
+  const lockState = lockStateFor(preset, tutorial);
+  const lockResolved = mounted && (!walletConnected || tutorialQuery.isSuccess);
+  const sealed = lockResolved && !isPlayable(lockState);
+
   // One-shot hydration: read the persisted snapshot (native cards),
   // translate each slot against the active realm's adapter, then pin
   // `equipped` (native), `equippedForEngine` (translated), and the
@@ -231,14 +251,45 @@ export default function PlayPage() {
   // false (it gates on `initial`, which gates on `runStartEquipped`), so
   // the player sees the "Pinning run seed…" placeholder instead of a
   // half-equipped HUD.
+  //
+  // Gated on `!sealed`: a locked preset must never run hydration —
+  // otherwise its starter would be `setEquipped`'d and then persisted
+  // by the save effect below, polluting the next playable realm's
+  // localStorage snapshot.
   useEffect(() => {
+    // Wait for the lock verdict before deciding to hydrate. Without
+    // this, the first mount-cycle (mounted=false, lockResolved=false,
+    // sealed=false) would fall through and persist starter gear for
+    // sealed presets.
+    if (!lockResolved) return;
+    if (sealed) return;
     if (runStartEquipped !== null) return;
     let cancelled = false;
     const stored = loadEquipped();
-    const nativeBaseline = stored ?? {
-      weapon: starterGear.weapon,
-      armor: starterGear.armor,
+    // A *starter* card (tokenId === 0n) is realm-local — it represents
+    // the gear handed out by `makeStarterGear` for one specific preset.
+    // If the persisted slot is a starter from a different realm (e.g.
+    // the player loaded /play/cyberpunk first, which seeded its starter
+    // into localStorage, then now lands on /play/fantasy), we discard
+    // it and re-seed from this realm's `starterGear`. Real on-chain
+    // cards (tokenId > 0n) keep travelling across realms — that's the
+    // cross-preset translation story we want to preserve.
+    const keepIfNative = (
+      card: AssetCardType | undefined,
+      fallback: AssetCardType,
+    ): AssetCardType => {
+      if (!card) return fallback;
+      if (card.tokenId === 0n && card.realm?.toLowerCase() !== cfg.realm.toLowerCase()) {
+        return fallback;
+      }
+      return card;
     };
+    const nativeBaseline: EquippedSnapshot = stored
+      ? {
+          weapon: keepIfNative(stored.weapon, starterGear.weapon),
+          armor: keepIfNative(stored.armor, starterGear.armor),
+        }
+      : { weapon: starterGear.weapon, armor: starterGear.armor };
     // Native baseline goes into `equipped` immediately so the drawer +
     // warp interstitial render against the right shape from frame one.
     setEquipped(nativeBaseline);
@@ -275,19 +326,21 @@ export default function PlayPage() {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [lockResolved, sealed]);
 
   // Persist every equip change so the next mount (same preset reload OR
   // navigation to a different /play/[preset]) picks the snapshot back up.
+  // Skipped while sealed — saves only ever fire after a successful
+  // hydration (which also bails on sealed presets), but the explicit
+  // guard makes the invariant readable.
   useEffect(() => {
     if (runStartEquipped === null) return; // hydration not done yet
+    if (sealed) return;
     saveEquipped(equipped);
-  }, [equipped, runStartEquipped]);
+  }, [equipped, runStartEquipped, sealed]);
 
-  // Until a wallet's connected (or the query is mid-flight) we render
-  // the empty Act 1 progress — the overlay handles that fine and copy
-  // doesn't reference any wallet state.
-  const tutorial = tutorialQuery.data ?? emptyTutorialProgress();
+  // (Tutorial / lock verdict are hoisted above so the hydration +
+  // save effects can gate on `sealed`.)
 
   // Real on-chain mint requires both a wallet AND a deployed+active
   // starter realm. Until the starter-realm deploy
@@ -653,54 +706,22 @@ export default function PlayPage() {
     );
   }
 
-  // Realm-chain gate. The starter realms unlock linearly: each preset is
-  // sealed until the previous realm's on-chain clearReceipt is in the
-  // player's wallet (`useTutorialProgress` -> `fetchBossClears` scans
-  // AssetMinted with the clearReceipt schemaId). Wait for the tutorial
-  // query to land before gating so the gate doesn't flash sealed while
-  // `emptyTutorialProgress()` is the placeholder.
-  const lockState = lockStateFor(preset, tutorial);
-  if (mounted && tutorialQuery.isSuccess && lockState === "locked-pre-prev") {
-    const prevPreset =
-      REALM_ORDER[Math.max(0, REALM_ORDER.indexOf(preset) - 1)]!;
-    const prevName = getStarterRealm(prevPreset).name;
+  // Realm-chain gate. Sealed presets redirect straight to the first
+  // realm in `REALM_ORDER` — the player can only enter realms whose
+  // prereq clearReceipt is already in their wallet. The hydration +
+  // save effects above also bail on `sealed`, so visiting a sealed
+  // route never leaks its starter into localStorage.
+  if (sealed) {
+    const firstRealm = REALM_ORDER[0]!;
+    if (preset !== firstRealm) {
+      // Fire-and-forget — keep this in a microtask so we don't update
+      // the router during render. `replace` (not `push`) so the sealed
+      // URL doesn't litter the browser back-stack.
+      queueMicrotask(() => router.replace(`/play/${firstRealm}`));
+    }
     return (
-      <main className="min-h-screen px-6 py-10">
-        <header className="mx-auto mb-10 flex max-w-3xl items-center justify-between">
-          <Link href="/" className="text-sm opacity-70 hover:opacity-100">
-            ← Realms
-          </Link>
-          <h1 className="text-2xl font-semibold tracking-tight">{realmDisplayName}</h1>
-          <ConnectButton />
-        </header>
-        <section
-          aria-label="Realm sealed"
-          className="mx-auto flex max-w-md flex-col items-center gap-4 rounded-md p-6 text-center"
-          style={{
-            background: "rgba(255,255,255,0.04)",
-            border: "1px dashed rgba(255,255,255,0.18)",
-          }}
-        >
-          <h2 className="text-lg font-semibold">Sealed</h2>
-          <p className="text-sm opacity-75 leading-relaxed">
-            {lockTeaseFor(preset)}
-          </p>
-          <p className="text-xs opacity-60 leading-relaxed">
-            Clear <strong>{prevName}</strong> first — its clearReceipt is
-            the key to this door.
-          </p>
-          <Link
-            href={`/play/${prevPreset}`}
-            className="rounded-md px-4 py-2 text-sm transition"
-            style={{
-              background: "var(--color-preset-accent, rgba(255,255,255,0.1))",
-              color: "var(--color-preset-bg, #fff)",
-              border: "1px solid rgba(255,255,255,0.15)",
-            }}
-          >
-            Go to {prevName} →
-          </Link>
-        </section>
+      <main className="min-h-screen px-6 py-10 text-sm opacity-60">
+        Redirecting…
       </main>
     );
   }
@@ -773,6 +794,7 @@ export default function PlayPage() {
               bossId={cfg.bossId}
               equipped={equippedForEngine}
               activePreset={preset}
+              realmName={cfg.name}
               onEvent={handleEngineEvent}
               onLootMinted={handleLootMinted}
               onRestart={handleRestart}

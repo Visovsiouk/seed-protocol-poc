@@ -100,6 +100,16 @@ export function buildLootMetadataURI(args: {
   if (loot.resistElement !== undefined && loot.resistElement !== "none") {
     attributes.push({ trait_type: "resist_element", value: loot.resistElement });
   }
+  // Archetype lane. Mirrors the on-chain `Ext.weaponType` / `Ext.armorType`
+  // enum string; loot rolled with the "none" lane (story-objects, legacy
+  // un-archetyped drops) is encoded without the attribute so the decoder
+  // distinguishes "absent" from "explicit none".
+  if (loot.weaponType !== undefined && loot.weaponType !== "none") {
+    attributes.push({ trait_type: "weapon_type", value: loot.weaponType });
+  }
+  if (loot.armorType !== undefined && loot.armorType !== "none") {
+    attributes.push({ trait_type: "armor_type", value: loot.armorType });
+  }
   for (const eff of loot.catalogEffects) {
     attributes.push({ trait_type: eff.name, value: eff.value });
   }

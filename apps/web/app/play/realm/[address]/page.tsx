@@ -432,6 +432,7 @@ export default function CreatorRealmPlayPage() {
             bossId={bossId}
             equipped={equipped}
             activePreset={preset}
+            realmName={realmName}
             onEvent={handleEngineEvent}
             onLootMinted={handleLootMinted}
             onRestart={handleRestart}

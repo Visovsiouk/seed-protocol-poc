@@ -106,6 +106,12 @@ type Props = {
    */
   activePreset?: Preset | null;
   /**
+   * Human-readable realm name (e.g. "The Hollow Reach"). Used by the
+   * loot-mint prompt to build a preview `AssetCard` so the prompt
+   * renders with the same visual language as the inventory drawer.
+   */
+  realmName: string;
+  /**
    * Restart the run from depth 1 with a fresh seed. Triggered by the
    * defeat panel after roguelike permadeath. The parent owns seed
    * regeneration (a fresh seed produces a fresh encounter chain — a
@@ -138,6 +144,7 @@ export function EncounterFrame({
   clearReceipt,
   interstitial,
   activePreset = null,
+  realmName,
   onRestart,
 }: Props) {
   const initialSplit = useMemo(() => splitIntro(initialLines), [initialLines]);
@@ -349,8 +356,9 @@ export function EncounterFrame({
       ) : state.pendingLoot ? (
         <LootMintPrompt
           loot={state.pendingLoot}
-          bank={bank}
           preset={activePreset ?? state.preset}
+          realm={state.realm}
+          realmName={realmName}
           onMint={handleMint}
           onSkip={handleSkip}
         />

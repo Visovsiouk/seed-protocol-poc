@@ -18,6 +18,7 @@
  */
 
 import type {
+  ArmorType,
   CatalogEffect,
   CatalogEffectName,
   Element,
@@ -25,8 +26,13 @@ import type {
   Preset,
   Slot,
   Tier,
+  WeaponType,
 } from "./types";
-import { combatElementsFor } from "./types";
+import {
+  combatArmorTypesFor,
+  combatElementsFor,
+  combatWeaponTypesFor,
+} from "./types";
 import type { Rng } from "./rng";
 import { rollEffectValue } from "./catalog";
 import { type Difficulty, rollTier, tierStats } from "./tier";
@@ -47,6 +53,21 @@ const ELEMENT_DROP_CHANCE = 0.5;
 function rollElement(rng: Rng, preset: Preset): Element {
   if (!rng.chance(ELEMENT_DROP_CHANCE)) return "none";
   return rng.pick(combatElementsFor(preset)) as Element;
+}
+
+/**
+ * Per-drop archetype roll. Unlike the element roll there is no
+ * "mundane" fallback — every weapon/armor drop is archetyped so the
+ * on-chain `name(type, tier)` ladder resolves. The "none" lane is
+ * reserved for story-objects (overridden by `nameOverride`) and
+ * legacy un-archetyped loot.
+ */
+function rollWeaponType(rng: Rng, preset: Preset): WeaponType {
+  return rng.pick(combatWeaponTypesFor(preset)) as WeaponType;
+}
+
+function rollArmorType(rng: Rng, preset: Preset): ArmorType {
+  return rng.pick(combatArmorTypesFor(preset)) as ArmorType;
 }
 
 export type SchemaSpec = {
@@ -117,6 +138,15 @@ export function rollLoot(args: {
   // resist element.
   const element: Element = rollElement(rng, preset);
 
+  // Archetype roll. Drawn AFTER the element so the existing element-
+  // sensitive tests keep their seed budget; the type roll is a new
+  // suffix on the RNG stream. Slot-conditioned — weapons draw from
+  // the preset's weapon archetypes, armor from its armor archetypes.
+  const weaponType: WeaponType | undefined =
+    slot === "weapon" ? rollWeaponType(rng, preset) : undefined;
+  const armorType: ArmorType | undefined =
+    slot === "armor" ? rollArmorType(rng, preset) : undefined;
+
   // Name seed: 256-bit value drawn from 8 successive uint32s. Combines
   // tier/slot/effect rolls into a single bigint we can ship to the mint
   // call. We don't try to make this collision-proof — duplicates are fine
@@ -139,8 +169,14 @@ export function rollLoot(args: {
           attackBonus: stats.attackBonus,
           damageBonus: stats.damageBonus,
           element,
+          weaponType,
         }
-      : { acBonus: stats.acBonus, hpBonus: stats.hpBonus, resistElement: element }),
+      : {
+          acBonus: stats.acBonus,
+          hpBonus: stats.hpBonus,
+          resistElement: element,
+          armorType,
+        }),
   };
   return loot;
 }

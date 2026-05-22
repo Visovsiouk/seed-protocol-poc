@@ -47,7 +47,7 @@ import {
   buildLootMetadataURI,
   deriveLootTokenId,
 } from "@/lib/contracts/loot-derive";
-import { assembleLootName, getFlavorBank } from "@/lib/flavor";
+import { lootName } from "@/lib/loot/names";
 import { fallbackSeed } from "@/lib/engine/runtime";
 import { queryKeys } from "@/lib/reads/cache";
 import type { LootRoll, Preset } from "@/lib/engine/types";
@@ -141,8 +141,13 @@ export function RoyaltyEarnedDemo({ realm, preset, realmLabel }: Props) {
     setStep("mint", { status: "pending", error: undefined });
     try {
       const runSeed = fallbackSeed();
-      const bank = getFlavorBank(preset);
       const nameSeed = BigInt(`0x${runSeed.slice(2, 18)}`);
+
+      // Demo loot is a fixed T1 weapon — pick a preset-native sword/axe/etc
+      // so the schema-native name ladder resolves. Cyberpunk has no
+      // "sword", so the per-preset default lives in `DEMO_WEAPON_TYPE`.
+      const demoWeaponType =
+        preset === "fantasy" ? "sword" : preset === "scifi" ? "rifle" : "katana";
 
       const loot: LootRoll = {
         tier: 1,
@@ -153,6 +158,7 @@ export function RoyaltyEarnedDemo({ realm, preset, realmLabel }: Props) {
         catalogEffects: [],
         nameSeed,
         extraFields: {},
+        weaponType: demoWeaponType,
       };
 
       const newTokenId = deriveLootTokenId({
@@ -161,7 +167,7 @@ export function RoyaltyEarnedDemo({ realm, preset, realmLabel }: Props) {
         depth: DEMO_DEPTH,
         nameSeed,
       });
-      const assembledName = assembleLootName(bank, "weapon", nameSeed);
+      const assembledName = lootName(preset, "weapon", demoWeaponType, 1);
       const metadataURI = buildLootMetadataURI({
         loot,
         preset,

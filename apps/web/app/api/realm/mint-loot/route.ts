@@ -21,6 +21,7 @@ import {
 import { validateLootRoll } from "@/lib/engine/loot-validate";
 import { BOSS_DEPTH } from "@/lib/engine";
 import type { LootRoll, Preset, Tier } from "@/lib/engine/types";
+import { elementsFor } from "@/lib/engine/types";
 
 /**
  * Per-preset starter-realm tier ceiling. Player-authored realms carry
@@ -97,7 +98,31 @@ const damageDieSchema = z.union([
   z.literal(10),
   z.literal(12),
 ]);
-const elementSchema = z.enum(["none", "fire", "ice", "shock", "holy", "unholy"]);
+// Union of every preset's element vocabulary. Per-preset enforcement
+// happens in the body-level refinement below (a fantasy mint must
+// carry a fantasy element, etc.) — the enum just rejects strings that
+// aren't a vocabulary entry in *any* preset.
+const elementSchema = z.enum([
+  "none",
+  // fantasy
+  "fire",
+  "ice",
+  "shock",
+  "holy",
+  "unholy",
+  // sci-fi
+  "plasma",
+  "cryo",
+  "ion",
+  "photon",
+  "void",
+  // cyberpunk
+  "incendiary",
+  "cryogenic",
+  "emp",
+  "laser",
+  "nano",
+]);
 
 const catalogEffectSchema = z.object({
   name: z.enum([
@@ -131,23 +156,45 @@ const lootRollSchema = z.object({
   extraFields: z.record(z.union([z.string(), z.number(), z.boolean()])),
 });
 
-const bodySchema = z.object({
-  preset: presetSchema,
-  recipient: addressSchema,
-  runSeed: hex32,
-  depth: z.number().int().min(1).max(1024),
-  loot: lootRollSchema,
-  realmLabel: z.string().min(1).max(64),
-  assembledName: z.string().min(1).max(128),
-  /**
-   * Optional. When present and the address matches a row in
-   * `player_realms`, the route signs `mintAsset` from the realm's
-   * delegate (HD index from the sqlite row) and validates against
-   * the row's `maxTier`. When absent, falls back to the starter
-   * realm for `preset`, signed by the static `getOwnerSigner`.
-   */
-  realmAddress: addressSchema.optional(),
-});
+const bodySchema = z
+  .object({
+    preset: presetSchema,
+    recipient: addressSchema,
+    runSeed: hex32,
+    depth: z.number().int().min(1).max(1024),
+    loot: lootRollSchema,
+    realmLabel: z.string().min(1).max(64),
+    assembledName: z.string().min(1).max(128),
+    /**
+     * Optional. When present and the address matches a row in
+     * `player_realms`, the route signs `mintAsset` from the realm's
+     * delegate (HD index from the sqlite row) and validates against
+     * the row's `maxTier`. When absent, falls back to the starter
+     * realm for `preset`, signed by the static `getOwnerSigner`.
+     */
+    realmAddress: addressSchema.optional(),
+  })
+  // Per-preset element guard. The enum above accepts every vocabulary
+  // so a same-call mismatch (preset=fantasy + element=incendiary) was
+  // historically masked; refine here so the rejection is explicit and
+  // surfaces a useful error rather than the generic enum failure.
+  .superRefine((body, ctx) => {
+    const pool = new Set(elementsFor(body.preset));
+    if (body.loot.element && !pool.has(body.loot.element)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["loot", "element"],
+        message: `element "${body.loot.element}" is not native to preset "${body.preset}"`,
+      });
+    }
+    if (body.loot.resistElement && !pool.has(body.loot.resistElement)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["loot", "resistElement"],
+        message: `resistElement "${body.loot.resistElement}" is not native to preset "${body.preset}"`,
+      });
+    }
+  });
 
 type Body = z.infer<typeof bodySchema>;
 

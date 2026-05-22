@@ -25,7 +25,7 @@ import { useCallback, useState } from "react";
 import { useAccount } from "wagmi";
 import { useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/reads/cache";
-import { assembleLootName, getFlavorBank } from "@/lib/flavor";
+import { lootName } from "@/lib/loot/names";
 import type { LootRoll, Preset } from "@/lib/engine/types";
 import { deriveLootTokenId, buildLootMetadataURI } from "./loot-derive";
 
@@ -61,22 +61,25 @@ export function useMintLoot() {
     async (args: MintLootArgs): Promise<MintLootResult> => {
       if (!address) throw new Error("mintLoot: wallet not connected");
 
-      // Pre-compute the assembled display name on the client where the
-      // flavor bank is already loaded — saves the server from importing
-      // every preset's bank just to render the metadata JSON.
+      // Pre-compute the display name on the client. The name is the
+      // schema-native `name(type, tier)` ladder for the rolled
+      // archetype (see `lib/loot/names.ts`, which mirrors the on-chain
+      // schema library), so a Fantasy T3 axe drop reads "Battle Axe"
+      // and the SciFi-target translation reads "Plasma Cannon".
       //
-      // Story-object overrides (Genesis' Pilgrim's Brand) ship the name
-      // verbatim on the LootRoll. When present, it skips both the realm
-      // flavor assembly AND the generic `Loot #…` fallback so the on-
-      // chain asset reads as "The Pilgrim's Brand" / "Ember-Wake" /
-      // etc., matching the in-feed narration. The same override is
-      // applied client-side in `lootRollToMockCard`, keeping the local
-      // card and the chain-minted card naming-consistent.
-      const bank = getFlavorBank(args.preset);
+      // Story-object overrides (Genesis' Pilgrim's Brand) still ship a
+      // verbatim name on the LootRoll. When present, it skips both
+      // the archetype ladder AND the generic fallback so the on-chain
+      // asset reads as "The Pilgrim's Brand" etc., matching the
+      // in-feed narration. The same override is applied client-side
+      // in `lootRollToMockCard`, keeping the local card and the chain-
+      // minted card naming-consistent.
+      const archetype =
+        args.loot.slot === "weapon" ? args.loot.weaponType : args.loot.armorType;
       const assembledName =
         args.loot.nameOverride ??
         (args.loot.slot === "weapon" || args.loot.slot === "armor"
-          ? assembleLootName(bank, args.loot.slot, args.loot.nameSeed)
+          ? lootName(args.preset, args.loot.slot, archetype, args.loot.tier)
           : `Loot #${args.loot.nameSeed.toString(16).slice(0, 8)}`);
 
       setPending(true);

@@ -11,9 +11,16 @@
  */
 
 import type { AssetCard, CombatState, RunState } from "@/lib/engine/types";
+import { useTranslatedCard } from "@/lib/contracts/adapters";
 
 function clamp(n: number, lo: number, hi: number) {
   return Math.min(hi, Math.max(lo, n));
+}
+
+// `+${n}` always prepends `+`, even for negatives — emit `+3` / `-2`
+// without the broken `+-2` rendering.
+function signed(n: number): string {
+  return n >= 0 ? `+${n}` : `${n}`;
 }
 
 function HpBar({ hp, max }: { hp: number; max: number }) {
@@ -54,10 +61,18 @@ function Stat({ label, value }: { label: string; value: string | number }) {
 function SlotChip({
   label,
   card,
+  currentRealm,
 }: {
   label: string;
   card?: AssetCard;
+  currentRealm: `0x${string}`;
 }) {
+  // Translate equipped gear into the realm the player is currently in,
+  // mirroring the AssetCard pattern in the inventory drawer. When the
+  // source preset matches the current preset the hook short-circuits
+  // and returns the input card unchanged.
+  const { data: translated } = useTranslatedCard(card, currentRealm);
+  const display = translated ?? card;
   return (
     <div
       className="flex flex-col gap-0.5 px-2 py-1.5 rounded text-xs"
@@ -68,21 +83,21 @@ function SlotChip({
     >
       <span className="opacity-50 uppercase tracking-wide text-[10px]">{label}</span>
       <span className="font-medium truncate max-w-[140px]">
-        {card?.name ?? "— empty —"}
+        {display?.name ?? "— empty —"}
       </span>
-      {card && (
+      {display && (
         <span className="opacity-60">
-          T{card.tier}
-          {card.damageDie
-            ? ` · d${card.damageDie}` +
-              (card.attackBonus ? ` +${card.attackBonus} hit` : "") +
-              (card.damageBonus ? ` +${card.damageBonus} dmg` : "") +
-              (card.element && card.element !== "none" ? ` · ${card.element}` : "")
+          T{display.tier}
+          {display.damageDie
+            ? ` · d${display.damageDie}` +
+              (display.attackBonus ? ` ${signed(display.attackBonus)} hit` : "") +
+              (display.damageBonus ? ` ${signed(display.damageBonus)} dmg` : "") +
+              (display.element && display.element !== "none" ? ` · ${display.element}` : "")
             : ""}
-          {card.acBonus !== undefined
-            ? ` · AC+${card.acBonus} HP+${card.hpBonus ?? 0}` +
-              (card.resistElement && card.resistElement !== "none"
-                ? ` · resists ${card.resistElement}`
+          {display.acBonus !== undefined
+            ? ` · AC${signed(display.acBonus)} HP${signed(display.hpBonus ?? 0)}` +
+              (display.resistElement && display.resistElement !== "none"
+                ? ` · resists ${display.resistElement}`
                 : "")
             : ""}
         </span>
@@ -120,8 +135,8 @@ export function HUD({
         )}
       </div>
       <div className="flex gap-2">
-        <SlotChip label="Weapon" card={run.equipped.weapon} />
-        <SlotChip label="Armor" card={run.equipped.armor} />
+        <SlotChip label="Weapon" card={run.equipped.weapon} currentRealm={run.realm} />
+        <SlotChip label="Armor" card={run.equipped.armor} currentRealm={run.realm} />
       </div>
     </section>
   );

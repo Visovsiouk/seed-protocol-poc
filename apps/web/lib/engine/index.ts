@@ -50,7 +50,7 @@ import type { Difficulty } from "./tier";
 import { getFlavorBank } from "../flavor";
 import { pickVariant, render } from "./narration";
 import type { FlavorBank } from "../flavor/types";
-import { pilgrimsBrand, respawnVoiceFor } from "../story/genesis";
+import { respawnVoiceFor } from "../story/genesis";
 
 /**
  * Default depth at which the per-realm boss arrives. Realm-specific
@@ -351,24 +351,22 @@ export function step(state: RunState, choice: ActionChoice): StepResult {
         schemas,
         preset: state.preset,
       });
-      // Forced-first-weapon override (Genesis: Pilgrim's Brand). Fires
-      // at most once per attempt — the first time a weapon-slot drop
-      // lands, we coerce its element and tag the card with a name
-      // override + an in-feed narration line.
+      // Forced-first-weapon element coercion (Genesis balance lever:
+      // your first weapon is guaranteed to exploit the realm's boss
+      // weakness). Naming + flavor narration intentionally dropped —
+      // the schema-native `name(type, tier)` ladder is the *only*
+      // name source for every item so the inventory and the mint
+      // prompt never disagree.
       let nextFirstWeaponDropped = state.firstWeaponDropped;
       if (
         loot.slot === "weapon" &&
         !state.firstWeaponDropped &&
         state.forcedFirstWeaponElement
       ) {
-        const pick = rng.nextInt(0x100000000);
-        const brand = pilgrimsBrand(pick);
         loot = {
           ...loot,
           element: state.forcedFirstWeaponElement,
-          nameOverride: brand.name,
         };
-        lines.push({ text: brand.narration, emphasis: "drama" });
         nextFirstWeaponDropped = true;
       } else if (loot.slot === "weapon" && !state.firstWeaponDropped) {
         // Even without a forced element, mark the first weapon dropped

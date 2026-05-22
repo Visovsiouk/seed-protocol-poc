@@ -9,12 +9,10 @@ import {CyberpunkWeaponSchema} from "../../schemas/CyberpunkWeaponSchema.sol";
 
 /// @title  FantasyToCyberpunkWeaponAdapter
 /// @notice Translates a Fantasy weapon into a Cyberpunk weapon. The
-///         target side is Cyberpunk, so the canonical "INTO cyberpunk"
-///         rebalance applies: damage die steps down one notch and
-///         attack bonus gains +1 — Cyberpunk weapons hit more often
-///         and lighter than their fantasy counterparts. Element
-///         vocabulary is re-encoded by index (fire → incendiary,
-///         ice → cryogenic, etc.).
+///         canonical "INTO Cyberpunk" rebalance applies (die stepDown,
+///         +1 attack); per-source-type deltas below stack on top to
+///         flavor each archetype crossing (Axe→Shotgun = -1 atk +2 dmg,
+///         etc.).
 contract FantasyToCyberpunkWeaponAdapter is IAdapter {
     uint256 public immutable sourceSchemaId;
     uint256 public immutable targetSchemaId;
@@ -30,18 +28,31 @@ contract FantasyToCyberpunkWeaponAdapter is IAdapter {
         return (sourceSchemaId, targetSchemaId);
     }
 
+    /// @dev (atkDelta, dmgDelta) keyed by source FantasyWeaponSchema.WeaponType.
+    ///      Stacks on top of the +1 atk / die stepDown base rebalance.
+    function _typeDelta(uint8 sourceType) internal pure returns (int8, int8) {
+        if (sourceType == uint8(FantasyWeaponSchema.WeaponType.Axe))    return (-1,  2); // → Shotgun
+        if (sourceType == uint8(FantasyWeaponSchema.WeaponType.Dagger)) return ( 0,  0); // → Knife
+        if (sourceType == uint8(FantasyWeaponSchema.WeaponType.Sword))  return ( 0,  1); // → Katana
+        if (sourceType == uint8(FantasyWeaponSchema.WeaponType.Bow))    return ( 1,  0); // → SmartSMG
+        if (sourceType == uint8(FantasyWeaponSchema.WeaponType.Staff))  return ( 1,  1); // → Monowire
+        return (0, 0);
+    }
+
     function translate(
         uint256, /* tokenId */
         SeedTypes.CoreAttributes calldata sourceAttrs,
         bytes calldata extensionData
     ) external view returns (SeedTypes.CoreAttributes memory, bytes memory) {
         FantasyWeaponSchema.Ext memory src = abi.decode(extensionData, (FantasyWeaponSchema.Ext));
+        (int8 atkD, int8 dmgD) = _typeDelta(uint8(src.weaponType));
 
         CyberpunkWeaponSchema.Ext memory dst = CyberpunkWeaponSchema.Ext({
             damageDie: DamageDie.stepDown(src.damageDie),
-            attackBonus: src.attackBonus + 1,
-            damageBonus: src.damageBonus,
-            element: CyberpunkWeaponSchema.Element(uint8(src.element))
+            attackBonus: src.attackBonus + 1 + atkD,
+            damageBonus: src.damageBonus + dmgD,
+            element: CyberpunkWeaponSchema.Element(uint8(src.element)),
+            weaponType: CyberpunkWeaponSchema.WeaponType(uint8(src.weaponType))
         });
 
         SeedTypes.CoreAttributes memory translatedAttrs = SeedTypes.CoreAttributes({
@@ -54,10 +65,32 @@ contract FantasyToCyberpunkWeaponAdapter is IAdapter {
     }
 
     function sourceElementLabel(uint8 element) external pure returns (string memory) {
-        return FantasyWeaponSchema.label(FantasyWeaponSchema.Element(element));
+        return FantasyWeaponSchema.elementLabel(FantasyWeaponSchema.Element(element));
     }
 
     function targetElementLabel(uint8 element) external pure returns (string memory) {
-        return CyberpunkWeaponSchema.label(CyberpunkWeaponSchema.Element(element));
+        return CyberpunkWeaponSchema.elementLabel(CyberpunkWeaponSchema.Element(element));
+    }
+
+    function sourceTypeLabel(uint8 weaponType) external pure returns (string memory) {
+        return FantasyWeaponSchema.typeLabel(FantasyWeaponSchema.WeaponType(weaponType));
+    }
+
+    function targetTypeLabel(uint8 weaponType) external pure returns (string memory) {
+        return CyberpunkWeaponSchema.typeLabel(CyberpunkWeaponSchema.WeaponType(weaponType));
+    }
+
+    function sourceName(uint8 weaponType, uint8 tier) external pure returns (string memory) {
+        return FantasyWeaponSchema.name(
+            FantasyWeaponSchema.WeaponType(weaponType),
+            SeedTypes.Tier(tier)
+        );
+    }
+
+    function targetName(uint8 weaponType, uint8 tier) external pure returns (string memory) {
+        return CyberpunkWeaponSchema.name(
+            CyberpunkWeaponSchema.WeaponType(weaponType),
+            SeedTypes.Tier(tier)
+        );
     }
 }

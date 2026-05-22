@@ -50,13 +50,23 @@ import {
 } from "viem";
 
 import type {
+  ArmorType,
   AssetCard,
   Element,
   Preset,
   Tier,
+  WeaponType,
 } from "@/lib/engine/types";
-import { elementFromIndex, elementIndex } from "@/lib/engine/types";
+import {
+  armorTypeFromIndex,
+  armorTypeIndex,
+  elementFromIndex,
+  elementIndex,
+  weaponTypeFromIndex,
+  weaponTypeIndex,
+} from "@/lib/engine/types";
 import { buildAssetCardFromMetadata } from "@/lib/metadata/asset-card";
+import { armorName, weaponName } from "@/lib/loot/names";
 import { adapterAbi } from "./adapter-abi";
 import { getAdapterAddress } from "./seeded-adapters";
 import { getSeededRealm } from "./seeded-realms";
@@ -183,15 +193,22 @@ export function useElementLabel(
 
 // Wire tuple shape — identical across every preset's weapon schema (the
 // three schemas declare structurally identical structs over their own
-// native element enums).
+// native element + weaponType enums).
 //
-//   WeaponSchema.Ext { DamageDie damageDie; int8 attackBonus; int8 damageBonus; Element element; }
-//   ArmorSchema.Ext  { int8 acBonus; int8 hpBonus; Element resistElement; }
+//   WeaponSchema.Ext { DamageDie damageDie; int8 attackBonus; int8 damageBonus;
+//                      Element element; WeaponType weaponType; }
+//   ArmorSchema.Ext  { int8 acBonus; int8 hpBonus;
+//                      Element resistElement; ArmorType armorType; }
+//
+// Both new uint8 fields are index-identity cast across presets by the on-
+// chain adapters (1=heavy/Axe/Shotgun/Cannon, 2=light/Dagger/Knife/Pistol, etc.)
+// just like Element. Per-(adapter, sourceType) stat deltas land in the
+// adapter contracts, not the wire shape.
 const WEAPON_EXT_TUPLE = parseAbiParameters(
-  "(uint8 damageDie, int8 attackBonus, int8 damageBonus, uint8 element)",
+  "(uint8 damageDie, int8 attackBonus, int8 damageBonus, uint8 element, uint8 weaponType)",
 );
 const ARMOR_EXT_TUPLE = parseAbiParameters(
-  "(int8 acBonus, int8 hpBonus, uint8 resistElement)",
+  "(int8 acBonus, int8 hpBonus, uint8 resistElement, uint8 armorType)",
 );
 
 /**
@@ -213,6 +230,7 @@ function encodeWeaponExt(card: AssetCard, sourcePreset: Preset): `0x${string}` {
       attackBonus: card.attackBonus ?? 0,
       damageBonus: card.damageBonus ?? 0,
       element: elementIndex(sourcePreset, card.element ?? "none"),
+      weaponType: weaponTypeIndex(sourcePreset, card.weaponType ?? "none"),
     },
   ]);
 }
@@ -223,6 +241,7 @@ function encodeArmorExt(card: AssetCard, sourcePreset: Preset): `0x${string}` {
       acBonus: card.acBonus ?? 0,
       hpBonus: card.hpBonus ?? 0,
       resistElement: elementIndex(sourcePreset, card.resistElement ?? "none"),
+      armorType: armorTypeIndex(sourcePreset, card.armorType ?? "none"),
     },
   ]);
 }
@@ -232,13 +251,19 @@ type DecodedWeaponStats = {
   attackBonus: number;
   damageBonus: number;
   element: Element;
+  weaponType: WeaponType;
 };
-type DecodedArmorStats = { acBonus: number; hpBonus: number; resistElement: Element };
+type DecodedArmorStats = {
+  acBonus: number;
+  hpBonus: number;
+  resistElement: Element;
+  armorType: ArmorType;
+};
 
 /**
  * Decode the adapter's returned extension bytes back into a JS object.
- * `targetPreset` selects which preset's vocabulary the element index
- * maps onto — same index, different name across presets (PoC's
+ * `targetPreset` selects which preset's vocabulary the element + type
+ * indexes map onto — same index, different name across presets (PoC's
  * index-identity rule).
  */
 function decodeWeaponExt(
@@ -248,11 +273,13 @@ function decodeWeaponExt(
   const [ext] = decodeAbiParameters(WEAPON_EXT_TUPLE, data);
   const dieOnchain = Number(ext.damageDie);
   const elemOnchain = Number(ext.element);
+  const typeOnchain = Number(ext.weaponType);
   return {
     damageDie: ONCHAIN_TO_DIE[dieOnchain] ?? 6,
     attackBonus: Number(ext.attackBonus),
     damageBonus: Number(ext.damageBonus),
     element: elementFromIndex(targetPreset, elemOnchain),
+    weaponType: weaponTypeFromIndex(targetPreset, typeOnchain),
   };
 }
 
@@ -262,10 +289,12 @@ function decodeArmorExt(
 ): DecodedArmorStats {
   const [ext] = decodeAbiParameters(ARMOR_EXT_TUPLE, data);
   const elemOnchain = Number(ext.resistElement);
+  const typeOnchain = Number(ext.armorType);
   return {
     acBonus: Number(ext.acBonus),
     hpBonus: Number(ext.hpBonus),
     resistElement: elementFromIndex(targetPreset, elemOnchain),
+    armorType: armorTypeFromIndex(targetPreset, typeOnchain),
   };
 }
 
@@ -311,6 +340,9 @@ function buildTranslatedMetadataURI(args: {
     if (weapon.element !== "none") {
       attributes.push({ trait_type: "element", value: weapon.element });
     }
+    if (weapon.weaponType !== "none") {
+      attributes.push({ trait_type: "weapon_type", value: weapon.weaponType });
+    }
   }
   if (armor) {
     attributes.push({ trait_type: "ac_bonus", value: armor.acBonus });
@@ -318,13 +350,25 @@ function buildTranslatedMetadataURI(args: {
     if (armor.resistElement !== "none") {
       attributes.push({ trait_type: "resist_element", value: armor.resistElement });
     }
+    if (armor.armorType !== "none") {
+      attributes.push({ trait_type: "armor_type", value: armor.armorType });
+    }
   }
   for (const eff of original.catalogEffects) {
     attributes.push({ trait_type: eff.name, value: eff.value });
   }
+  // Translated display name: mirror of the on-chain `name(type, tier)`
+  // view for the target preset, when a type was present. Falls back to
+  // the original (source-preset) name for un-archetyped legacy gear.
+  const translatedName =
+    weapon && weapon.weaponType !== "none"
+      ? weaponName(targetPreset, weapon.weaponType, original.tier) || original.name
+      : armor && armor.armorType !== "none"
+        ? armorName(targetPreset, armor.armorType, original.tier) || original.name
+        : original.name;
   const json = {
-    name: original.name,
-    description: `${original.name} (translated for ${targetPreset}).`,
+    name: translatedName,
+    description: `${translatedName} (translated for ${targetPreset}).`,
     image: TRANSLATED_PLACEHOLDER_SVG_URI,
     attributes,
     seed_protocol: {
@@ -444,8 +488,13 @@ export function useTranslatedCard(
     (card.slot === "weapon" || card.slot === "armor");
 
   const query = useQuery<AssetCard | undefined>({
+    // In-memory starters share tokenId 0n across slots, so the key must
+    // also distinguish slot + source realm — otherwise the armor chip
+    // subscribes to the weapon's cached translation (and vice versa).
     queryKey: [
       "translatedCard",
+      card?.slot ?? "none",
+      card?.realm?.toLowerCase() ?? "none",
       card?.tokenId?.toString() ?? "none",
       targetRealm.toLowerCase(),
     ],

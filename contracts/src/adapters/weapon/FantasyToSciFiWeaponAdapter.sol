@@ -7,13 +7,13 @@ import {FantasyWeaponSchema} from "../../schemas/FantasyWeaponSchema.sol";
 import {SciFiWeaponSchema} from "../../schemas/SciFiWeaponSchema.sol";
 
 /// @title  FantasyToSciFiWeaponAdapter
-/// @notice Translates a Fantasy weapon into a Sci-Fi weapon. Neither
-///         side is Cyberpunk, so the damage-die / attack-bonus
-///         rebalance is a no-op here — stats pass through and only
-///         the schema vocabulary changes (fire → plasma, ice → cryo,
-///         etc.). Each schema names its own enum natively; the PoC's
-///         1:1 element-index alignment is what lets us re-encode by
-///         numeric value, but the *names* are not shared.
+/// @notice Translates a Fantasy weapon into a Sci-Fi weapon. This
+///         direction is a passthrough on the die/attack ladder
+///         (Fantasy ↔ Sci-Fi sit on the same rebalance lane); the only
+///         deltas come from the per-source-type table below, which
+///         flavors how each weapon archetype "feels" after the
+///         re-encoding. The archetype index (1=heavy..5=exotic) maps
+///         identity to identity here.
 contract FantasyToSciFiWeaponAdapter is IAdapter {
     uint256 public immutable sourceSchemaId;
     uint256 public immutable targetSchemaId;
@@ -29,18 +29,31 @@ contract FantasyToSciFiWeaponAdapter is IAdapter {
         return (sourceSchemaId, targetSchemaId);
     }
 
+    /// @dev (atkDelta, dmgDelta) keyed by source FantasyWeaponSchema.WeaponType
+    ///      index (1..5). None=0 contributes nothing.
+    function _typeDelta(uint8 sourceType) internal pure returns (int8, int8) {
+        if (sourceType == uint8(FantasyWeaponSchema.WeaponType.Axe))    return (-1,  2); // → Cannon
+        if (sourceType == uint8(FantasyWeaponSchema.WeaponType.Dagger)) return ( 1,  0); // → Pistol
+        if (sourceType == uint8(FantasyWeaponSchema.WeaponType.Sword))  return ( 0,  1); // → Rifle
+        if (sourceType == uint8(FantasyWeaponSchema.WeaponType.Bow))    return ( 1,  0); // → Beam
+        if (sourceType == uint8(FantasyWeaponSchema.WeaponType.Staff))  return (-2,  2); // → Railgun
+        return (0, 0);
+    }
+
     function translate(
         uint256, /* tokenId */
         SeedTypes.CoreAttributes calldata sourceAttrs,
         bytes calldata extensionData
     ) external view returns (SeedTypes.CoreAttributes memory, bytes memory) {
         FantasyWeaponSchema.Ext memory src = abi.decode(extensionData, (FantasyWeaponSchema.Ext));
+        (int8 atkD, int8 dmgD) = _typeDelta(uint8(src.weaponType));
 
         SciFiWeaponSchema.Ext memory dst = SciFiWeaponSchema.Ext({
             damageDie: src.damageDie,
-            attackBonus: src.attackBonus,
-            damageBonus: src.damageBonus,
-            element: SciFiWeaponSchema.Element(uint8(src.element))
+            attackBonus: src.attackBonus + atkD,
+            damageBonus: src.damageBonus + dmgD,
+            element: SciFiWeaponSchema.Element(uint8(src.element)),
+            weaponType: SciFiWeaponSchema.WeaponType(uint8(src.weaponType))
         });
 
         SeedTypes.CoreAttributes memory translatedAttrs = SeedTypes.CoreAttributes({
@@ -53,10 +66,32 @@ contract FantasyToSciFiWeaponAdapter is IAdapter {
     }
 
     function sourceElementLabel(uint8 element) external pure returns (string memory) {
-        return FantasyWeaponSchema.label(FantasyWeaponSchema.Element(element));
+        return FantasyWeaponSchema.elementLabel(FantasyWeaponSchema.Element(element));
     }
 
     function targetElementLabel(uint8 element) external pure returns (string memory) {
-        return SciFiWeaponSchema.label(SciFiWeaponSchema.Element(element));
+        return SciFiWeaponSchema.elementLabel(SciFiWeaponSchema.Element(element));
+    }
+
+    function sourceTypeLabel(uint8 weaponType) external pure returns (string memory) {
+        return FantasyWeaponSchema.typeLabel(FantasyWeaponSchema.WeaponType(weaponType));
+    }
+
+    function targetTypeLabel(uint8 weaponType) external pure returns (string memory) {
+        return SciFiWeaponSchema.typeLabel(SciFiWeaponSchema.WeaponType(weaponType));
+    }
+
+    function sourceName(uint8 weaponType, uint8 tier) external pure returns (string memory) {
+        return FantasyWeaponSchema.name(
+            FantasyWeaponSchema.WeaponType(weaponType),
+            SeedTypes.Tier(tier)
+        );
+    }
+
+    function targetName(uint8 weaponType, uint8 tier) external pure returns (string memory) {
+        return SciFiWeaponSchema.name(
+            SciFiWeaponSchema.WeaponType(weaponType),
+            SeedTypes.Tier(tier)
+        );
     }
 }
