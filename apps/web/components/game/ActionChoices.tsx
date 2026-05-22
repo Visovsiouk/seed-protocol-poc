@@ -2,21 +2,29 @@
 
 /**
  * Renders the player's action set for the current encounter:
- *   combat-tactical → Strike / Brace / Flank
- *   - combat-flavor  → 3 flavor-equivalent verbs from the preset bank
- *                      (all map to Strike in the engine)
- *   - hazard         → single "Continue" button (engine rolls automatically)
- *   - discovery      → two flavor options the player picks between
+ *
+ *   - combat (non-boss) → Attack (one button)
+ *   - combat (boss)     → Attack + Secondary (Dodge/Brace/Steady/Reflect/Focus,
+ *                         resolved from equipped armor via `secondaryFor`)
+ *   - trial             → DC + bonus banner + Attempt button
+ *   - ledger            → suppress effect A / suppress effect B / skip
  *
  * The component itself never touches engine state — it dispatches an
  * `ActionChoice` upward and lets `<EncounterFrame/>` step the engine.
  */
 
-import type { ActionChoice, EncounterState } from "@/lib/engine/types";
+import { secondaryFor } from "@/lib/engine/combat";
+import type {
+  ActionChoice,
+  AssetCard,
+  BossDef,
+  EncounterState,
+  MonsterDef,
+} from "@/lib/engine/types";
 
 type Props = {
   encounter: EncounterState;
-  combatVerbs: readonly string[];
+  equipped: { weapon?: AssetCard; armor?: AssetCard };
   disabled?: boolean;
   onChoose: (choice: ActionChoice) => void;
 };
@@ -58,90 +66,90 @@ function Button({
   );
 }
 
+function isBossMonster(monster: MonsterDef | BossDef): monster is BossDef {
+  return "bakedEffects" in monster;
+}
+
 export function ActionChoices({
   encounter,
-  combatVerbs,
+  equipped,
   disabled,
   onChoose,
 }: Props) {
   if (encounter.kind === "combat") {
-    if (encounter.choice === "tactical") {
-      return (
-        <div className="flex flex-wrap gap-2" aria-label="Tactical actions">
+    const boss = isBossMonster(encounter.combat.monster);
+    const sec = secondaryFor(equipped.armor);
+    return (
+      <div className="flex flex-wrap gap-2" aria-label="Combat actions">
+        <Button
+          variant="primary"
+          disabled={disabled}
+          onClick={() => onChoose({ kind: "attack" })}
+        >
+          Attack
+        </Button>
+        {boss && (
+          <Button disabled={disabled} onClick={() => onChoose({ kind: "secondary" })}>
+            {sec.label}
+          </Button>
+        )}
+      </div>
+    );
+  }
+
+  if (encounter.kind === "trial") {
+    return (
+      <div className="flex flex-col gap-2" aria-label="Trial action">
+        <div className="text-xs" style={{ color: "var(--color-preset-fg-dim)" }}>
+          {encounter.flavor}
+        </div>
+        <div className="text-sm">
+          {encounter.ability === "agility" ? "Agility" : "Endurance"} check —
+          roll d20+{encounter.bonus} vs DC {encounter.dc}
+        </div>
+        <div className="flex flex-wrap gap-2">
           <Button
             variant="primary"
             disabled={disabled}
-            onClick={() => onChoose({ kind: "tactical", option: "strike" })}
+            onClick={() => onChoose({ kind: "trial" })}
           >
-            Strike
-          </Button>
-          <Button
-            disabled={disabled}
-            onClick={() => onChoose({ kind: "tactical", option: "brace" })}
-          >
-            Brace
-          </Button>
-          <Button
-            disabled={disabled}
-            onClick={() => onChoose({ kind: "tactical", option: "flank" })}
-          >
-            Flank
+            Attempt
           </Button>
         </div>
-      );
-    }
-    // flavor: present two preset-flavored verbs; both resolve to Strike.
-    // Picking only two of the bank's verbs keeps the surface tight; the
-    // engine doesn't distinguish them.
-    const verbs = combatVerbs.slice(0, 2);
+      </div>
+    );
+  }
+
+  if (encounter.kind === "ledger") {
+    const [a, b] = encounter.effects;
     return (
-      <div className="flex flex-wrap gap-2" aria-label="Flavor actions">
-        {verbs.map((v, i) => (
+      <div className="flex flex-col gap-2" aria-label="Ledger action">
+        <div className="text-sm">
+          {encounter.bossName} carries: {a.replace(/_/g, " ")} & {b.replace(/_/g, " ")}.
+          Strike one from the ledger?
+        </div>
+        <div className="flex flex-wrap gap-2">
           <Button
-            key={v}
-            variant={i === 0 ? "primary" : "default"}
+            variant="primary"
             disabled={disabled}
-            onClick={() =>
-              onChoose({ kind: "flavor", verb: v, index: i as 0 | 1 })
-            }
+            onClick={() => onChoose({ kind: "ledger", suppress: a })}
           >
-            {v[0]!.toUpperCase() + v.slice(1)}
+            Strike {a.replace(/_/g, " ")}
           </Button>
-        ))}
-      </div>
-    );
-  }
-
-  if (encounter.kind === "hazard") {
-    return (
-      <div className="flex flex-wrap gap-2" aria-label="Hazard action">
-        <Button
-          variant="primary"
-          disabled={disabled}
-          onClick={() => onChoose({ kind: "tactical", option: "strike" })}
-        >
-          Press on
-        </Button>
-      </div>
-    );
-  }
-
-  if (encounter.kind === "discovery") {
-    return (
-      <div className="flex flex-wrap gap-2" aria-label="Discovery options">
-        <Button
-          variant="primary"
-          disabled={disabled}
-          onClick={() => onChoose({ kind: "discovery", index: 0 })}
-        >
-          {encounter.options[0]}
-        </Button>
-        <Button
-          disabled={disabled}
-          onClick={() => onChoose({ kind: "discovery", index: 1 })}
-        >
-          {encounter.options[1]}
-        </Button>
+          <Button
+            variant="primary"
+            disabled={disabled}
+            onClick={() => onChoose({ kind: "ledger", suppress: b })}
+          >
+            Strike {b.replace(/_/g, " ")}
+          </Button>
+          <Button
+            disabled={disabled}
+            onClick={() => onChoose({ kind: "ledger", suppress: null })}
+          >
+            Skip
+          </Button>
+        </div>
       </div>
     );
   }

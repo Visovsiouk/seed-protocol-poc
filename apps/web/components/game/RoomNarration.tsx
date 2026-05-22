@@ -143,11 +143,11 @@ export function RoomNarration({
       {encounter?.kind === "combat" && (
         <MonsterBanner combat={encounter.combat} activePreset={activePreset} />
       )}
-      {encounter?.kind === "hazard" && (
-        <p className="text-xs uppercase tracking-wide opacity-50">Hazard</p>
+      {encounter?.kind === "trial" && (
+        <p className="text-xs uppercase tracking-wide opacity-50">Trial</p>
       )}
-      {encounter?.kind === "discovery" && (
-        <p className="text-xs uppercase tracking-wide opacity-50">Discovery</p>
+      {encounter?.kind === "ledger" && (
+        <p className="text-xs uppercase tracking-wide opacity-50">Ledger</p>
       )}
     </section>
   );

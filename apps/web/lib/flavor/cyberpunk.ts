@@ -304,33 +304,31 @@ export const cyberpunkBank: FlavorBank = {
       "A circle of doctors stands up at once, faces wrong.",
     ],
   },
-  combatVerbs: ["shoot", "strike", "fire", "rush"],
-  hazardSuccess: [
-    "You hack the lock in time.",
-    "You roll under the camera arc.",
-    "Your jammer chirps green just before the door slams.",
+  trialPrompts: [
+    "Camera arc. A two-second window to slip under.",
+    "A live rail crosses the alley. The gap is narrow.",
+    "Security drones patrol the gantry. You'll need to time the run.",
   ],
-  hazardFailure: [
-    "Alarms. You bleed time and HP.",
-    "The system catches you. It costs you.",
-    "Your ID fails at the worst possible moment.",
+  trialSuccess: [
+    "You slip the arc clean — green diodes blink past you.",
+    "You make the gap. The rail doesn't see you.",
+    "You time the patrol; you're through before they cycle back.",
   ],
-  discoveryRefund: [
-    "A stash of unmarked cred.",
-    "An unspent black-market voucher.",
-    "A clip of ammunition that fits your weapon — barely.",
+  trialFailure: [
+    "Alarms. You eat a stun-bolt and stagger.",
+    "The rail catches your sleeve; current bites through.",
+    "A drone tags you — you take the hit and keep moving.",
   ],
-  discoveryLore: [
-    "A chip with someone's voicemail.",
-    "A photograph, paper, defiant.",
-    "A child's school ID, expired by twenty years.",
+  ledgerPrompts: [
+    "A corporate ledger blinks open on a dead terminal.",
+    "A black-market dossier sits unsealed on the counter.",
   ],
   roomTemplates: [
     { id: "c1", depth: 1, archetype: "combat", narrationKey: "neon_alley", monsterPool: ["street_punk", "ad_mascot"] },
     { id: "c2", depth: 2, archetype: "combat", narrationKey: "rooftop", monsterPool: ["street_punk", "fixer", "ganger_lieutenant"] },
-    { id: "c3", depth: 2, archetype: "hazard", narrationKey: "underground" },
+    { id: "c3", depth: 2, archetype: "trial", narrationKey: "underground" },
     { id: "c4", depth: 3, archetype: "combat", narrationKey: "server_den", monsterPool: ["fixer", "netrunner", "drone_swarm", "ice_sentinel"] },
-    { id: "c5", depth: 3, archetype: "discovery", narrationKey: "night_market" },
+    { id: "c5", depth: 3, archetype: "trial", narrationKey: "night_market" },
     { id: "c6", depth: 4, archetype: "combat", narrationKey: "arcology_atrium", monsterPool: ["ripper", "drone_swarm", "chrome_monk", "corp_assassin"] },
     { id: "c7", depth: 4, archetype: "combat", narrationKey: "pirate_clinic", monsterPool: ["ripper", "ice_sentinel", "rogue_synth"] },
     { id: "c8", depth: 5, archetype: "combat", narrationKey: "arcology_atrium", monsterPool: ["enforcer", "corp_assassin", "rogue_synth"] },

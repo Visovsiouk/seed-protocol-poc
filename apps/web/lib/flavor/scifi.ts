@@ -311,33 +311,31 @@ export const scifiBank: FlavorBank = {
       "A second voice joins its first. They harmonize.",
     ],
   },
-  combatVerbs: ["fire", "strike", "burst", "lunge"],
-  hazardSuccess: [
-    "The system reads green. You're through.",
-    "You override the alert in time.",
-    "A diagnostic clears in your favor — barely.",
+  trialPrompts: [
+    "A pressure-blown bulkhead. The gap is jumpable. Maybe.",
+    "An exposed conduit arcs across the corridor.",
+    "A floor panel is gone; a long drop into deck-machinery.",
   ],
-  hazardFailure: [
-    "The system bites back. You absorb the worst of it.",
-    "Sparks and smoke. You lose ground.",
-    "A panel blows open and the room punishes you for being near it.",
+  trialSuccess: [
+    "Your magboots catch the lip; you make it across.",
+    "You time the arc and slip past it untouched.",
+    "You vault clean over the gap.",
   ],
-  discoveryRefund: [
-    "A cache of credits, untouched.",
-    "An unspent emergency kit.",
-    "A maintenance locker, mostly intact.",
+  trialFailure: [
+    "The arc catches you mid-step; circuitry burns through cloth.",
+    "You miss the lip and hit hard.",
+    "Your boot slips — the deck eats the difference.",
   ],
-  discoveryLore: [
-    "A crew log, half-corrupted.",
-    "A serial number, scratched into the wall by a hand that wanted to be remembered.",
-    "A child's drawing taped to a console: a planet, three small figures, a star.",
+  ledgerPrompts: [
+    "A black-box terminal blinks. Crew records. Names. Names.",
+    "A maintenance log scrolls past. Someone wrote down what comes next.",
   ],
   roomTemplates: [
     { id: "s1", depth: 1, archetype: "combat", narrationKey: "docking_bay", monsterPool: ["drone", "scavenger", "saboteur"] },
     { id: "s2", depth: 2, archetype: "combat", narrationKey: "server_farm", monsterPool: ["drone", "drifter", "ai_acolyte"] },
-    { id: "s3", depth: 2, archetype: "hazard", narrationKey: "derelict_corridor" },
+    { id: "s3", depth: 2, archetype: "trial", narrationKey: "derelict_corridor" },
     { id: "s4", depth: 3, archetype: "combat", narrationKey: "cargo_hold", monsterPool: ["scavenger", "drifter", "warbot", "rogue_loader"] },
-    { id: "s5", depth: 3, archetype: "discovery", narrationKey: "bridge" },
+    { id: "s5", depth: 3, archetype: "trial", narrationKey: "bridge" },
     { id: "s6", depth: 4, archetype: "combat", narrationKey: "reactor_room", monsterPool: ["warbot", "xenoid", "cryo_revenant"] },
     { id: "s7", depth: 4, archetype: "combat", narrationKey: "cryo_vault", monsterPool: ["spore_husk", "cryo_revenant", "ai_acolyte"] },
     { id: "s8", depth: 5, archetype: "combat", narrationKey: "reactor_room", monsterPool: ["xenoid", "exo_hunter", "void_lich"] },

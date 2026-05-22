@@ -30,16 +30,19 @@ export type FlavorBank = {
   /** Boss phase-2 narration, keyed by `BossDef.phase2NarrationKey`. */
   bossPhases: Readonly<Record<string, readonly string[]>>;
 
-  /** Combat-action flavor verbs for non-tactical rounds (3–4 variants). */
-  combatVerbs: readonly string[];
+  /**
+   * Trial-room flavor: short obstacle prompts ("leap the gap"). The
+   * engine picks one per room and renders it above the DC banner. The
+   * ability is rolled, not flavored, so a single bank covers both
+   * agility and endurance trials.
+   */
+  trialPrompts: readonly string[];
+  /** Trial pass/fail outcome lines. */
+  trialSuccess: readonly string[];
+  trialFailure: readonly string[];
 
-  /** Hazard outcome variants. */
-  hazardSuccess: readonly string[];
-  hazardFailure: readonly string[];
-
-  /** Discovery outcome variants — short, mood-setting. */
-  discoveryRefund: readonly string[];
-  discoveryLore: readonly string[];
+  /** Ledger-room intro flavor — mood-setting only. */
+  ledgerPrompts: readonly string[];
 
   /** Room templates for this preset's run. */
   roomTemplates: readonly RoomTemplate[];

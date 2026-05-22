@@ -309,30 +309,31 @@ export const fantasyBank: FlavorBank = {
       "It steps through its own shadow, faster than it should be.",
     ],
   },
-  combatVerbs: ["strike", "lunge", "swing", "thrust"],
-  hazardSuccess: [
-    "You read the room in time and step clear.",
-    "Your reflexes save you — barely.",
-    "Whatever it was, you saw it coming.",
+  trialPrompts: [
+    "A chasm splits the path. Far side is dark.",
+    "A rotted rope-bridge sways over a long fall.",
+    "The floor here is wrong — old planks, deep mire beneath.",
   ],
-  hazardFailure: [
-    "You catch the worst of it and stagger.",
-    "Too slow. The cost is paid in blood.",
+  trialSuccess: [
+    "You time it right and land clean on the far side.",
+    "Your boots find purchase. You're across.",
+    "You read the gap and trust your legs. You're through.",
   ],
-  discoveryRefund: [
-    "A small coin-cache, hidden behind loose stone.",
-    "An old offering bowl, half full.",
+  trialFailure: [
+    "Your footing betrays you; you take the fall hard.",
+    "Wood splinters under you. The drop hurts.",
+    "Too slow — the floor punishes you for hesitating.",
   ],
-  discoveryLore: [
-    "A faded ledger names someone you almost recognize.",
-    "An etched promise on the wall, made to no one alive.",
+  ledgerPrompts: [
+    "A stone ledger sits open in the chamber. Names. Debts. Names.",
+    "Pages of a forgotten ledger flutter in a wind that isn't there.",
   ],
   roomTemplates: [
     { id: "r1", depth: 1, archetype: "combat", narrationKey: "woodland_clearing", monsterPool: ["goblin", "giant_rat", "bandit"] },
     { id: "r2", depth: 2, archetype: "combat", narrationKey: "dark_grove", monsterPool: ["bandit", "wolf", "forest_hag_minion"] },
-    { id: "r3", depth: 2, archetype: "hazard", narrationKey: "cavern" },
+    { id: "r3", depth: 2, archetype: "trial", narrationKey: "cavern" },
     { id: "r4", depth: 3, archetype: "combat", narrationKey: "stone_ruin", monsterPool: ["skeleton", "ghoul", "wolf"] },
-    { id: "r5", depth: 3, archetype: "discovery", narrationKey: "crypt_hall" },
+    { id: "r5", depth: 3, archetype: "trial", narrationKey: "crypt_hall" },
     { id: "r6", depth: 4, archetype: "combat", narrationKey: "bone_pit", monsterPool: ["ogre", "wraith", "troll", "cultist"] },
     { id: "r7", depth: 5, archetype: "combat", narrationKey: "inner_sanctum", monsterPool: ["troll", "wraith", "shadow_drake"] },
   ],

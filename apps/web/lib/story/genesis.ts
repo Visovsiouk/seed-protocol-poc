@@ -106,8 +106,8 @@ const CYBERPUNK_VOICES: readonly RespawnVoice[] = [
   // attempt 3
   {
     death:
-      "Static fills your mouth. The runner who killed you doesn't even bother " +
-      "to log the kill. The pavement opens.",
+      "Static fills your mouth. Whatever killed you doesn't even bother to " +
+      "log the kill. The pavement opens.",
     respawn: [
       "You wake on wet asphalt. Rain in your collar. You taste solder, then " +
         "you taste rain.",
@@ -117,10 +117,11 @@ const CYBERPUNK_VOICES: readonly RespawnVoice[] = [
   // attempt 4
   {
     death:
-      "You fall. The runner pauses this time, looks down. She is taking notes.",
+      "You fall. The thing that did it pauses this time. It is taking " +
+      "readings.",
     respawn: [
       "You wake on wet asphalt. The neon is brighter — or you are dimmer. " +
-        "She is waiting, and she has stopped being amused.",
+        "The district is waiting, and it has stopped being amused.",
     ],
   },
   // attempt 5

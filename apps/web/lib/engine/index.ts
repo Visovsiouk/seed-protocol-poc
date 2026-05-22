@@ -23,6 +23,7 @@
 import type {
   ActionChoice,
   AssetCard,
+  CatalogEffectName,
   CombatState,
   DefeatMode,
   Element,
@@ -40,15 +41,14 @@ import { resolveRound } from "./combat";
 import { checkPhaseTransition, createBossEncounter } from "./boss";
 import {
   pickArchetype,
-  pickCombatChoiceMode,
   pickMonster,
-  resolveHazard,
-  rollDiscoveryOutcomes,
+  planTrial,
+  resolveTrial,
 } from "./encounter";
 import { pickSlot, rollLoot, type RealmSchemas } from "./loot";
 import type { Difficulty } from "./tier";
 import { getFlavorBank } from "../flavor";
-import { pickVariant, render } from "./narration";
+import { pickVariant } from "./narration";
 import type { FlavorBank } from "../flavor/types";
 import { respawnVoiceFor } from "../story/genesis";
 
@@ -59,6 +59,18 @@ import { respawnVoiceFor } from "../story/genesis";
  * other starters and player realms stay at 6.
  */
 export const BOSS_DEPTH = 6;
+
+/**
+ * Depth at which a Ledger room may appear (once per attempt). When the
+ * player has not yet consumed a ledger and an upcoming boss with baked
+ * effects is known, this depth's regular encounter is replaced with the
+ * Ledger room. Set to 3 — early enough to inform the player, late enough
+ * that they've seen a couple of fights.
+ *
+ * If `bossDepth <= LEDGER_DEPTH`, the ledger override is skipped (the
+ * boss arrives too soon to bother).
+ */
+export const LEDGER_DEPTH = 3;
 
 /**
  * XOR the attempt counter into the run seed so a seed-mercy respawn
@@ -144,10 +156,28 @@ function pickRoomTemplate(
   return candidates[rng.nextInt(candidates.length)]!;
 }
 
+/**
+ * Picks a room template restricted to combat archetype. Used when we've
+ * decided this depth should be a fight (e.g. trial/fork rolled out, or
+ * the depth has only combat templates anyway). Falls back to `pickRoomTemplate`
+ * if no combat templates exist at this depth.
+ */
+function pickCombatRoomTemplate(
+  rng: Rng,
+  bank: FlavorBank,
+  depth: number,
+): RoomTemplate {
+  const combats = bank.roomTemplates.filter(
+    (r) => r.depth === depth && r.archetype === "combat",
+  );
+  if (combats.length === 0) return pickRoomTemplate(rng, bank, depth);
+  return combats[rng.nextInt(combats.length)]!;
+}
+
 /** Generate the encounter at the current depth. */
 function generateEncounter(
   state: RunState,
-  bossId?: string,
+  bossId: string,
 ): {
   encounter: EncounterState;
   lines: NarrationLine[];
@@ -159,7 +189,6 @@ function generateEncounter(
 
   // Boss room.
   if (state.depth >= state.bossDepth) {
-    if (!bossId) throw new Error("generateEncounter: bossId required at bossDepth");
     const boss = bank.bosses[bossId];
     if (!boss) throw new Error(`generateEncounter: unknown bossId "${bossId}"`);
     const player = playerStartHp(state.equipped);
@@ -168,13 +197,42 @@ function generateEncounter(
       playerHp: player.hp,
       playerMaxHp: player.maxHp,
       playerAc: player.ac,
+      suppressedBakedEffects: state.runSuppressedBossEffects,
     });
     lines.push({
       text: `${boss.name} blocks your path.`,
       emphasis: "drama",
     });
     return {
-      encounter: { kind: "combat", archetype: "combat", combat, choice: "tactical" },
+      encounter: { kind: "combat", archetype: "combat", combat },
+      lines,
+    };
+  }
+
+  // Ledger override at the configured depth, once per attempt. Requires
+  // an upcoming boss with both baked effects still in play.
+  const boss = bank.bosses[bossId];
+  if (
+    !state.ledgerConsumed &&
+    state.depth === LEDGER_DEPTH &&
+    state.bossDepth > LEDGER_DEPTH &&
+    boss
+  ) {
+    lines.push({
+      text: pickVariant(
+        { ledger: bank.ledgerPrompts as readonly string[] },
+        "ledger",
+        rng,
+      ),
+      emphasis: "info",
+    });
+    return {
+      encounter: {
+        kind: "ledger",
+        archetype: "ledger",
+        bossName: boss.name,
+        effects: boss.bakedEffects,
+      },
       lines,
     };
   }
@@ -185,8 +243,12 @@ function generateEncounter(
   lines.push({ text: pickVariant(bank.rooms, room.narrationKey, rng), emphasis: "info" });
 
   if (archetype === "combat") {
-    const pool = room.monsterPool ?? bank.roomTemplates.flatMap((r) => r.monsterPool ?? []);
-    const roomForPick: RoomTemplate = { ...room, monsterPool: pool };
+    // Force a combat-tagged template at this depth so monster pools resolve.
+    const combatRoom = pickCombatRoomTemplate(rng, bank, state.depth);
+    const pool =
+      combatRoom.monsterPool ??
+      bank.roomTemplates.flatMap((r) => r.monsterPool ?? []);
+    const roomForPick: RoomTemplate = { ...combatRoom, monsterPool: pool };
     const monster = pickMonster(rng, roomForPick, bank.monsters);
     const player = playerStartHp(state.equipped);
     const combat: CombatState = {
@@ -196,40 +258,36 @@ function generateEncounter(
       monster,
       monsterHp: monster.hp,
       bracedThisTurn: false,
+      guaranteedDodgeThisTurn: false,
+      regenDoubledThisTurn: false,
+      thornsDoubledThisTurn: false,
+      focusPrimed: false,
       bleedStacks: 0,
       suppressedEffects: [],
       turn: 0,
     };
     return {
-      encounter: {
-        kind: "combat",
-        archetype: "combat",
-        combat,
-        choice: pickCombatChoiceMode(rng),
-      },
+      encounter: { kind: "combat", archetype: "combat", combat },
       lines,
-      roomTemplate: room,
+      roomTemplate: combatRoom,
     };
   }
 
-  if (archetype === "hazard") {
-    return {
-      encounter: { kind: "hazard", archetype: "hazard", pendingResolve: true },
-      lines,
-      roomTemplate: room,
-    };
-  }
-
-  // discovery — two flavor options. We use refund/lore variants as the options
-  // shown to the player; the index mapping (refund vs lore outcome) is
-  // randomized in `step` via `rollDiscoveryOutcomes`.
-  const optionA = pickVariant(bank.rooms, room.narrationKey, rng);
-  const optionB = pickVariant(bank.rooms, room.narrationKey, rng);
+  // trial
+  const plan = planTrial(rng, equippedFor(state), state.depth);
+  const flavor = pickVariant(
+    { trial: bank.trialPrompts as readonly string[] },
+    "trial",
+    rng,
+  );
   return {
     encounter: {
-      kind: "discovery",
-      archetype: "discovery",
-      options: [optionA, optionB],
+      kind: "trial",
+      archetype: "trial",
+      ability: plan.ability,
+      dc: plan.dc,
+      bonus: plan.bonus,
+      flavor,
     },
     lines,
     roomTemplate: room,
@@ -264,6 +322,8 @@ export type StartRunArgs = {
 
 /** Internal: schema info is needed by `step` for loot rolls; we stash it on state. */
 const SCHEMA_STORE = new WeakMap<RunState, RealmSchemas>();
+/** Internal: bossId stashed with the run so non-boss-depth step() calls can resolve ledger effects. */
+const BOSS_STORE = new WeakMap<RunState, string>();
 
 /** Builds the initial RunState, depth 1, with the first encounter generated. */
 export function startRun(args: StartRunArgs): { state: RunState; lines: NarrationLine[] } {
@@ -281,25 +341,23 @@ export function startRun(args: StartRunArgs): { state: RunState; lines: Narratio
     runAttempt: 1,
     forcedFirstWeaponElement: args.forcedFirstWeaponElement,
     firstWeaponDropped: false,
+    runSuppressedBossEffects: [],
+    ledgerConsumed: false,
   };
   const gen = generateEncounter(baseState, args.bossId);
   const state: RunState = { ...baseState, encounter: gen.encounter };
   SCHEMA_STORE.set(state, args.schemas);
+  BOSS_STORE.set(state, args.bossId);
   return { state, lines: gen.lines };
 }
 
 /**
- * Resolve one player action against the current encounter.
- *
- * Combat: feeds the choice to `resolveRound`, then checks for monster
- * death (drops loot, clears the encounter, emits RoomCleared/BossCleared)
- * or player death (TODO: run-over surface; current behavior returns the
- * state with playerHp=0 and lets the caller route to defeat UI).
- *
- * Hazard: single resolution, drops a T1 loot on success.
- *
- * Discovery: maps the choice index → outcome (refund or lore), no loot
- * roll for the refund path; the lore path tags the NEXT loot drop.
+ * Resolve one player action against the current encounter. Dispatches on
+ * `enc.kind`:
+ *   - combat → `resolveRound`, with the new Attack/Secondary surface
+ *   - trial  → d20 + bonus vs DC; heal-on-pass / damage-on-fail
+ *   - fork   → Forge (HP cost → reroll weapon element) or Cache (free T1 loot)
+ *   - ledger → record suppressed boss effects in the run state
  */
 export function step(state: RunState, choice: ActionChoice): StepResult {
   const enc = state.encounter;
@@ -341,7 +399,9 @@ export function step(state: RunState, choice: ActionChoice): StepResult {
     if (monsterDefeated) {
       const isBoss = state.depth >= state.bossDepth;
       lines.push({
-        text: isBoss ? `${combat.monster.name} falls. The realm is cleared.` : `${combat.monster.name} falls.`,
+        text: isBoss
+          ? `${combat.monster.name} falls. The realm is cleared.`
+          : `${combat.monster.name} falls.`,
         emphasis: "drama",
       });
       let loot = rollLoot({
@@ -351,12 +411,6 @@ export function step(state: RunState, choice: ActionChoice): StepResult {
         schemas,
         preset: state.preset,
       });
-      // Forced-first-weapon element coercion (Genesis balance lever:
-      // your first weapon is guaranteed to exploit the realm's boss
-      // weakness). Naming + flavor narration intentionally dropped —
-      // the schema-native `name(type, tier)` ladder is the *only*
-      // name source for every item so the inventory and the mint
-      // prompt never disagree.
       let nextFirstWeaponDropped = state.firstWeaponDropped;
       if (
         loot.slot === "weapon" &&
@@ -369,8 +423,6 @@ export function step(state: RunState, choice: ActionChoice): StepResult {
         };
         nextFirstWeaponDropped = true;
       } else if (loot.slot === "weapon" && !state.firstWeaponDropped) {
-        // Even without a forced element, mark the first weapon dropped
-        // so the override (if any) is a once-per-attempt thing.
         nextFirstWeaponDropped = true;
       }
       events.push({ type: "LootDropped", loot });
@@ -390,16 +442,13 @@ export function step(state: RunState, choice: ActionChoice): StepResult {
           : {}),
       };
       SCHEMA_STORE.set(nextState, schemas);
+      const bossId = BOSS_STORE.get(state);
+      if (bossId) BOSS_STORE.set(nextState, bossId);
       return { state: nextState, outcome: lines, events };
     }
 
     if (playerDefeated) {
-      // Seed mercy (Genesis): the Seed grows the player back from its
-      // own ground. Bump the attempt counter, reseed the run so the
-      // encounter chain doesn't replay the death, regenerate depth 1,
-      // and emit the death + respawn narration as a single block. No
-      // `defeated` flag, no PlayerDefeated event, no UI defeat panel —
-      // the run keeps going. Equipped gear carries across attempts.
+      // Seed mercy: rewind to depth 1, bump attempt, reseed.
       if (state.defeatMode === "seed-mercy") {
         const nextAttempt = state.runAttempt + 1;
         const voice = respawnVoiceFor(state.preset, nextAttempt);
@@ -415,27 +464,25 @@ export function step(state: RunState, choice: ActionChoice): StepResult {
           encounter: null,
           runAttempt: nextAttempt,
           firstWeaponDropped: false,
-          // pendingLoot from a prior room never makes it past death; if
-          // the death came on a loot prompt, drop it. The carried gear
-          // (state.equipped) is preserved.
           pendingLoot: undefined,
+          // Ledger/suppression state is per-attempt: reset on respawn so
+          // the player gets a fresh ledger room and the next boss reads
+          // its full bakedEffects again.
+          runSuppressedBossEffects: [],
+          ledgerConsumed: false,
         };
         SCHEMA_STORE.set(seededBase, schemas);
-        const gen = generateEncounter(seededBase, undefined);
-        // The room intro line from `generateEncounter` lands after the
-        // respawn voice so the player reads death → reset → new room.
+        const bossId = BOSS_STORE.get(state);
+        if (bossId) BOSS_STORE.set(seededBase, bossId);
+        const gen = generateEncounter(seededBase, bossId ?? "");
         lines.push(...gen.lines);
         const nextState: RunState = { ...seededBase, encounter: gen.encounter };
         SCHEMA_STORE.set(nextState, schemas);
+        if (bossId) BOSS_STORE.set(nextState, bossId);
         return { state: nextState, outcome: lines, events };
       }
 
-      // Default: permadeath. Run is over. Encounter stays in place so
-      // the UI can re-render the last combat frame under the defeat
-      // panel; the terminator flag short-circuits further `step()`
-      // calls. No clearReceipt, no boss-clear flag mutation, no loot.
-      // Equipped gear is retained — death surrenders progress, not
-      // inventory.
+      // Permadeath.
       lines.push({
         text: `You fall. ${combat.monster.name} stands over you.`,
         emphasis: "drama",
@@ -449,6 +496,8 @@ export function step(state: RunState, choice: ActionChoice): StepResult {
         defeatedTurn: combat.turn,
       };
       SCHEMA_STORE.set(nextState, schemas);
+      const bossId = BOSS_STORE.get(state);
+      if (bossId) BOSS_STORE.set(nextState, bossId);
       return { state: nextState, outcome: lines, events };
     }
 
@@ -457,87 +506,94 @@ export function step(state: RunState, choice: ActionChoice): StepResult {
       encounter: { ...enc, combat },
     };
     SCHEMA_STORE.set(nextState, schemas);
+    const bossId = BOSS_STORE.get(state);
+    if (bossId) BOSS_STORE.set(nextState, bossId);
     return { state: nextState, outcome: lines, events };
   }
 
-  if (enc.kind === "hazard") {
-    const r = resolveHazard(rng, equipped, state.depth);
+  if (enc.kind === "trial") {
+    if (choice.kind !== "trial") {
+      throw new Error("step: trial encounter requires a trial choice");
+    }
+    const plan = { ability: enc.ability, dc: enc.dc, bonus: enc.bonus };
+    const r = resolveTrial(rng, plan, state.depth);
     const bank = getFlavorBank(state.preset);
     const lines: NarrationLine[] = [];
     if (r.success) {
       lines.push({
         text: pickVariant(
-          { success: bank.hazardSuccess as readonly string[], failure: bank.hazardFailure as readonly string[] },
-          "success",
+          { ok: bank.trialSuccess as readonly string[] },
+          "ok",
           rng,
         ),
         emphasis: "info",
       });
-      // T1 loot prize.
-      const loot = rollLoot({
-        rng,
-        difficulty: "trivial",
-        slot: pickSlot(rng),
-        schemas,
-        preset: state.preset,
-      });
-      events.push({ type: "LootDropped", loot });
-      events.push({ type: "RoomCleared", depth: state.depth });
-      const nextState: RunState = { ...state, encounter: null, pendingLoot: loot };
-      SCHEMA_STORE.set(nextState, schemas);
-      return { state: nextState, outcome: lines, events };
-    } else {
       lines.push({
-        text: pickVariant(
-          { failure: bank.hazardFailure as readonly string[] },
-          "failure",
-          rng,
-        ),
-        emphasis: "damage",
+        text: `You roll d20 ${r.dieRoll}+${plan.bonus}=${r.total} vs DC ${plan.dc}. You recover ${r.healOnSuccess} HP.`,
+        emphasis: "heal",
       });
-      lines.push({
-        text: `You lose ${r.damageOnFail} HP.`,
-        emphasis: "damage",
-      });
-      // Hazard fail still clears the room — the player just takes a hit.
       events.push({ type: "RoomCleared", depth: state.depth });
-      // We don't store player HP between rooms in the PoC; the next room
-      // re-rolls player HP from equipped armor's hpBonus. Logged in lines.
       const nextState: RunState = { ...state, encounter: null };
       SCHEMA_STORE.set(nextState, schemas);
+      const bossId = BOSS_STORE.get(state);
+      if (bossId) BOSS_STORE.set(nextState, bossId);
       return { state: nextState, outcome: lines, events };
     }
-  }
-
-  // discovery
-  if (enc.kind === "discovery") {
-    if (choice.kind !== "discovery") {
-      throw new Error("step: discovery encounter requires a discovery choice");
-    }
-    const outcomes = rollDiscoveryOutcomes(rng);
-    const outcome = outcomes[choice.index];
-    const bank = getFlavorBank(state.preset);
-    const lines: NarrationLine[] = [];
-    if (outcome === "refund") {
-      lines.push({
-        text: pickVariant(
-          { refund: bank.discoveryRefund as readonly string[] },
-          "refund",
-          rng,
-        ),
-        emphasis: "info",
-      });
-      events.push({ type: "RoomCleared", depth: state.depth });
-    } else {
-      lines.push({
-        text: pickVariant({ lore: bank.discoveryLore as readonly string[] }, "lore", rng),
-        emphasis: "info",
-      });
-      events.push({ type: "RoomCleared", depth: state.depth });
-      // Lore path: no loot, but caller can decide to tag the next mint.
-    }
+    lines.push({
+      text: pickVariant(
+        { fail: bank.trialFailure as readonly string[] },
+        "fail",
+        rng,
+      ),
+      emphasis: "damage",
+    });
+    lines.push({
+      text: `You roll d20 ${r.dieRoll}+${plan.bonus}=${r.total} vs DC ${plan.dc}. You lose ${r.damageOnFail} HP.`,
+      emphasis: "damage",
+    });
+    events.push({ type: "RoomCleared", depth: state.depth });
     const nextState: RunState = { ...state, encounter: null };
     SCHEMA_STORE.set(nextState, schemas);
+    const bossId = BOSS_STORE.get(state);
+    if (bossId) BOSS_STORE.set(nextState, bossId);
+    return { state: nextState, outcome: lines, events };
+  }
+
+  if (enc.kind === "ledger") {
+    if (choice.kind !== "ledger") {
+      throw new Error("step: ledger encounter requires a ledger choice");
+    }
+    const lines: NarrationLine[] = [];
+    const suppress = choice.suppress;
+    const runSuppressed: CatalogEffectName[] = suppress
+      ? [...state.runSuppressedBossEffects, suppress]
+      : [...state.runSuppressedBossEffects];
+
+    if (suppress) {
+      lines.push({
+        text: `You strike the entry for "${suppress.replace(/_/g, " ")}" from the ledger.`,
+        emphasis: "drama",
+      });
+      lines.push({
+        text: `${enc.bossName} will not draw on that power against you.`,
+        emphasis: "info",
+      });
+    } else {
+      lines.push({
+        text: "You close the ledger without marking it.",
+        emphasis: "info",
+      });
+    }
+    events.push({ type: "RoomCleared", depth: state.depth });
+    const nextState: RunState = {
+      ...state,
+      encounter: null,
+      runSuppressedBossEffects: runSuppressed,
+      ledgerConsumed: true,
+    };
+    SCHEMA_STORE.set(nextState, schemas);
+    const bossId = BOSS_STORE.get(state);
+    if (bossId) BOSS_STORE.set(nextState, bossId);
     return { state: nextState, outcome: lines, events };
   }
 
@@ -567,6 +623,7 @@ export function advance(
   const out: RunState = { ...next, encounter: gen.encounter };
   const schemas = SCHEMA_STORE.get(state);
   if (schemas) SCHEMA_STORE.set(out, schemas);
+  BOSS_STORE.set(out, bossId);
   return { state: out, lines: gen.lines };
 }
 
@@ -593,6 +650,8 @@ export function equipItem(
   };
   const schemas = SCHEMA_STORE.get(state);
   if (schemas) SCHEMA_STORE.set(next, schemas);
+  const bossId = BOSS_STORE.get(state);
+  if (bossId) BOSS_STORE.set(next, bossId);
   return next;
 }
 
@@ -602,10 +661,12 @@ export function commitLootMint(state: RunState): RunState {
   const next: RunState = { ...rest, bossCleared: state.bossCleared };
   const schemas = SCHEMA_STORE.get(state);
   if (schemas) SCHEMA_STORE.set(next, schemas);
+  const bossId = BOSS_STORE.get(state);
+  if (bossId) BOSS_STORE.set(next, bossId);
   return next;
 }
 
 // Re-exports for consumers (UI, tests).
-export { resolveRound } from "./combat";
+export { resolveRound, secondaryFor } from "./combat";
 export { createRng } from "./rng";
 export type { LootRoll };

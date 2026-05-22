@@ -1,14 +1,18 @@
 /**
- * Combat round resolver. Owns Strike / Brace / Flank semantics (
- *) plus the player→monster and monster→player damage paths with all
- * catalog effects wired in.
+ * Combat round resolver. Owns the two-button combat surface (Attack /
+ * Secondary) plus the player→monster and monster→player damage paths with
+ * every catalog effect wired in.
  *
  * Turn order, per round:
- *   1. preTurn hook  — regen on the player
- *   2. player action — Strike / Brace / Flank (or flavor-equivalent)
+ *   1. preTurn hook  — regen on the player (doubled if Secondary→Steady fired)
+ *   2. player action — Attack (default swing) or Secondary (defensive)
  *   3. monster attack — unless monster died on the player's swing
  *   4. postTurn hook  — bleed DoT ticks down
  *   5. boss phase transition check (boss.ts, called by the caller of resolveRound)
+ *
+ * Secondary semantics depend on the equipped armor (see `secondaryFor`).
+ * Trash mobs only show Attack; bosses show both. (The UI gates the button;
+ * the resolver accepts either choice regardless — defensive coding.)
  *
  * Critical: `resolveRound` is a pure function over `(state, choice, rng)`.
  * No mutation of inputs; the returned state replaces the old one.
@@ -29,6 +33,34 @@ import type {
   NarrationLine,
 } from "./types";
 import type { Rng } from "./rng";
+
+/**
+ * Maps the equipped armor's defensive catalog effect to one of five
+ * Secondary actions. The label drives the button text; the `flag` field
+ * names the CombatState boolean that gets set when Secondary is chosen.
+ *
+ * Priority order matches the catalog spec layout — first matching effect
+ * wins, so an armor card with multiple defensive lines collapses to a
+ * single Secondary. Bare or non-defensive armor falls through to Focus,
+ * which is purely offensive (next Attack auto-crits + 2 to-hit).
+ */
+export type SecondaryResolution =
+  | { label: "Dodge"; flag: "guaranteedDodgeThisTurn" }
+  | { label: "Brace"; flag: "bracedThisTurn" }
+  | { label: "Steady"; flag: "regenDoubledThisTurn" }
+  | { label: "Reflect"; flag: "thornsDoubledThisTurn" }
+  | { label: "Focus"; flag: "focusPrimed" };
+
+export function secondaryFor(armor: AssetCard | undefined): SecondaryResolution {
+  const effects = armor?.catalogEffects ?? [];
+  const has = (name: string) =>
+    effects.some((e) => e.name === name && e.value > 0);
+  if (has("dodge_chance")) return { label: "Dodge", flag: "guaranteedDodgeThisTurn" };
+  if (has("damage_reduction")) return { label: "Brace", flag: "bracedThisTurn" };
+  if (has("regen")) return { label: "Steady", flag: "regenDoubledThisTurn" };
+  if (has("thorns")) return { label: "Reflect", flag: "thornsDoubledThisTurn" };
+  return { label: "Focus", flag: "focusPrimed" };
+}
 
 const D20 = 20;
 
@@ -143,11 +175,15 @@ function rollPlayerAttack(
   state: CombatState,
   equipped: { weapon?: AssetCard; armor?: AssetCard },
   rng: Rng,
-  modifiers: { damageMult?: number; alwaysHit?: boolean } = {},
+  modifiers: { damageMult?: number; alwaysHit?: boolean; focusPrimed?: boolean } = {},
 ): PlayerSwing {
   const weapon = equipped.weapon;
   const damageDie = weapon?.damageDie ?? 4; // unarmed fallback: d4
-  const attackBonus = weapon?.attackBonus ?? 0;
+  // Focus-primed attacks add +2 to-hit on top of the weapon's attackBonus.
+  // The flag is set by the previous turn's Secondary→Focus; the caller
+  // clears it after this roll so the next swing reverts to baseline.
+  const attackBonus =
+    (weapon?.attackBonus ?? 0) + (modifiers.focusPrimed ? 2 : 0);
   const damageBonus = weapon?.damageBonus ?? 0;
   const pierce = getActiveEffectValue(state, equipped, "armor_pierce") > 0;
   const monsterAc = pierce ? Math.max(10, state.monster.ac - 2) : state.monster.ac;
@@ -196,7 +232,9 @@ function rollPlayerAttack(
   const baseDamage = rng.rollDie(damageDie);
   const critChance = getActiveEffectValue(state, equipped, "crit_chance") / 100;
   const critProc = critChance > 0 && rng.chance(critChance);
-  const crit = isNat20 || critProc;
+  // Focus-primed swings auto-crit on a successful hit, in addition to the
+  // standard nat-20 and crit_chance procs.
+  const crit = isNat20 || critProc || !!modifiers.focusPrimed;
   // Crit doubles the dice only; the flat damageBonus is added after.
   let damage = (crit ? baseDamage * 2 : baseDamage) + damageBonus;
 
@@ -287,9 +325,12 @@ function rollMonsterAttack(
   equipped: { weapon?: AssetCard; armor?: AssetCard },
   rng: Rng,
 ): MonsterSwing {
-  // Dodge first — fires before the d20 even rolls.
+  // Dodge first — fires before the d20 even rolls. Secondary→Dodge sets
+  // `guaranteedDodgeThisTurn` for an auto-dodge regardless of the catalog
+  // value; otherwise we fall back to the rolled `dodge_chance` proc.
+  const guaranteedDodge = state.guaranteedDodgeThisTurn;
   const dodge = getActiveEffectValue(state, equipped, "dodge_chance") / 100;
-  if (dodge > 0 && rng.chance(dodge)) {
+  if (guaranteedDodge || (dodge > 0 && rng.chance(dodge))) {
     return {
       hit: false,
       damageToPlayer: 0,
@@ -374,8 +415,9 @@ function rollMonsterAttack(
   const reducedBy = Math.min(dr, damage);
   damage = Math.max(0, damage - dr);
 
-  // Thorns.
-  const thorns = getActiveEffectValue(state, equipped, "thorns");
+  // Thorns. Secondary→Reflect doubles the reflected damage this turn.
+  const baseThorns = getActiveEffectValue(state, equipped, "thorns");
+  const thorns = state.thornsDoubledThisTurn ? baseThorns * 2 : baseThorns;
 
   return {
     hit: true,
@@ -471,77 +513,112 @@ export function resolveRound(
 
   // --- 1. preTurn hook -----------------------------------------------------
   let s = state;
-  // Reset the per-turn Brace flag — it's consumed by whatever incoming hit
-  // came in last turn, never carried forward.
-  s = { ...s, bracedThisTurn: false };
+  // Reset per-turn defensive flags — they're consumed by whatever incoming
+  // hit came in last turn, never carried forward. `focusPrimed` is NOT
+  // reset here — it persists until consumed by an Attack action.
+  s = {
+    ...s,
+    bracedThisTurn: false,
+    guaranteedDodgeThisTurn: false,
+    thornsDoubledThisTurn: false,
+    // regenDoubledThisTurn is consumed by the preTurn hook below, then cleared.
+  };
   const preTurn = applyCatalogEffects(s, equipped, "preTurn");
   s = preTurn.state;
   for (const n of preTurn.notes) {
     if (n.kind === "regen") {
-      lines.push({ text: `You regenerate ${n.amount} HP.`, emphasis: "heal" });
+      // Steady doubles the heal — applied here, after the catalog has
+      // produced the base note. We re-clamp against maxHp so a Steady on
+      // near-full health doesn't overheal.
+      const doubled = s.regenDoubledThisTurn
+        ? Math.min(s.playerMaxHp - s.playerHp, n.amount) // headroom after base heal
+        : 0;
+      if (doubled > 0) {
+        s = { ...s, playerHp: s.playerHp + doubled };
+        lines.push({
+          text: `You regenerate ${n.amount + doubled} HP.`,
+          emphasis: "heal",
+        });
+      } else {
+        lines.push({ text: `You regenerate ${n.amount} HP.`, emphasis: "heal" });
+      }
     }
   }
+  // regen-double flag now consumed regardless of outcome.
+  s = { ...s, regenDoubledThisTurn: false };
 
   // --- 2. player action ----------------------------------------------------
-  const isTactical = choice.kind === "tactical";
-  const tacticalOption = isTactical ? choice.option : "strike"; // flavor verbs map to Strike
-
-  if (isTactical && tacticalOption === "brace") {
-    s = { ...s, bracedThisTurn: true };
-    lines.push({ text: "You brace for the incoming blow.", emphasis: "info" });
+  if (choice.kind === "secondary") {
+    // The defensive action — resolution depends on the equipped armor.
+    // No swing happens; the chosen flag is consumed by either this round's
+    // monster swing (Brace/Dodge/Reflect) or by the next round's Attack
+    // (Focus). Steady's effect already fired in the preTurn block above
+    // when the next round's preTurn runs.
+    const sec = secondaryFor(equipped.armor);
+    s = { ...s, [sec.flag]: true } as CombatState;
+    const verb = (() => {
+      switch (sec.label) {
+        case "Dodge":
+          return "You read the swing — guaranteed to slip it.";
+        case "Brace":
+          return "You brace for the incoming blow.";
+        case "Steady":
+          return "You steady your breath; the wound knits.";
+        case "Reflect":
+          return "You set your guard — thorns ready.";
+        case "Focus":
+          return "You focus. The next strike will land hard.";
+      }
+    })();
+    lines.push({ text: verb, emphasis: "info" });
   } else {
-    // Strike or Flank — both swing.
-    const modifiers =
-      isTactical && tacticalOption === "flank"
-        ? { damageMult: 1.5, alwaysHit: false }
-        : {};
-
-    // Flank: 50% miss roll BEFORE the d20 attack. On miss, swing aborts.
-    if (isTactical && tacticalOption === "flank" && rng.chance(0.5)) {
-      lines.push({ text: "You overcommit on the flank and miss.", emphasis: "info" });
-    } else {
-      // multi_hit adds N extra swings; each rolls independently.
-      const multi = getActiveEffectValue(s, equipped, "multi_hit");
-      const swings = 1 + multi;
-      for (let i = 0; i < swings; i++) {
-        if (s.monsterHp <= 0) break;
-        const swing = rollPlayerAttack(s, equipped, rng, modifiers);
-        if (!swing.hit) {
-          lines.push({
-            text:
-              (swing.fumble
-                ? "You fumble the swing."
-                : "Your strike goes wide.") + playerRollTag(swing),
-            emphasis: "info",
-          });
-          continue;
-        }
-        const applied = applyPlayerDamage(s, equipped, swing.damage);
-        s = applied.state;
-        const critTag = swing.crit ? " — CRITICAL!" : "";
-        const pierceTag = swing.pierced ? " (armor pierced)" : "";
-        const elementTag =
-          swing.elementTag === "weak"
-            ? " (elementally weak)"
-            : swing.elementTag === "resist"
-              ? " (resisted)"
-              : "";
+    // Attack — the only swing path. multi_hit adds N extra swings; each
+    // rolls independently. Focus is consumed by the FIRST swing only —
+    // subsequent multi-hit swings revert to baseline.
+    const wasFocusPrimed = s.focusPrimed;
+    if (wasFocusPrimed) s = { ...s, focusPrimed: false };
+    const multi = getActiveEffectValue(s, equipped, "multi_hit");
+    const swings = 1 + multi;
+    for (let i = 0; i < swings; i++) {
+      if (s.monsterHp <= 0) break;
+      const swing = rollPlayerAttack(s, equipped, rng, {
+        focusPrimed: i === 0 && wasFocusPrimed,
+      });
+      if (!swing.hit) {
         lines.push({
-          text: `You hit for ${swing.damage}${critTag}${pierceTag}${elementTag}.${playerRollTag(swing)}`,
-          emphasis: swing.crit ? "drama" : "damage",
+          text:
+            (swing.fumble
+              ? "You fumble the swing."
+              : "Your strike goes wide.") + playerRollTag(swing),
+          emphasis: "info",
         });
-        if (applied.lifesteal > 0) {
-          lines.push({
-            text: `Lifesteal restores ${applied.lifesteal} HP.`,
-            emphasis: "heal",
-          });
-        }
-        if (applied.bleedApplied) {
-          lines.push({
-            text: "The wound bleeds.",
-            emphasis: "drama",
-          });
-        }
+        continue;
+      }
+      const applied = applyPlayerDamage(s, equipped, swing.damage);
+      s = applied.state;
+      const critTag = swing.crit ? " — CRITICAL!" : "";
+      const pierceTag = swing.pierced ? " (armor pierced)" : "";
+      const elementTag =
+        swing.elementTag === "weak"
+          ? " (elementally weak)"
+          : swing.elementTag === "resist"
+            ? " (resisted)"
+            : "";
+      lines.push({
+        text: `You hit for ${swing.damage}${critTag}${pierceTag}${elementTag}.${playerRollTag(swing)}`,
+        emphasis: swing.crit ? "drama" : "damage",
+      });
+      if (applied.lifesteal > 0) {
+        lines.push({
+          text: `Lifesteal restores ${applied.lifesteal} HP.`,
+          emphasis: "heal",
+        });
+      }
+      if (applied.bleedApplied) {
+        lines.push({
+          text: "The wound bleeds.",
+          emphasis: "drama",
+        });
       }
     }
   }

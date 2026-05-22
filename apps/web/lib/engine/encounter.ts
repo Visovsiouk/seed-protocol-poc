@@ -2,48 +2,37 @@
  * Encounter generators and non-combat resolvers.
  *
  * Three archetypes:
- *   - combat   — handed off to `resolveRound` in combat.ts
- *   - hazard   — single-roll, gated by armor's `dodge_chance` (or flat 50%)
- *   - discovery — narrative beat; one of two flavor outcomes is "refund",
- *                 the other is "lore"
+ *   - combat — handed off to `resolveRound` in combat.ts
+ *   - trial  — visible skill check (d20 + armor-derived bonus vs DC). Pass
+ *              heals; fail costs HP. Room clears either way.
+ *   - ledger — once-per-run beat at a fixed depth before the boss; the
+ *              player picks one of the upcoming boss's two baked effects
+ *              to suppress for the boss fight (or skips).
  *
- * Boss rooms always pick `combat` (forced by the caller). Tactical-vs-flavor
- * action choices for combat encounters are decided here too (one combat
- * round in three offers Strike/Brace/Flank; the rest just present flavor
- * verbs that all resolve as Strike — see combat.ts).
- *
- * Everything here is pure: takes an `Rng`, returns decisions. State updates
- * happen in `index.ts` orchestration.
+ * Boss rooms always pick `combat` (forced by the caller). Everything here
+ * is pure: takes an `Rng`, returns decisions. State updates happen in
+ * `index.ts` orchestration.
  */
 
 import type {
   AssetCard,
+  CombatState,
   EncounterArchetype,
   MonsterDef,
   RoomTemplate,
 } from "./types";
 import type { Rng } from "./rng";
 import { getActiveEffectValue } from "./catalog";
-import type { CombatState } from "./types";
 
 /**
- * Archetype mix — 70% combat / 20% hazard / 10% discovery.
- * Boss rooms are forced to combat by the caller; we don't special-case here.
+ * Non-boss archetype mix — 80% combat / 20% trial. Ledger rooms are
+ * forced at a specific depth by the caller, not rolled here. Boss rooms
+ * are forced to combat by the caller too.
  */
-export function pickArchetype(rng: Rng): EncounterArchetype {
-  const r = rng.next();
-  if (r < 0.7) return "combat";
-  if (r < 0.9) return "hazard";
-  return "discovery";
-}
-
-/**
- * One combat round in three offers the tactical triplet. Decided
- * per-encounter, not per-round — the encounter's mode is set on creation
- * and never flips mid-encounter.
- */
-export function pickCombatChoiceMode(rng: Rng): "tactical" | "flavor" {
-  return rng.next() < 1 / 3 ? "tactical" : "flavor";
+export function pickArchetype(
+  rng: Rng,
+): Exclude<EncounterArchetype, "ledger"> {
+  return rng.next() < 0.8 ? "combat" : "trial";
 }
 
 /**
@@ -51,7 +40,7 @@ export function pickCombatChoiceMode(rng: Rng): "tactical" | "flavor" {
  *
  * Weighting scheme: the room template's `monsterPool` is treated as the
  * candidate set, and each candidate is weighted by `1 / (1 + |monster.hp -
- * targetHp|)` where `targetHp ≈ 8 + depth * 4`. Stronger monsters (higher
+ * targetHp|)` where `targetHp ≈ 4 * depth`. Stronger monsters (higher
  * HP) drift in as depth rises; weak ones still appear sometimes, just less
  * often. The exact curve is a PoC heuristic — the contract is "deeper
  * rooms favor harder monsters."
@@ -83,53 +72,84 @@ export function pickMonster(
   return candidates[candidates.length - 1]!.m;
 }
 
-export type HazardResult = {
+export type TrialAbility = "agility" | "endurance";
+
+export type TrialPlan = {
+  ability: TrialAbility;
+  dc: number;
+  bonus: number;
+};
+
+/**
+ * Computes the player's bonus on a trial roll from equipped armor.
+ *
+ *   agility   → ceil(dodge_chance / 10)  (a 25% dodge armor gives +3)
+ *   endurance → ceil(damage_reduction / 2) + max(0, ceil(hpBonus / 10))
+ *
+ * Bare armor or no relevant effect → bonus 0; the d20 + DC math still
+ * works (a depth-3 trial at DC 11 + 0 bonus is ~50/50).
+ */
+export function trialBonusFor(
+  ability: TrialAbility,
+  equipped: { weapon?: AssetCard; armor?: AssetCard },
+): number {
+  // Synthetic state so getActiveEffectValue can be reused — only reads
+  // `suppressedEffects` and we have none in this context.
+  const fakeState = { suppressedEffects: [] } as unknown as CombatState;
+  if (ability === "agility") {
+    const dodge = getActiveEffectValue(fakeState, equipped, "dodge_chance");
+    return Math.ceil(dodge / 10);
+  }
+  const dr = getActiveEffectValue(fakeState, equipped, "damage_reduction");
+  const hpBonus = equipped.armor?.hpBonus ?? 0;
+  return Math.ceil(dr / 2) + Math.max(0, Math.ceil(hpBonus / 10));
+}
+
+/**
+ * Builds the trial room's plan. DC scales with depth (8 + depth); the
+ * ability is picked deterministically off the rng. Bonus is locked in
+ * at generation time so the player sees what they're rolling against.
+ */
+export function planTrial(
+  rng: Rng,
+  equipped: { weapon?: AssetCard; armor?: AssetCard },
+  depth: number,
+): TrialPlan {
+  const ability: TrialAbility = rng.chance(0.5) ? "agility" : "endurance";
+  const dc = 8 + depth;
+  const bonus = trialBonusFor(ability, equipped);
+  return { ability, dc, bonus };
+}
+
+export type TrialResult = {
   success: boolean;
-  /** Dodge chance used in the roll, in [0, 1]. 0.5 when no armor effect. */
-  rollChance: number;
-  /** Damage taken on failure (small, scaled to depth). */
+  dieRoll: number;
+  total: number;
+  /** Heal on success (small, depth-scaled). */
+  healOnSuccess: number;
+  /** HP loss on failure (small, depth-scaled). */
   damageOnFail: number;
 };
 
 /**
- * Hazard resolver. One roll, gated by the equipped armor's
- * `dodge_chance` (catalog field) — or a flat 50% if no relevant effect is
- * present.
- *
- * `damageOnFail` scales with depth: 2 + floor(depth / 2). Caps at the
- * player's current HP minus 1 in the caller (we don't kill the player on
- * a hazard fail — they lose HP, run continues; the loot table doesn't
- * award a hazard-fail prize).
+ * Trial resolver. Rolls d20 + plan.bonus vs plan.dc. Pass: small heal
+ * (2 + floor(depth / 2)). Fail: small HP loss (2 + floor(depth / 2)).
  */
-export function resolveHazard(
+export function resolveTrial(
   rng: Rng,
-  equipped: { weapon?: AssetCard; armor?: AssetCard },
+  plan: TrialPlan,
   depth: number,
-): HazardResult {
-  // Build a synthetic CombatState shim because getActiveEffectValue wants
-  // one. Hazards don't carry combat state, but the only field it reads is
-  // suppressedEffects (which is empty here).
-  const fakeState = { suppressedEffects: [] } as unknown as CombatState;
-  const dodge = getActiveEffectValue(fakeState, equipped, "dodge_chance");
-  const rollChance = dodge > 0 ? Math.min(1, dodge / 100) : 0.5;
-  const success = rng.chance(rollChance);
-  const damageOnFail = 2 + Math.floor(depth / 2);
-  return { success, rollChance, damageOnFail };
+): TrialResult {
+  const dieRoll = rng.rollDie(20);
+  const total = dieRoll + plan.bonus;
+  const success = total >= plan.dc;
+  const tick = 2 + Math.floor(depth / 2);
+  return {
+    success,
+    dieRoll,
+    total,
+    healOnSuccess: success ? tick : 0,
+    damageOnFail: success ? 0 : tick,
+  };
 }
 
-export type DiscoveryOutcome = "refund" | "lore";
-
-/**
- * Discovery resolver. Player picks between two flavor-equivalent
- * options; one is the "refund" outcome (small emission-budget refund visible
- * to the realm), the other is "lore" (small extraField appended to the next
- * minted item). The mapping is randomized per encounter so neither option
- * is consistently better.
- *
- * Returns a 2-tuple where `outcomes[i]` corresponds to player choice index i.
- */
-export function rollDiscoveryOutcomes(
-  rng: Rng,
-): [DiscoveryOutcome, DiscoveryOutcome] {
-  return rng.chance(0.5) ? ["refund", "lore"] : ["lore", "refund"];
-}

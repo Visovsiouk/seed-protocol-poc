@@ -43,7 +43,6 @@ import {
   equipItem as engineEquipItem,
   step as engineStep,
 } from "@/lib/engine";
-import { getFlavorBank } from "@/lib/flavor";
 import { ActionChoices } from "./ActionChoices";
 import { BossPhaseBanner } from "./BossPhaseBanner";
 import { CombatLog } from "./CombatLog";
@@ -180,7 +179,6 @@ export function EncounterFrame({
     });
   }, [equipped]);
 
-  const bank = useMemo(() => getFlavorBank(state.preset), [state.preset]);
   const combat =
     state.encounter?.kind === "combat" ? state.encounter.combat : undefined;
 
@@ -349,7 +347,7 @@ export function EncounterFrame({
       ) : state.encounter ? (
         <ActionChoices
           encounter={state.encounter}
-          combatVerbs={bank.combatVerbs}
+          equipped={state.equipped}
           disabled={busy}
           onChoose={handleChoose}
         />

@@ -109,6 +109,10 @@ function initialCombat(
     monsterHp,
     bossPhase: isBoss ? 1 : undefined,
     bracedThisTurn: false,
+    guaranteedDodgeThisTurn: false,
+    regenDoubledThisTurn: false,
+    thornsDoubledThisTurn: false,
+    focusPrimed: false,
     bleedStacks: 0,
     suppressedEffects: [],
     turn: 0,
@@ -137,7 +141,7 @@ function simulate(
     const rng = createRng(seedHex(Number(BigInt(seed) ^ BigInt(turns + 1))));
     const result = resolveRound(
       combat,
-      { kind: "tactical", option: "strike" },
+      { kind: "attack" },
       { weapon: loadout.weapon, armor: loadout.armor },
       rng,
     );

@@ -32,7 +32,7 @@ describe("createBossEncounter", () => {
     const s = baseState();
     expect(s.bossPhase).toBe(1);
     expect(s.monsterHp).toBe(lich.baseHp);
-    expect(s.monster).toBe(lich);
+    expect(s.monster).toEqual(lich);
   });
 
   it("starts with no suppressions and no bleed stacks", () => {
@@ -114,6 +114,10 @@ describe("checkPhaseTransition", () => {
       },
       monsterHp: 1,
       bracedThisTurn: false,
+      guaranteedDodgeThisTurn: false,
+      regenDoubledThisTurn: false,
+      thornsDoubledThisTurn: false,
+      focusPrimed: false,
       bleedStacks: 0,
       suppressedEffects: [],
       turn: 0,

@@ -77,6 +77,10 @@ function makeState(overrides: Partial<CombatState> = {}): CombatState {
     monster: baseMonster,
     monsterHp: 30,
     bracedThisTurn: false,
+    guaranteedDodgeThisTurn: false,
+    regenDoubledThisTurn: false,
+    thornsDoubledThisTurn: false,
+    focusPrimed: false,
     bleedStacks: 0,
     suppressedEffects: [],
     turn: 0,
@@ -84,53 +88,39 @@ function makeState(overrides: Partial<CombatState> = {}): CombatState {
   };
 }
 
-const strike: ActionChoice = { kind: "tactical", option: "strike" };
-const brace: ActionChoice = { kind: "tactical", option: "brace" };
-const flank: ActionChoice = { kind: "tactical", option: "flank" };
+const attack: ActionChoice = { kind: "attack" };
+const secondary: ActionChoice = { kind: "secondary" };
 
 describe("resolveRound — base mechanics", () => {
   it("Strike: player swings and the monster swings back", () => {
     const state = makeState();
     const equipped = { weapon: card("weapon", 6, 1, 0, 0) };
     const rng = createRng(SEED);
-    const r = resolveRound(state, strike, equipped, rng);
+    const r = resolveRound(state, attack, equipped, rng);
     expect(r.state.turn).toBe(1);
     // The state changed somehow (HP move on at least one side, or a miss
     // line emitted). We assert via narration line count being non-zero.
     expect(r.lines.length).toBeGreaterThan(0);
   });
 
-  it("Brace: player skips the swing and the monster gets +2 AC working against them", () => {
-    // We make the monster's d20 unable to crit through the bumped AC. Easier
-    // check: with Brace, monsterHp never changes during the player's swing.
+  it("Secondary (Brace via damage_reduction armor): player skips the swing and gains +2 AC", () => {
+    // With Brace, monsterHp never changes during the player's swing.
     const state = makeState();
-    const equipped = { weapon: card("weapon", 12, 4, 0, 0) }; // high damage to be unambiguous
+    const equipped = {
+      weapon: card("weapon", 12, 4, 0, 0), // high damage to be unambiguous
+      armor: card("armor", 6, 0, 2, 10, [{ name: "damage_reduction", value: 1 }]),
+    };
     const rng = createRng(SEED);
-    const r = resolveRound(state, brace, equipped, rng);
+    const r = resolveRound(state, secondary, equipped, rng);
     expect(r.state.monsterHp).toBe(state.monsterHp);
     expect(r.lines.some((l) => /brace/i.test(l.text))).toBe(true);
-  });
-
-  it("Flank: ~50% of rounds skip the swing entirely", () => {
-    const equipped = { weapon: card("weapon", 6, 1, 0, 0) };
-    let missedSwingRounds = 0;
-    for (let i = 0; i < 100; i++) {
-      const seedHex = i.toString(16).padStart(64, "0");
-      const rng = createRng(`0x${seedHex}` as `0x${string}`);
-      const state = makeState();
-      const r = resolveRound(state, flank, equipped, rng);
-      if (r.lines.some((l) => /overcommit/i.test(l.text))) missedSwingRounds++;
-    }
-    // ~50% expected, ±15% slack for the small sample
-    expect(missedSwingRounds).toBeGreaterThan(35);
-    expect(missedSwingRounds).toBeLessThan(65);
   });
 
   it("Player can defeat the monster in one strike when damage exceeds HP", () => {
     const state = makeState({ monsterHp: 1 });
     const equipped = { weapon: card("weapon", 12, 8, 0, 0) }; // guaranteed-hit-ish
     const rng = createRng(SEED);
-    const r = resolveRound(state, strike, equipped, rng);
+    const r = resolveRound(state, attack, equipped, rng);
     // If the d20 missed we won't see defeat, but at +8 vs AC 12 we almost
     // always hit; loop a few seeds in case.
     let defeated = r.monsterDefeated;
@@ -138,7 +128,7 @@ describe("resolveRound — base mechanics", () => {
       const seedHex = s.toString(16).padStart(64, "0");
       const r2 = resolveRound(
         state,
-        strike,
+        attack,
         equipped,
         createRng(`0x${seedHex}` as `0x${string}`),
       );
@@ -155,7 +145,7 @@ describe("resolveRound — base mechanics", () => {
       const seedHex = i.toString(16).padStart(64, "0");
       const r = resolveRound(
         state,
-        brace, // Brace doesn't grant immunity, only +2 AC
+        secondary, // No armor → Focus (next attack auto-crits); no defensive boost
         equipped,
         createRng(`0x${seedHex}` as `0x${string}`),
       );
@@ -173,7 +163,7 @@ describe("resolveRound — catalog effects", () => {
       armor: card("armor", 6, 0, 2, 10, [{ name: "regen", value: 3 }]),
     };
     const rng = createRng(SEED);
-    const r = resolveRound(state, brace, equipped, rng); // Brace → monster might miss too
+    const r = resolveRound(state, secondary, equipped, rng); // Brace → monster might miss too
     expect(r.lines.some((l) => /regenerate/i.test(l.text))).toBe(true);
     expect(r.state.playerHp).toBeGreaterThanOrEqual(20);
   });
@@ -188,7 +178,7 @@ describe("resolveRound — catalog effects", () => {
     for (let i = 0; i < 30; i++) {
       const seedHex = i.toString(16).padStart(64, "0");
       const rng = createRng(`0x${seedHex}` as `0x${string}`);
-      const r = resolveRound(makeState(), strike, equipped, rng);
+      const r = resolveRound(makeState(), attack, equipped, rng);
       totalAttackLines += r.lines.filter((l) =>
         /You hit|strike goes wide/.test(l.text),
       ).length;
@@ -203,7 +193,7 @@ describe("resolveRound — catalog effects", () => {
       weapon: card("weapon", 12, 8, 0, 0, [{ name: "multi_hit", value: 2 }]),
     };
     const rng = createRng(SEED);
-    const r = resolveRound(state, strike, equipped, rng);
+    const r = resolveRound(state, attack, equipped, rng);
     if (r.monsterDefeated) {
       // We expect at most one "hit" line beyond the killing blow's. Be lenient:
       // just confirm monsterHp clamps to 0 (no negative).
@@ -219,12 +209,11 @@ describe("resolveRound — catalog effects", () => {
     // Hit guaranteed-ish at +6 vs AC 12. With 12-side die and crit logic
     // potentially compounding, we just check the cap holds.
     const rng = createRng(SEED);
-    const r = resolveRound(state, strike, equipped, rng);
+    const r = resolveRound(state, attack, equipped, rng);
     expect(r.state.playerHp).toBeLessThanOrEqual(25);
   });
 
   it("bleed applies stacks; postTurn ticks the monster", () => {
-    const state = makeState({ monsterHp: 30 });
     const equipped = {
       weapon: card("weapon", 12, 6, 0, 0, [{ name: "bleed", value: 3 }]),
     };
@@ -233,7 +222,7 @@ describe("resolveRound — catalog effects", () => {
     for (let i = 0; i < 20 && !found; i++) {
       const seedHex = i.toString(16).padStart(64, "0");
       const rng = createRng(`0x${seedHex}` as `0x${string}`);
-      const r = resolveRound(makeState(), strike, equipped, rng);
+      const r = resolveRound(makeState(), attack, equipped, rng);
       if (r.lines.some((l) => /wound bleeds/.test(l.text))) {
         expect(r.state.bleedStacks).toBeLessThanOrEqual(3);
         // postTurn tick already fired this round (stacks reduced by one OR
@@ -254,7 +243,7 @@ describe("resolveRound — catalog effects", () => {
     let dodgeCount = 0;
     for (let i = 0; i < 100; i++) {
       const seedHex = i.toString(16).padStart(64, "0");
-      const r = resolveRound(makeState(), strike, equipped, createRng(`0x${seedHex}` as `0x${string}`));
+      const r = resolveRound(makeState(), attack, equipped, createRng(`0x${seedHex}` as `0x${string}`));
       if (r.lines.some((l) => /You dodge/.test(l.text))) dodgeCount++;
     }
     expect(dodgeCount).toBeGreaterThan(10); // ~25% expected
@@ -269,7 +258,7 @@ describe("resolveRound — catalog effects", () => {
     let reductionLines = 0;
     for (let i = 0; i < 80; i++) {
       const seedHex = i.toString(16).padStart(64, "0");
-      const r = resolveRound(makeState(), strike, equipped, createRng(`0x${seedHex}` as `0x${string}`));
+      const r = resolveRound(makeState(), attack, equipped, createRng(`0x${seedHex}` as `0x${string}`));
       if (r.lines.some((l) => /reduced/.test(l.text))) reductionLines++;
     }
     expect(reductionLines).toBeGreaterThan(0);
@@ -283,7 +272,7 @@ describe("resolveRound — catalog effects", () => {
     let thornsLines = 0;
     for (let i = 0; i < 50; i++) {
       const seedHex = i.toString(16).padStart(64, "0");
-      const r = resolveRound(makeState(), brace, equipped, createRng(`0x${seedHex}` as `0x${string}`));
+      const r = resolveRound(makeState(), secondary, equipped, createRng(`0x${seedHex}` as `0x${string}`));
       if (r.lines.some((l) => /Thorns/.test(l.text))) thornsLines++;
     }
     expect(thornsLines).toBeGreaterThan(0);
@@ -296,7 +285,7 @@ describe("resolveRound — catalog effects", () => {
     let crits = 0;
     for (let i = 0; i < 100; i++) {
       const seedHex = i.toString(16).padStart(64, "0");
-      const r = resolveRound(makeState(), strike, equipped, createRng(`0x${seedHex}` as `0x${string}`));
+      const r = resolveRound(makeState(), attack, equipped, createRng(`0x${seedHex}` as `0x${string}`));
       if (r.lines.some((l) => /CRITICAL/.test(l.text))) crits++;
     }
     // ~25% but only on hits; with +4 vs AC 12 we hit ~90% of the time → ~22%
@@ -318,7 +307,7 @@ describe("resolveRound — boss phase 2 suppression", () => {
       armor: card("armor", 6, 0, 2, 10, [{ name: "regen", value: 3 }]),
     };
     const rng = createRng(SEED);
-    const r = resolveRound(state, brace, equipped, rng);
+    const r = resolveRound(state, secondary, equipped, rng);
     expect(r.lines.some((l) => /regenerate/i.test(l.text))).toBe(false);
   });
 });
@@ -327,8 +316,8 @@ describe("resolveRound — determinism", () => {
   it("same seed + state → same trace", () => {
     const state = makeState();
     const equipped = { weapon: card("weapon", 6, 1, 0, 0) };
-    const a = resolveRound(state, strike, equipped, createRng(SEED));
-    const b = resolveRound(state, strike, equipped, createRng(SEED));
+    const a = resolveRound(state, attack, equipped, createRng(SEED));
+    const b = resolveRound(state, attack, equipped, createRng(SEED));
     expect(a.state).toEqual(b.state);
     expect(a.lines).toEqual(b.lines);
   });
@@ -343,7 +332,7 @@ describe("resolveRound — determinism", () => {
       let s = makeState();
       const lines: string[] = [];
       for (let i = 0; i < 6; i++) {
-        const r = resolveRound(s, strike, equipped, rng);
+        const r = resolveRound(s, attack, equipped, rng);
         s = r.state;
         for (const l of r.lines) lines.push(l.text);
         if (r.monsterDefeated || r.playerDefeated) break;
@@ -363,7 +352,7 @@ describe("resolveRound — determinism", () => {
       typeof v === "bigint" ? v.toString() : v,
     ));
     const equipped = { weapon: card("weapon", 6, 1, 0, 0) };
-    resolveRound(state, strike, equipped, createRng(SEED));
+    resolveRound(state, attack, equipped, createRng(SEED));
     expect(
       JSON.parse(JSON.stringify(state, (_, v) =>
         typeof v === "bigint" ? v.toString() : v,
@@ -459,7 +448,7 @@ describe("resolveRound — elements", () => {
       const seedHex = i.toString(16).padStart(64, "0");
       const r = resolveRound(
         makeState({ monster: weakMonster }),
-        strike,
+        attack,
         equipped,
         createRng(`0x${seedHex}` as `0x${string}`),
       );
@@ -481,7 +470,7 @@ describe("resolveRound — elements", () => {
       const seedHex = i.toString(16).padStart(64, "0");
       const r = resolveRound(
         makeState({ monster: resistMonster }),
-        strike,
+        attack,
         equipped,
         createRng(`0x${seedHex}` as `0x${string}`),
       );
@@ -504,7 +493,7 @@ describe("resolveRound — elements", () => {
       const seedHex = i.toString(16).padStart(64, "0");
       const r = resolveRound(
         makeState({ monster: fireMonster, playerAc: 8 }), // low AC so monster hits often
-        brace,
+        secondary,
         equipped,
         createRng(`0x${seedHex}` as `0x${string}`),
       );
@@ -523,7 +512,7 @@ describe("resolveRound — roll tags in narration", () => {
       const seedHex = i.toString(16).padStart(64, "0");
       const r = resolveRound(
         makeState(),
-        strike,
+        attack,
         equipped,
         createRng(`0x${seedHex}` as `0x${string}`),
       );
@@ -547,7 +536,7 @@ describe("resolveRound — roll tags in narration", () => {
       const seedHex = i.toString(16).padStart(64, "0");
       const r = resolveRound(
         makeState(),
-        strike,
+        attack,
         equipped,
         createRng(`0x${seedHex}` as `0x${string}`),
       );
@@ -571,7 +560,7 @@ describe("resolveRound — roll tags in narration", () => {
       const seedHex = i.toString(16).padStart(64, "0");
       const r = resolveRound(
         makeState({ monster: hardMonster, monsterHp: 999 }),
-        strike,
+        attack,
         equipped,
         createRng(`0x${seedHex}` as `0x${string}`),
       );
@@ -592,7 +581,7 @@ describe("resolveRound — roll tags in narration", () => {
       const seedHex = i.toString(16).padStart(64, "0");
       const r = resolveRound(
         makeState(),
-        strike,
+        attack,
         equipped,
         createRng(`0x${seedHex}` as `0x${string}`),
       );
@@ -606,13 +595,16 @@ describe("resolveRound — roll tags in narration", () => {
   });
 
   it("monster hit lines show labelled hit + dmg sections", () => {
-    const equipped = { weapon: card("weapon", 4, 0, 0, 0) };
+    const equipped = {
+      weapon: card("weapon", 4, 0, 0, 0),
+      armor: card("armor", 6, 0, 0, 0, [{ name: "damage_reduction", value: 1 }]),
+    };
     let saw = false;
     for (let i = 0; i < 30 && !saw; i++) {
       const seedHex = i.toString(16).padStart(64, "0");
       const r = resolveRound(
         makeState({ playerAc: 8 }),
-        brace,
+        secondary,
         equipped,
         createRng(`0x${seedHex}` as `0x${string}`),
       );
@@ -637,7 +629,7 @@ describe("resolveRound — damage formula", () => {
       const seedHex = i.toString(16).padStart(64, "0");
       const r = resolveRound(
         makeState({ monsterHp: 999 }),
-        strike,
+        attack,
         equipped,
         createRng(`0x${seedHex}` as `0x${string}`),
       );
@@ -679,7 +671,7 @@ describe("resolveRound — damage formula", () => {
       const seedHex = i.toString(16).padStart(64, "0");
       const r = resolveRound(
         makeState({ monsterHp: 999 }),
-        strike,
+        attack,
         equipped,
         createRng(`0x${seedHex}` as `0x${string}`),
       );
@@ -708,7 +700,7 @@ describe("resolveRound — nat-20 and nat-1", () => {
       const seedHex = i.toString(16).padStart(64, "0");
       const r = resolveRound(
         makeState({ monster: fortressMonster, monsterHp: 999 }),
-        strike,
+        attack,
         equipped,
         createRng(`0x${seedHex}` as `0x${string}`),
       );
@@ -731,7 +723,7 @@ describe("resolveRound — nat-20 and nat-1", () => {
       const seedHex = i.toString(16).padStart(64, "0");
       const r = resolveRound(
         makeState(),
-        strike,
+        attack,
         equipped,
         createRng(`0x${seedHex}` as `0x${string}`),
       );
@@ -750,7 +742,7 @@ describe("resolveRound — nat-20 and nat-1", () => {
       const seedHex = i.toString(16).padStart(64, "0");
       const r = resolveRound(
         makeState({ playerAc: 8 }),
-        brace,
+        secondary,
         equipped,
         createRng(`0x${seedHex}` as `0x${string}`),
       );

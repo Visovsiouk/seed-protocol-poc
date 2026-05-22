@@ -430,7 +430,7 @@ export type BossDef = {
   resistTo?: Element;
 };
 
-export type EncounterArchetype = "combat" | "hazard" | "discovery";
+export type EncounterArchetype = "combat" | "trial" | "ledger";
 
 export type RoomTemplate = {
   id: string;
@@ -449,8 +449,27 @@ export type CombatState = {
   monster: MonsterDef | BossDef;
   monsterHp: number;
   bossPhase?: 1 | 2;
-  /** True iff the player chose Brace this turn — consumed by the next incoming hit. */
+  /**
+   * Per-turn defensive flags set by the Secondary action. All four are
+   * cleared at the start of the next round (consumed by the same round's
+   * monster swing). The active flag depends on the equipped armor:
+   *   - `damage_reduction` armor → bracedThisTurn (+2 AC for incoming swing)
+   *   - `dodge_chance` armor    → guaranteedDodgeThisTurn (auto-dodge)
+   *   - `regen` armor           → regenDoubledThisTurn (regen × 2)
+   *   - `thorns` armor          → thornsDoubledThisTurn (thorns × 2)
+   * Bare armor (no defensive effect) sets focusPrimed instead, which
+   * persists across turns until consumed by the next Attack.
+   */
   bracedThisTurn: boolean;
+  guaranteedDodgeThisTurn: boolean;
+  regenDoubledThisTurn: boolean;
+  thornsDoubledThisTurn: boolean;
+  /**
+   * Set by Secondary on bare/no-effect armor. The NEXT Attack auto-crits
+   * (forced `crit = true`) and adds +2 to-hit. Persists across turns —
+   * only consumed by an Attack action, not by ending the round.
+   */
+  focusPrimed: boolean;
   /** Turns of bleed DoT remaining on the monster (per-attacker is overkill for PoC). */
   bleedStacks: number;
   /** Suppressed catalog effects on the player, set at boss phase 2 if applicable. */
@@ -463,15 +482,35 @@ export type EncounterState =
       kind: "combat";
       archetype: "combat";
       combat: CombatState;
-      /** Whether this combat round offers the tactical triplet or flavor verbs. */
-      choice: "tactical" | "flavor";
     }
-  | { kind: "hazard"; archetype: "hazard"; pendingResolve: boolean }
+  /**
+   * Visible skill check. The player sees the DC and their bonus up
+   * front, taps Attempt, rolls d20 + bonus. Success → small heal;
+   * failure → small HP loss (scales with depth).
+   */
   | {
-      kind: "discovery";
-      archetype: "discovery";
-      /** Two flavor-bank keys for the player to pick between. */
-      options: [string, string];
+      kind: "trial";
+      archetype: "trial";
+      /** Ability axis — drives which armor effect feeds the bonus. */
+      ability: "agility" | "endurance";
+      /** Static DC the player must meet or exceed. */
+      dc: number;
+      /** Player's bonus from equipped armor, locked at room generation. */
+      bonus: number;
+      /** Flavor line describing the obstacle (e.g. "leap the gap"). */
+      flavor: string;
+    }
+  /**
+   * Ledger room — once-per-run at a fixed depth. Player picks one of
+   * the upcoming boss's two baked-in catalog effects to suppress for
+   * the boss fight (or skips to keep both active).
+   */
+  | {
+      kind: "ledger";
+      archetype: "ledger";
+      bossName: string;
+      /** The two baked effects on the upcoming boss. */
+      effects: [CatalogEffectName, CatalogEffectName];
     };
 
 export type LootRoll = {
@@ -582,12 +621,39 @@ export type RunState = {
    * attempt. Reset to false on seed-mercy respawn.
    */
   firstWeaponDropped: boolean;
+  /**
+   * Catalog effect names the player chose to suppress on the upcoming
+   * boss via the Ledger room (depth 3). Applied at boss creation time —
+   * the boss's `bakedEffects` array is filtered against this list. At
+   * most one entry today; the list shape leaves room for stacked
+   * suppression from future ledger beats. Reset on seed-mercy respawn.
+   */
+  runSuppressedBossEffects: CatalogEffectName[];
+  /**
+   * True once this attempt has visited a Ledger room. Gates the depth-3
+   * override so the room only fires once per attempt. Reset on respawn.
+   */
+  ledgerConsumed: boolean;
 };
 
+/**
+ * Player input to `step()`. The set of acceptable choices depends on
+ * the active encounter's `kind`:
+ *
+ *   combat → "attack" always; "secondary" only when the current monster
+ *     is a boss. Secondary's mechanical effect is resolved from the
+ *     player's equipped armor (see `combat.ts` for the mapping).
+ *
+ *   trial → "trial".
+ *
+ *   ledger → "ledger" with `suppress` set to one of the boss's two
+ *     baked effects, or null to skip.
+ */
 export type ActionChoice =
-  | { kind: "tactical"; option: "strike" | "brace" | "flank" }
-  | { kind: "flavor"; verb: string; index: 0 | 1 }
-  | { kind: "discovery"; index: 0 | 1 };
+  | { kind: "attack" }
+  | { kind: "secondary" }
+  | { kind: "trial" }
+  | { kind: "ledger"; suppress: CatalogEffectName | null };
 
 export type NarrationLine = {
   text: string;

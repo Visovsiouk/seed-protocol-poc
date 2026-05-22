@@ -47,26 +47,33 @@ function makeRun(overrides: Partial<Parameters<typeof startRun>[0]> = {}) {
   });
 }
 
-const strike: ActionChoice = { kind: "tactical", option: "strike" };
-const flank: ActionChoice = { kind: "tactical", option: "flank" };
+const attack: ActionChoice = { kind: "attack" };
 
-/** Helper: keep stepping with `strike` until the room clears. */
+/**
+ * Helper: keep stepping with whichever choice resolves the current
+ * encounter kind until the room clears.
+ *
+ *   combat → attack
+ *   trial  → { kind: "trial" } (single roll resolves the room either way)
+ *   ledger → { kind: "ledger", suppress: null } (skip — no suppression)
+ */
 function clearRoom(state: RunState): RunState {
   let s = state;
   for (let i = 0; i < 50; i++) {
     if (!s.encounter) return s;
-    if (s.encounter.kind === "discovery") {
-      const r = step(s, { kind: "discovery", index: 0 });
-      s = r.state;
-      continue;
+    let choice: ActionChoice;
+    switch (s.encounter.kind) {
+      case "trial":
+        choice = { kind: "trial" };
+        break;
+      case "ledger":
+        choice = { kind: "ledger", suppress: null };
+        break;
+      case "combat":
+      default:
+        choice = attack;
     }
-    if (s.encounter.kind === "hazard") {
-      // Hazard takes a single Strike-equivalent step; any choice resolves it
-      const r = step(s, strike);
-      s = r.state;
-      continue;
-    }
-    const r = step(s, strike);
+    const r = step(s, choice);
     s = r.state;
   }
   return s;
@@ -104,22 +111,31 @@ describe("engine.startRun", () => {
 
 describe("engine.step + advance", () => {
   it("step on a combat encounter advances combat turn or clears the room", () => {
-    const { state } = makeRun();
-    expect(state.encounter?.kind).toBeDefined();
-    const r = step(state, strike);
+    // Pin the seed so the depth-1 encounter is combat — trial/fork would
+    // take a different (single-step) clear path.
+    let s: RunState | undefined;
+    for (let i = 0; i < 50; i++) {
+      const run = makeRun({ rngSeed: seedHex(i) });
+      if (run.state.encounter?.kind === "combat") {
+        s = run.state;
+        break;
+      }
+    }
+    expect(s).toBeDefined();
+    const r = step(s!, attack);
     // Either the room cleared (encounter null + pendingLoot) or the turn ticked.
     if (r.state.encounter === null) {
       expect(r.state.pendingLoot).toBeDefined();
       expect(r.events.some((e) => e.type === "LootDropped")).toBe(true);
     } else {
-      expect(r.state.encounter.kind).toBe(state.encounter?.kind);
+      expect(r.state.encounter.kind).toBe("combat");
     }
   });
 
   it("advance increments depth and produces a new encounter", () => {
     const { state } = makeRun();
     const cleared = clearRoom(state);
-    const after = commitLootMint(cleared);
+    const after = cleared.pendingLoot ? commitLootMint(cleared) : cleared;
     const adv = advance(after, "lich");
     expect(adv.state.depth).toBe(state.depth + 1);
     expect(adv.state.encounter).not.toBeNull();
@@ -175,18 +191,16 @@ describe("engine boss-depth handling", () => {
   });
 
   it("boss clear emits BossCleared and sets bossCleared", () => {
-    // Set up a state at BOSS_DEPTH with weak boss settings by carrying a strong loadout.
-    // We'll just simulate by directly mounting at BOSS_DEPTH and stepping with flank.
     let s: RunState = makeRun({ equipped: { armor: TANK_ARMOR } }).state;
     for (let d = 1; d < BOSS_DEPTH; d++) {
       s = clearRoom(s);
       if (s.pendingLoot) s = commitLootMint(s);
       s = advance(s, "lich").state;
     }
-    // Hammer the boss.
+    // Hammer the boss with attack.
     for (let i = 0; i < 200; i++) {
       if (!s.encounter) break;
-      const r = step(s, flank);
+      const r = step(s, attack);
       s = r.state;
       if (r.events.some((e) => e.type === "BossCleared")) {
         expect(s.bossCleared).toBe(true);
@@ -226,10 +240,17 @@ describe("engine seed-mercy (Genesis death rewind)", () => {
         s = advance(s, "lich").state;
         continue;
       }
-      const choice: ActionChoice =
-        s.encounter.kind === "discovery"
-          ? { kind: "discovery", index: 0 }
-          : strike;
+      let choice: ActionChoice;
+      switch (s.encounter.kind) {
+        case "trial":
+          choice = { kind: "trial" };
+          break;
+        case "ledger":
+          choice = { kind: "ledger", suppress: null };
+          break;
+        default:
+          choice = attack;
+      }
       const r = step(s, choice);
       s = r.state;
       if (s.runAttempt > 1) {
