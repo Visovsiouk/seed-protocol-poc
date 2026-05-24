@@ -34,6 +34,26 @@ import type { Preset, Tier } from "@/lib/engine/types";
  */
 export const PLAYER_REALM_SIGNER_INDEX_START = 4;
 
+/**
+ * Player-realm tier ceiling as a function of total registered player-realm
+ * count. Retroactive: when the registry crosses 10 entries every realm —
+ * including ones registered when the cap was T3 — starts dropping T4 loot.
+ * Same at 50 for T5.
+ *
+ *   count < 10  → T3
+ *   count < 50  → T4
+ *   count ≥ 50  → T5
+ *
+ * Because this is count-driven (not stored on the row), it is recomputed
+ * on every read in `rowToRealm`. The `max_tier` column is now a vestige
+ * left in place to avoid a migration; it is no longer consulted on reads.
+ */
+export function playerRealmMaxTier(count: number): Tier {
+  if (count >= 50) return 5;
+  if (count >= 10) return 4;
+  return 3;
+}
+
 export type PlayerRealmRow = {
   address: `0x${string}`;
   owner: `0x${string}`;
@@ -91,7 +111,7 @@ function open(): DatabaseType {
   return db;
 }
 
-function rowToRealm(r: Row): PlayerRealmRow {
+function rowToRealm(r: Row, maxTier: Tier): PlayerRealmRow {
   return {
     address: r.address as `0x${string}`,
     owner: r.owner as `0x${string}`,
@@ -99,9 +119,16 @@ function rowToRealm(r: Row): PlayerRealmRow {
     bossId: r.boss_id,
     name: r.name,
     signerIndex: r.signer_index,
-    maxTier: r.max_tier as Tier,
+    maxTier,
     createdAt: r.created_at,
   };
+}
+
+function getPlayerRealmCount(db: DatabaseType): number {
+  const row = db
+    .prepare<[], { c: number }>("SELECT COUNT(*) AS c FROM player_realms")
+    .get();
+  return row?.c ?? 0;
 }
 
 /**
@@ -131,7 +158,9 @@ export function getPlayerRealm(
   const row = db
     .prepare<[string], Row>("SELECT * FROM player_realms WHERE address = ?")
     .get(address.toLowerCase());
-  return row ? rowToRealm(row) : undefined;
+  if (!row) return undefined;
+  const maxTier = playerRealmMaxTier(getPlayerRealmCount(db));
+  return rowToRealm(row, maxTier);
 }
 
 export function listPlayerRealms(): PlayerRealmRow[] {
@@ -139,7 +168,8 @@ export function listPlayerRealms(): PlayerRealmRow[] {
   const rows = db
     .prepare<[], Row>("SELECT * FROM player_realms ORDER BY created_at ASC")
     .all();
-  return rows.map(rowToRealm);
+  const maxTier = playerRealmMaxTier(rows.length);
+  return rows.map((r) => rowToRealm(r, maxTier));
 }
 
 export function insertPlayerRealm(input: {
@@ -149,25 +179,33 @@ export function insertPlayerRealm(input: {
   bossId: string;
   name: string;
   signerIndex: number;
-  maxTier: Tier;
 }): PlayerRealmRow {
   const db = open();
   const createdAt = Math.floor(Date.now() / 1000);
-  const stmt = db.prepare(`
-    INSERT INTO player_realms (
-      address, owner, preset, boss_id, name, signer_index, max_tier, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-  stmt.run(
-    input.address.toLowerCase(),
-    input.owner.toLowerCase(),
-    input.preset,
-    input.bossId,
-    input.name,
-    input.signerIndex,
-    input.maxTier,
-    createdAt,
-  );
+  // `max_tier` column is a vestige — we still write a value to keep the
+  // NOT NULL constraint happy, but reads ignore it (see playerRealmMaxTier
+  // above). Persist the value as of insert time so casual `SELECT` on the
+  // db file is still somewhat sensible.
+  const tx = db.transaction(() => {
+    const postInsertCount = getPlayerRealmCount(db) + 1;
+    const maxTier = playerRealmMaxTier(postInsertCount);
+    db.prepare(`
+      INSERT INTO player_realms (
+        address, owner, preset, boss_id, name, signer_index, max_tier, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      input.address.toLowerCase(),
+      input.owner.toLowerCase(),
+      input.preset,
+      input.bossId,
+      input.name,
+      input.signerIndex,
+      maxTier,
+      createdAt,
+    );
+    return maxTier;
+  });
+  const maxTier = tx();
   return {
     address: input.address.toLowerCase() as `0x${string}`,
     owner: input.owner.toLowerCase() as `0x${string}`,
@@ -175,7 +213,7 @@ export function insertPlayerRealm(input: {
     bossId: input.bossId,
     name: input.name,
     signerIndex: input.signerIndex,
-    maxTier: input.maxTier,
+    maxTier,
     createdAt,
   };
 }
