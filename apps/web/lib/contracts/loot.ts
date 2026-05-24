@@ -25,7 +25,7 @@ import { useCallback, useState } from "react";
 import { useAccount } from "wagmi";
 import { useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/reads/cache";
-import { lootName } from "@/lib/loot/names";
+import { evocativeName } from "@/lib/loot/names";
 import type { LootRoll, Preset } from "@/lib/engine/types";
 import { deriveLootTokenId, buildLootMetadataURI } from "./loot-derive";
 
@@ -61,25 +61,24 @@ export function useMintLoot() {
     async (args: MintLootArgs): Promise<MintLootResult> => {
       if (!address) throw new Error("mintLoot: wallet not connected");
 
-      // Pre-compute the display name on the client. The name is the
-      // schema-native `name(type, tier)` ladder for the rolled
-      // archetype (see `lib/loot/names.ts`, which mirrors the on-chain
-      // schema library), so a Fantasy T3 axe drop reads "Battle Axe"
-      // and the SciFi-target translation reads "Plasma Cannon".
+      // Pre-compute the display name on the client. The name is an
+      // atmospheric, preset-agnostic label drawn from the loot's
+      // `nameSeed` and element family (see `evocativeName` in
+      // `lib/loot/names.ts`) — e.g. "Ember", "Inferno", "Frost". It's
+      // the *identity* of the asset and stays the same across realms;
+      // the schema-native TYPE label (Stiletto ↔ Switchblade) is what
+      // translates and is surfaced as a chip.
       //
       // Story-object overrides (Genesis' Pilgrim's Brand) still ship a
-      // verbatim name on the LootRoll. When present, it skips both
-      // the archetype ladder AND the generic fallback so the on-chain
-      // asset reads as "The Pilgrim's Brand" etc., matching the
-      // in-feed narration. The same override is applied client-side
-      // in `lootRollToMockCard`, keeping the local card and the chain-
-      // minted card naming-consistent.
-      const archetype =
-        args.loot.slot === "weapon" ? args.loot.weaponType : args.loot.armorType;
+      // verbatim name on the LootRoll. When present, it skips the
+      // evocative pool so the on-chain asset reads as "The Pilgrim's
+      // Brand" etc., matching the in-feed narration.
+      const element =
+        args.loot.slot === "weapon" ? args.loot.element : args.loot.resistElement;
       const assembledName =
         args.loot.nameOverride ??
         (args.loot.slot === "weapon" || args.loot.slot === "armor"
-          ? lootName(args.preset, args.loot.slot, archetype, args.loot.tier)
+          ? evocativeName(args.loot.nameSeed, args.loot.tier, element)
           : `Loot #${args.loot.nameSeed.toString(16).slice(0, 8)}`);
 
       setPending(true);
