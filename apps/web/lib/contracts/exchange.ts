@@ -194,9 +194,6 @@ export function usePurchase() {
       });
       await publicClient.waitForTransactionReceipt({ hash });
 
-      qc.invalidateQueries({ queryKey: queryKeys.listings() });
-      qc.invalidateQueries({ queryKey: queryKeys.recentSales() });
-
       return { txHash: hash, fees: computeFeeBreakdown(args.price) };
     },
     [publicClient, writeContractAsync, qc],

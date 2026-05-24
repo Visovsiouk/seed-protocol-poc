@@ -1,17 +1,13 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
-import { protocolExchangeAbi } from "@abis/generated";
-import { getReadClient } from "@/lib/reads/client";
-import { getAddress } from "@/lib/contracts/addresses";
+import { createPortal } from "react-dom";
 import type { FeeBreakdown } from "@/lib/contracts/exchange";
 import { ValueFlowAnimation } from "./ValueFlowAnimation";
 
 /**
  * Post-purchase modal: shows the value-flow animation and the three
- * recipients with their cut. Treasury comes from the exchange's
- * `protocolTreasury()` view; the realm address is the listing's
- * `asset.mintedByRealm`.
+ * recipients with their cut. `treasury` is pre-fetched by the parent
+ * `ListingCard` on mount so the animation renders without a loading flash.
  */
 export function PurchaseReceipt({
   open,
@@ -20,6 +16,7 @@ export function PurchaseReceipt({
   seller,
   realm,
   txHash,
+  treasury,
 }: {
   open: boolean;
   onClose: () => void;
@@ -27,23 +24,11 @@ export function PurchaseReceipt({
   seller: `0x${string}`;
   realm: `0x${string}`;
   txHash: `0x${string}`;
+  treasury: `0x${string}` | undefined;
 }) {
-  const treasury = useQuery({
-    queryKey: ["exchange-treasury"],
-    queryFn: async () => {
-      const client = getReadClient();
-      return (await client.readContract({
-        address: getAddress("protocolExchange"),
-        abi: protocolExchangeAbi,
-        functionName: "protocolTreasury",
-      })) as `0x${string}`;
-    },
-    staleTime: Infinity,
-  });
-
   if (!open) return null;
 
-  return (
+  return createPortal(
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
       style={{ background: "rgba(0,0,0,0.6)" }}
@@ -72,16 +57,19 @@ export function PurchaseReceipt({
           tx {txHash.slice(0, 10)}…{txHash.slice(-6)}
         </p>
 
-        <div className="mt-6">
-          {treasury.data ? (
+        {/* Fixed height so the modal doesn't jump when treasury arrives */}
+        <div className="mt-6" style={{ minHeight: 160 }}>
+          {treasury ? (
             <ValueFlowAnimation
               fees={fees}
               seller={seller}
               creator={realm}
-              treasury={treasury.data}
+              treasury={treasury}
             />
           ) : (
-            <p className="text-sm opacity-60">Loading recipients…</p>
+            <div className="flex h-40 items-center justify-center">
+              <span className="text-sm opacity-40">Loading recipients…</span>
+            </div>
           )}
         </div>
 
@@ -96,6 +84,7 @@ export function PurchaseReceipt({
           Done
         </button>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

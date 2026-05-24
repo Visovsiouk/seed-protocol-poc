@@ -1,8 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { PreseedBadge } from "./PreseedBadge";
-import { PurchaseReceipt } from "./PurchaseReceipt";
 import { AssetCard } from "@/components/inventory/AssetCard";
 import { formatEth, shortAddress } from "@/lib/utils";
 import {
@@ -12,35 +12,30 @@ import {
 } from "@/lib/contracts/exchange";
 import { traderBuy } from "@/lib/trader-client";
 import { buildAssetCardFromMetadata } from "@/lib/metadata/asset-card";
-import type { ListingSummary, AssetSummary } from "@/lib/reads/types";
+import { queryKeys } from "@/lib/reads/cache";
+import type { AssetSummary, ListingSummary } from "@/lib/reads/types";
 
-/**
- * One bazaar listing — hydrates the on-chain `AssetSummary` into a real
- * `<AssetCard/>` (same component the inventory drawer uses) and stacks
- * price + provenance + buy actions underneath. `buildAssetCardFromMetadata`
- * is a pure mapping so we can call it inline without an extra query.
- */
+export type PurchasedPayload = {
+  fees: FeeBreakdown;
+  txHash: `0x${string}`;
+  seller: `0x${string}`;
+  realm: `0x${string}`;
+};
+
 export function ListingCard({
   listing,
   asset,
+  onPurchased,
 }: {
   listing: ListingSummary;
   asset?: AssetSummary;
+  onPurchased: (payload: PurchasedPayload) => void;
 }) {
+  const qc = useQueryClient();
   const { purchase, isPending } = usePurchase();
-  const [receipt, setReceipt] = useState<
-    | { open: true; fees: FeeBreakdown; txHash: `0x${string}` }
-    | { open: false }
-  >({ open: false });
-  const [demoStatus, setDemoStatus] = useState<
-    "idle" | "running" | "error"
-  >("idle");
+  const [demoStatus, setDemoStatus] = useState<"idle" | "running" | "error">("idle");
   const [demoError, setDemoError] = useState<string | null>(null);
 
-  // Hydrate the AssetSummary into the engine's AssetCard shape so we can
-  // render via the inventory's AssetCard component. Skip for clearReceipts
-  // / accessories — those route into AssetCard with phantom stats; the
-  // bazaar shouldn't be listing them anyway, but be defensive.
   const card = useMemo(() => {
     if (!asset) return null;
     const c = buildAssetCardFromMetadata({
@@ -54,31 +49,45 @@ export function ListingCard({
     return c;
   }, [asset]);
 
+  const refetchAfterPurchase = () => {
+    // Background refetch — the listing disappears while the receipt modal is
+    // open. No optimistic removal: setQueryData notifies React Query subscribers
+    // synchronously, which unmounts the card before React can commit the receipt
+    // state update, making the modal vanish.
+    void qc.invalidateQueries({ queryKey: queryKeys.listings() });
+    void qc.invalidateQueries({ queryKey: queryKeys.recentSales() });
+  };
+
   const onBuy = async () => {
+    if (!asset) return;
     try {
-      const result = await purchase({
-        listingId: listing.id,
-        price: listing.price,
+      const result = await purchase({ listingId: listing.id, price: listing.price });
+      onPurchased({
+        fees: result.fees,
+        txHash: result.txHash,
+        seller: listing.seller,
+        realm: asset.mintedByRealm,
       });
-      setReceipt({ open: true, fees: result.fees, txHash: result.txHash });
+      refetchAfterPurchase();
     } catch (e) {
-      // Wallet rejection or revert — surfaced via console for now; the
-      // wagmi hook's `error` could also be wired into a toast in.
       console.warn("purchase failed", e);
     }
   };
 
   const onDemo = async () => {
+    if (!asset) return;
     setDemoStatus("running");
     setDemoError(null);
     try {
       const result = await traderBuy(listing.id);
       if (result.ok) {
-        setReceipt({
-          open: true,
+        onPurchased({
           fees: computeFeeBreakdown(listing.price),
           txHash: result.txHash,
+          seller: listing.seller,
+          realm: asset.mintedByRealm,
         });
+        refetchAfterPurchase();
         setDemoStatus("idle");
       } else {
         setDemoStatus("error");
@@ -112,9 +121,7 @@ export function ListingCard({
         </div>
       )}
 
-      <div
-        className="flex items-end justify-between gap-3 px-1"
-      >
+      <div className="flex items-end justify-between gap-3 px-1">
         <div className="flex flex-col">
           <span className="text-[10px] uppercase tracking-widest opacity-50">
             Price
@@ -140,7 +147,7 @@ export function ListingCard({
         <div className="flex gap-2">
           <button
             onClick={onBuy}
-            disabled={isPending}
+            disabled={isPending || !asset}
             className="flex-1 rounded-md px-3 py-2 text-sm font-medium disabled:opacity-50"
             style={{
               background: "var(--color-preset-accent, #7c5cff)",
@@ -151,7 +158,7 @@ export function ListingCard({
           </button>
           <button
             onClick={onDemo}
-            disabled={demoStatus === "running"}
+            disabled={demoStatus === "running" || !asset}
             className="rounded-md px-3 py-2 text-sm disabled:opacity-50"
             style={{
               background: "transparent",
@@ -168,17 +175,6 @@ export function ListingCard({
           </p>
         )}
       </footer>
-
-      {receipt.open && asset && (
-        <PurchaseReceipt
-          open={receipt.open}
-          onClose={() => setReceipt({ open: false })}
-          fees={receipt.fees}
-          seller={listing.seller}
-          realm={asset.mintedByRealm}
-          txHash={receipt.txHash}
-        />
-      )}
     </article>
   );
 }
