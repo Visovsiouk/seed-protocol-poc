@@ -44,6 +44,7 @@ import {
   step as engineStep,
 } from "@/lib/engine";
 import { ActionChoices } from "./ActionChoices";
+import { ChoiceRow, type Choice } from "./ChoiceRow";
 import { BossPhaseBanner } from "./BossPhaseBanner";
 import { CombatLog } from "./CombatLog";
 import { HUD } from "./HUD";
@@ -123,12 +124,27 @@ type Props = {
 /**
  * Split engine-emitted lines into the room intro paragraph + the remainder
  * that should be appended to the combat log.
+ *
+ * `from`:
+ *   "head" — used for `startRun`/`advance` output, where the room intro
+ *            is the first line (engine emits intro → encounter setup).
+ *   "tail" — used for seed-mercy respawn output, where the engine pushes
+ *            [death voice, …respawn voice, new room intro], so the intro
+ *            is the *last* line and the death/respawn lines belong in
+ *            the log.
  */
-function splitIntro(lines: readonly NarrationLine[]): {
+function splitIntro(
+  lines: readonly NarrationLine[],
+  from: "head" | "tail" = "head",
+): {
   intro: string;
   rest: NarrationLine[];
 } {
   if (lines.length === 0) return { intro: "", rest: [] };
+  if (from === "tail") {
+    const last = lines[lines.length - 1]!;
+    return { intro: last.text, rest: lines.slice(0, -1) };
+  }
   const [head, ...rest] = lines;
   return { intro: head!.text, rest };
 }
@@ -197,7 +213,23 @@ export function EncounterFrame({
             ? state.encounter.combat.bossPhase
             : undefined;
         const result = engineStep(state, choice);
-        appendLines(result.outcome);
+        // Seed-mercy respawn generates a fresh encounter inside the same
+        // step() call (runAttempt increments, depth resets). When that
+        // happens, `result.outcome` ends with the new room's intro line —
+        // treat the whole batch like room-generation output: replace the
+        // banner + clear the log, instead of appending to the prior fight.
+        const respawned = result.state.runAttempt !== state.runAttempt;
+        if (respawned) {
+          // Engine pushed [death, …respawnVoice, newRoomIntro]; pull the
+          // intro from the tail and route the death/respawn lines to the
+          // log so the player still sees the death beat.
+          const split = splitIntro(result.outcome, "tail");
+          setIntro(split.intro);
+          setFeed(split.rest);
+          setPhaseBanner(false);
+        } else {
+          appendLines(result.outcome);
+        }
         for (const ev of result.events) {
           onEvent?.(ev);
           if (ev.type === "BossCleared") {
@@ -295,7 +327,7 @@ export function EncounterFrame({
         activePreset={activePreset}
       />
 
-      <CombatLog lines={feed} />
+      <CombatLog lines={feed} encounter={state.encounter} />
 
       {runDefeated ? (
         <section
@@ -328,19 +360,19 @@ export function EncounterFrame({
               in when you&apos;re ready.
             </p>
             {onRestart && (
-              <div className="flex">
-                <button
-                  type="button"
-                  onClick={onRestart}
-                  className="rounded-md px-4 py-2 text-sm font-medium transition"
-                  style={{
-                    background: "var(--color-preset-accent)",
-                    color: "var(--color-preset-bg)",
-                  }}
-                >
-                  Step back in →
-                </button>
-              </div>
+              <ChoiceRow
+                ariaLabel="Restart run"
+                choices={
+                  [
+                    {
+                      key: "restart",
+                      label: "Step back in →",
+                      variant: "primary",
+                      onClick: onRestart,
+                    },
+                  ] satisfies Choice[]
+                }
+              />
             )}
           </div>
         </section>
@@ -357,6 +389,17 @@ export function EncounterFrame({
           preset={activePreset ?? state.preset}
           realm={state.realm}
           realmName={realmName}
+          comparedTo={
+            // Rebalance A4: hand the prompt the card currently equipped in
+            // the same slot so the player can see the delta vs what they're
+            // about to replace. `pickSlot` only ever yields "weapon" or
+            // "armor"; accessory drops aren't wired yet.
+            state.pendingLoot.slot === "weapon"
+              ? state.equipped.weapon
+              : state.pendingLoot.slot === "armor"
+                ? state.equipped.armor
+                : undefined
+          }
           onMint={handleMint}
           onSkip={handleSkip}
         />
@@ -414,20 +457,20 @@ export function EncounterFrame({
           </div>
         </section>
       ) : (
-        <div className="flex">
-          <button
-            type="button"
-            onClick={handleAdvance}
-            disabled={busy}
-            className="rounded-md px-5 py-2.5 text-sm font-medium transition disabled:opacity-40"
-            style={{
-              background: "var(--color-preset-accent)",
-              color: "var(--color-preset-bg)",
-            }}
-          >
-            {busy ? "Advancing…" : "Advance"}
-          </button>
-        </div>
+        <ChoiceRow
+          ariaLabel="Advance to next room"
+          disabled={busy}
+          choices={
+            [
+              {
+                key: "advance",
+                label: busy ? "Advancing…" : "Advance",
+                variant: "primary",
+                onClick: handleAdvance,
+              },
+            ] satisfies Choice[]
+          }
+        />
       )}
     </div>
   );

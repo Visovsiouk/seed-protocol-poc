@@ -23,10 +23,10 @@
  * skipped — no translation to dramatize.
  */
 
-import Link from "next/link";
 import { useState } from "react";
 import type { AssetCard as AssetCardType, Preset } from "@/lib/engine/types";
 import { AssetCard } from "@/components/inventory/AssetCard";
+import { ChoiceRow, type Choice } from "@/components/game/ChoiceRow";
 import { getStarterRealm } from "@/lib/contracts/starter-realms";
 import {
   presetForRealm,
@@ -98,10 +98,22 @@ export function WarpInterstitial({
         <LedgerBody size="sm">
           A shard catches the light in your hand. It is warm. It is yours.
         </LedgerBody>
-        <Footer
-          label={hasGear ? "Carry what's yours" : "Walk forward"}
-          onClick={() => setBeat(hasGear ? "gear" : "arrival")}
-        />
+        <Footer>
+          <ChoiceRow
+            ariaLabel="Continue"
+            align="end"
+            choices={
+              [
+                {
+                  key: hasGear ? "carry" : "walk-forward",
+                  label: `${hasGear ? "Carry what's yours" : "Walk forward"} →`,
+                  variant: "primary",
+                  onClick: () => setBeat(hasGear ? "gear" : "arrival"),
+                },
+              ] satisfies Choice[]
+            }
+          />
+        </Footer>
       </Frame>
     );
   }
@@ -138,7 +150,22 @@ export function WarpInterstitial({
           )}
         </div>
 
-        <Footer label="Walk forward" onClick={() => setBeat("arrival")} />
+        <Footer>
+          <ChoiceRow
+            ariaLabel="Continue"
+            align="end"
+            choices={
+              [
+                {
+                  key: "walk-forward",
+                  label: "Walk forward →",
+                  variant: "primary",
+                  onClick: () => setBeat("arrival"),
+                },
+              ] satisfies Choice[]
+            }
+          />
+        </Footer>
       </Frame>
     );
   }
@@ -154,19 +181,22 @@ export function WarpInterstitial({
       </h3>
       <LedgerBody size="sm">{arrival.body}</LedgerBody>
       <LedgerBody size="sm">{arrival.arrival}</LedgerBody>
-      <footer className="flex items-center justify-end pt-1">
-        <Link
-          href={`/play/${toPreset}`}
-          data-preset={toPreset}
-          className="rounded-md px-4 py-2 text-sm font-medium transition"
-          style={{
-            background: "var(--color-preset-accent)",
-            color: "var(--color-preset-bg)",
-          }}
-        >
-          Walk in →
-        </Link>
-      </footer>
+      <Footer>
+        <ChoiceRow
+          ariaLabel="Walk in"
+          align="end"
+          choices={
+            [
+              {
+                key: `walk-in-${toPreset}`,
+                label: "Walk in →",
+                variant: "primary",
+                href: `/play/${toPreset}`,
+              },
+            ] satisfies Choice[]
+          }
+        />
+      </Footer>
     </Frame>
   );
 }
@@ -198,21 +228,9 @@ function Frame({
   );
 }
 
-function Footer({ label, onClick }: { label: string; onClick: () => void }) {
+function Footer({ children }: { children: React.ReactNode }) {
   return (
-    <footer className="flex items-center justify-end pt-1">
-      <button
-        type="button"
-        onClick={onClick}
-        className="rounded-md px-4 py-2 text-sm font-medium transition"
-        style={{
-          background: "var(--color-preset-accent)",
-          color: "var(--color-preset-bg)",
-        }}
-      >
-        {label} →
-      </button>
-    </footer>
+    <footer className="flex items-center justify-end pt-1">{children}</footer>
   );
 }
 
@@ -229,7 +247,7 @@ function TranslationPair({
   // destination realm. We render the address as a small "via" strip so
   // the player can see the protocol contract that mediates the swap —
   // it's the on-chain object responsible for the stat diff below.
-  const fromPreset = presetForRealm(card.realm);
+  const fromPreset = card.realmPreset ?? presetForRealm(card.realm);
   const toPreset = presetForRealm(toRealm);
   const slot = card.slot === "weapon" || card.slot === "armor" ? card.slot : null;
   const adapter =

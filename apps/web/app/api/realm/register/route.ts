@@ -95,8 +95,6 @@ function reply(status: number, body: ReplyOk | ReplyErr) {
   return NextResponse.json(body, { status });
 }
 
-const STARTER_PLAYER_REALM_MAX_TIER: Tier = 2;
-
 export async function POST(req: Request) {
   let body: Body;
   try {
@@ -211,7 +209,6 @@ export async function POST(req: Request) {
       bossId: body.bossId,
       name: body.name,
       signerIndex,
-      maxTier: STARTER_PLAYER_REALM_MAX_TIER,
     });
   } catch (e) {
     // SQLite UNIQUE violation surfaces here as a generic Error with

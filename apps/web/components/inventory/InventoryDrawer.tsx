@@ -12,7 +12,7 @@
  */
 
 import { useState } from "react";
-import type { AssetCard as AssetCardType, Slot } from "@/lib/engine/types";
+import type { AssetCard as AssetCardType, Preset, Slot } from "@/lib/engine/types";
 import { AssetCard } from "./AssetCard";
 
 type Equipped = {
@@ -33,6 +33,12 @@ type Props = {
    * screens without a single "active realm" can omit it.
    */
   activeRealm?: `0x${string}`;
+  /**
+   * Preset for `activeRealm`. Required when the realm is a player-deployed
+   * realm not in the seeded-realms map so `<AssetCard/>` can resolve the
+   * translation hop without a seeded-realms lookup.
+   */
+  activePreset?: Preset;
 };
 
 function Section({
@@ -41,12 +47,14 @@ function Section({
   equippedTokenId,
   onEquip,
   activeRealm,
+  activePreset,
 }: {
   label: string;
   cards: readonly AssetCardType[];
   equippedTokenId?: bigint;
   onEquip: (card: AssetCardType) => void;
   activeRealm?: `0x${string}`;
+  activePreset?: Preset;
 }) {
   if (cards.length === 0) {
     return (
@@ -67,6 +75,7 @@ function Section({
             selected={c.tokenId === equippedTokenId}
             onClick={() => onEquip(c)}
             targetRealm={activeRealm}
+            targetPreset={activePreset}
           />
         ))}
       </div>
@@ -81,6 +90,7 @@ export function InventoryDrawer({
   equipped,
   onEquip,
   activeRealm,
+  activePreset,
 }: Props) {
   const [tab, setTab] = useState<"weapon" | "armor">("weapon");
   const weapons = inventory.filter((c) => c.slot === "weapon");
@@ -137,6 +147,7 @@ export function InventoryDrawer({
             equippedTokenId={equipped.weapon?.tokenId}
             onEquip={(c) => onEquip("weapon", c)}
             activeRealm={activeRealm}
+            activePreset={activePreset}
           />
         ) : (
           <Section
@@ -145,6 +156,7 @@ export function InventoryDrawer({
             equippedTokenId={equipped.armor?.tokenId}
             onEquip={(c) => onEquip("armor", c)}
             activeRealm={activeRealm}
+            activePreset={activePreset}
           />
         )}
       </aside>

@@ -16,10 +16,10 @@
  * component, and the tutorial overlay can't drift apart.
  */
 
-import Link from "next/link";
 import type { AssetCard, Preset } from "@/lib/engine/types";
 import type { TutorialProgress } from "@/lib/tutorial/progress";
 import { interstitialFor } from "@/lib/story/progression";
+import { ChoiceRow, type Choice } from "./ChoiceRow";
 import { WarpInterstitial } from "./WarpInterstitial";
 
 type Props = {
@@ -95,43 +95,39 @@ export function RealmClearedInterstitial({
         </p>
       )}
 
-      <div className="flex pt-1">
-        {story.cta.kind === "claim-seed" && claimReady ? (
-          <button
-            type="button"
-            onClick={onClaimSeed}
-            className="rounded-md px-4 py-2 text-sm font-medium transition"
-            style={{
-              background: "var(--color-preset-accent)",
-              color: "var(--color-preset-bg)",
-            }}
-          >
-            {story.cta.label}
-          </button>
-        ) : story.cta.kind === "claim-seed" && !claimReady ? (
-          <Link
-            href="/"
-            className="rounded-md px-4 py-2 text-sm font-medium transition"
-            style={{
-              background: "var(--color-preset-accent)",
-              color: "var(--color-preset-bg)",
-            }}
-          >
-            Open the registry →
-          </Link>
-        ) : story.cta.kind === "open-picker" ? (
-          <Link
-            href="/"
-            className="rounded-md px-4 py-2 text-sm font-medium transition"
-            style={{
-              background: "var(--color-preset-accent)",
-              color: "var(--color-preset-bg)",
-            }}
-          >
-            {story.cta.label} →
-          </Link>
-        ) : null}
-      </div>
+      {(() => {
+        let choice: Choice | null = null;
+        if (story.cta.kind === "claim-seed" && claimReady && onClaimSeed) {
+          choice = {
+            key: "claim-seed",
+            label: story.cta.label,
+            variant: "primary",
+            onClick: onClaimSeed,
+          };
+        } else if (story.cta.kind === "claim-seed" && !claimReady) {
+          choice = {
+            key: "open-registry",
+            label: "Open the registry →",
+            variant: "primary",
+            href: "/",
+          };
+        } else if (story.cta.kind === "open-picker") {
+          choice = {
+            key: "open-picker",
+            label: `${story.cta.label} →`,
+            variant: "primary",
+            href: "/",
+          };
+        }
+        return choice ? (
+          <div className="pt-1">
+            <ChoiceRow
+              ariaLabel="Story continue"
+              choices={[choice]}
+            />
+          </div>
+        ) : null;
+      })()}
     </section>
   );
 }

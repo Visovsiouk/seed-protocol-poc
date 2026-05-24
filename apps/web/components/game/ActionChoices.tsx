@@ -11,16 +11,17 @@
  *
  * The component itself never touches engine state — it dispatches an
  * `ActionChoice` upward and lets `<EncounterFrame/>` step the engine.
+ *
+ * Keyboard nav (arrows + Enter) is provided by the shared `<ChoiceRow/>`.
  */
 
 import { secondaryFor } from "@/lib/engine/combat";
 import type {
   ActionChoice,
   AssetCard,
-  BossDef,
   EncounterState,
-  MonsterDef,
 } from "@/lib/engine/types";
+import { ChoiceRow, type Choice } from "./ChoiceRow";
 
 type Props = {
   encounter: EncounterState;
@@ -29,47 +30,6 @@ type Props = {
   onChoose: (choice: ActionChoice) => void;
 };
 
-function Button({
-  children,
-  onClick,
-  disabled,
-  variant = "default",
-}: {
-  children: React.ReactNode;
-  onClick: () => void;
-  disabled?: boolean;
-  variant?: "default" | "primary";
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      className="rounded-md px-4 py-2.5 text-sm font-medium transition disabled:opacity-40 disabled:cursor-not-allowed"
-      style={{
-        background:
-          variant === "primary"
-            ? "var(--color-preset-accent)"
-            : "rgba(255,255,255,0.06)",
-        color:
-          variant === "primary"
-            ? "var(--color-preset-bg)"
-            : "var(--color-preset-fg)",
-        border:
-          variant === "primary"
-            ? "none"
-            : "1px solid rgba(255,255,255,0.1)",
-      }}
-    >
-      {children}
-    </button>
-  );
-}
-
-function isBossMonster(monster: MonsterDef | BossDef): monster is BossDef {
-  return "bakedEffects" in monster;
-}
-
 export function ActionChoices({
   encounter,
   equipped,
@@ -77,79 +37,107 @@ export function ActionChoices({
   onChoose,
 }: Props) {
   if (encounter.kind === "combat") {
-    const boss = isBossMonster(encounter.combat.monster);
+    // Rebalance: Secondary used to be boss-only, which made the depth-1
+    // through depth-5 climb a single-button auto-pilot. Now every
+    // combat exposes both actions — the player can Focus → next-Attack
+    // crit a trash mob, or Dodge a heavy swing on a low-HP turn. The
+    // engine resolver handled all five Secondary flavors regardless of
+    // the monster type already (`resolveRound` in combat.ts); the only
+    // change is surfacing the button.
     const sec = secondaryFor(equipped.armor);
+    const choices: Choice[] = [
+      {
+        key: "attack",
+        label: "Attack",
+        variant: "primary",
+        onClick: () => onChoose({ kind: "attack" }),
+      },
+      {
+        key: "secondary",
+        label: sec.label,
+        onClick: () => onChoose({ kind: "secondary" }),
+      },
+    ];
     return (
-      <div className="flex flex-wrap gap-2" aria-label="Combat actions">
-        <Button
-          variant="primary"
-          disabled={disabled}
-          onClick={() => onChoose({ kind: "attack" })}
-        >
-          Attack
-        </Button>
-        {boss && (
-          <Button disabled={disabled} onClick={() => onChoose({ kind: "secondary" })}>
-            {sec.label}
-          </Button>
-        )}
-      </div>
+      <ChoiceRow
+        choices={choices}
+        disabled={disabled}
+        ariaLabel="Combat actions"
+      />
     );
   }
 
   if (encounter.kind === "trial") {
+    // Trial setup (prompt + intent + stakes + check line) is rendered in
+    // the empty CombatLog above this row, so the player sees one coherent
+    // beat. This row only needs the action button.
+    const choices: Choice[] = [
+      {
+        key: "attempt",
+        label: "Attempt",
+        variant: "primary",
+        onClick: () => onChoose({ kind: "trial" }),
+      },
+    ];
     return (
-      <div className="flex flex-col gap-2" aria-label="Trial action">
-        <div className="text-xs" style={{ color: "var(--color-preset-fg-dim)" }}>
-          {encounter.flavor}
-        </div>
-        <div className="text-sm">
-          {encounter.ability === "agility" ? "Agility" : "Endurance"} check —
-          roll d20+{encounter.bonus} vs DC {encounter.dc}
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button
-            variant="primary"
-            disabled={disabled}
-            onClick={() => onChoose({ kind: "trial" })}
-          >
-            Attempt
-          </Button>
-        </div>
-      </div>
+      <ChoiceRow
+        choices={choices}
+        disabled={disabled}
+        ariaLabel="Trial actions"
+      />
+    );
+  }
+
+  if (encounter.kind === "rest") {
+    const choices: Choice[] = [
+      {
+        key: "rest",
+        label: encounter.actionLabel,
+        variant: "primary",
+        onClick: () => onChoose({ kind: "rest" }),
+      },
+    ];
+    return (
+      <ChoiceRow
+        choices={choices}
+        disabled={disabled}
+        ariaLabel="Rest action"
+      />
     );
   }
 
   if (encounter.kind === "ledger") {
     const [a, b] = encounter.effects;
+    const choices: Choice[] = [
+      {
+        key: `strike-${a}`,
+        label: `Strike ${a.replace(/_/g, " ")}`,
+        variant: "primary",
+        onClick: () => onChoose({ kind: "ledger", suppress: a }),
+      },
+      {
+        key: `strike-${b}`,
+        label: `Strike ${b.replace(/_/g, " ")}`,
+        variant: "primary",
+        onClick: () => onChoose({ kind: "ledger", suppress: b }),
+      },
+      {
+        key: "skip",
+        label: "Skip",
+        onClick: () => onChoose({ kind: "ledger", suppress: null }),
+      },
+    ];
     return (
       <div className="flex flex-col gap-2" aria-label="Ledger action">
         <div className="text-sm">
           {encounter.bossName} carries: {a.replace(/_/g, " ")} & {b.replace(/_/g, " ")}.
           Strike one from the ledger?
         </div>
-        <div className="flex flex-wrap gap-2">
-          <Button
-            variant="primary"
-            disabled={disabled}
-            onClick={() => onChoose({ kind: "ledger", suppress: a })}
-          >
-            Strike {a.replace(/_/g, " ")}
-          </Button>
-          <Button
-            variant="primary"
-            disabled={disabled}
-            onClick={() => onChoose({ kind: "ledger", suppress: b })}
-          >
-            Strike {b.replace(/_/g, " ")}
-          </Button>
-          <Button
-            disabled={disabled}
-            onClick={() => onChoose({ kind: "ledger", suppress: null })}
-          >
-            Skip
-          </Button>
-        </div>
+        <ChoiceRow
+          choices={choices}
+          disabled={disabled}
+          ariaLabel="Ledger actions"
+        />
       </div>
     );
   }

@@ -22,6 +22,7 @@ import { validateLootRoll } from "@/lib/engine/loot-validate";
 import { BOSS_DEPTH } from "@/lib/engine";
 import type { LootRoll, Preset, Tier } from "@/lib/engine/types";
 import { elementsFor } from "@/lib/engine/types";
+import { getCatalogEffectsForSlot } from "@/lib/contracts/catalog-effects";
 
 /**
  * Per-preset starter-realm tier ceiling. Player-authored realms carry
@@ -308,6 +309,28 @@ export async function POST(req: Request) {
       reason: "loot_bounds_violation",
       message: validationErr,
     });
+  }
+
+  // Registry-declared catalog check: every effect on the incoming roll
+  // must be among the catalog-effect names declared on-chain (via
+  // `CatalogEffectRegistry`) for this preset's loot schema. Defends
+  // against a tampered client adding an effect the schema doesn't
+  // actually carry (e.g. attaching `lifesteal` to a fantasy weapon when
+  // only `bleed` is declared). Falls back to `CANONICAL_CATALOG_EFFECTS`
+  // when the registry isn't seeded (disconnected/trial mode).
+  if (loot.slot !== "accessory") {
+    const allowed = new Set(
+      getCatalogEffectsForSlot(effectivePreset, loot.slot),
+    );
+    for (const eff of loot.catalogEffects) {
+      if (!allowed.has(eff.name)) {
+        return reply(422, {
+          ok: false,
+          reason: "loot_bounds_violation",
+          message: `effect "${eff.name}" is not declared on the ${effectivePreset} ${loot.slot} schema`,
+        });
+      }
+    }
   }
 
   const tokenId = deriveLootTokenId({

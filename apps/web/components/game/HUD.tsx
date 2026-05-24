@@ -113,8 +113,12 @@ export function HUD({
   run: RunState;
   combat?: CombatState;
 }) {
-  const hp = combat?.playerHp ?? 25 + (run.equipped.armor?.hpBonus ?? 0);
-  const maxHp = combat?.playerMaxHp ?? 25 + (run.equipped.armor?.hpBonus ?? 0);
+  // Combat HP wins during a fight (reflects ongoing damage). Outside
+  // combat (trial / rest / between-room), read from the persistent
+  // RunState pool so the bar reflects real carry-over HP — not a stale
+  // 25+hpBonus fallback that predates HP persistence.
+  const hp = combat?.playerHp ?? run.playerHp;
+  const maxHp = combat?.playerMaxHp ?? run.playerMaxHp;
   const ac = combat?.playerAc ?? 10 + (run.equipped.armor?.acBonus ?? 0);
 
   return (

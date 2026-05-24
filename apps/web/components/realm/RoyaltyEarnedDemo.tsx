@@ -47,7 +47,7 @@ import {
   buildLootMetadataURI,
   deriveLootTokenId,
 } from "@/lib/contracts/loot-derive";
-import { lootName } from "@/lib/loot/names";
+import { evocativeName } from "@/lib/loot/names";
 import { fallbackSeed } from "@/lib/engine/runtime";
 import { queryKeys } from "@/lib/reads/cache";
 import type { LootRoll, Preset } from "@/lib/engine/types";
@@ -167,7 +167,7 @@ export function RoyaltyEarnedDemo({ realm, preset, realmLabel }: Props) {
         depth: DEMO_DEPTH,
         nameSeed,
       });
-      const assembledName = lootName(preset, "weapon", demoWeaponType, 1);
+      const assembledName = evocativeName(nameSeed, 1, loot.element);
       const metadataURI = buildLootMetadataURI({
         loot,
         preset,

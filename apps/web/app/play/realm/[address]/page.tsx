@@ -459,6 +459,7 @@ export default function CreatorRealmPlayPage() {
         equipped={equipped}
         onEquip={handleEquip}
         activeRealm={address ?? undefined}
+        activePreset={preset}
       />
     </main>
   );

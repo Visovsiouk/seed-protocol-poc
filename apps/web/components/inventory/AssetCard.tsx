@@ -25,6 +25,7 @@ import {
   useTranslatedCard,
 } from "@/lib/contracts/adapters";
 import { getAdapterAddress } from "@/lib/contracts/seeded-adapters";
+import { armorName, weaponName } from "@/lib/loot/names";
 
 const ZERO_ADDR = "0x0000000000000000000000000000000000000000" as const;
 
@@ -41,6 +42,13 @@ type Props = {
    * is no "active realm" context (e.g. the Bazaar listing detail).
    */
   targetRealm?: `0x${string}`;
+  /**
+   * Optional preset hint for `targetRealm`. Required when the target is a
+   * player-deployed realm not in the seeded-realms map. The play page
+   * supplies this from its realm-meta fetch so translation works uniformly
+   * across starter and player-made realms.
+   */
+  targetPreset?: Preset;
 };
 
 const TIER_LABEL: Record<number, string> = {
@@ -114,11 +122,11 @@ function shortAddr(addr: `0x${string}`): string {
 }
 
 /**
- * Neutral chip for the archetype lane (weaponType / armorType). The
- * label is the schema-native lowercase string ("axe", "exosuit",
- * "monowire", …) drawn from the source/target preset's vocabulary.
- * Colour is intentionally generic so the element chip remains the
- * eye-catching one.
+ * Neutral chip for the schema-native TYPE label. Shows the preset's
+ * tier-ladder string ("Stiletto", "Switchblade", "Plasma Cannon", …)
+ * — the per-realm "what it's called here" alongside the asset's
+ * constant atmospheric name. Colour is intentionally generic so the
+ * element chip remains the eye-catching one.
  */
 function TypeChip({ label }: { label: string }) {
   return (
@@ -133,6 +141,26 @@ function TypeChip({ label }: { label: string }) {
       {label}
     </span>
   );
+}
+
+/**
+ * Resolve the schema-native TYPE label for a card under a given preset's
+ * vocabulary. Returns "" when the card has no archetype (story-objects,
+ * legacy un-archetyped loot) or when the preset can't be resolved — in
+ * either case the chip is omitted by the caller.
+ */
+function typeLabelFor(
+  card: AssetCardType,
+  preset: Preset | null,
+): string {
+  if (!preset) return "";
+  if (card.slot === "weapon") {
+    return weaponName(preset, card.weaponType, card.tier);
+  }
+  if (card.slot === "armor") {
+    return armorName(preset, card.armorType, card.tier);
+  }
+  return "";
 }
 
 /**
@@ -219,24 +247,31 @@ function OriginalStrip({
               </>
             )}
           </div>
-          {(damageElement || resistElement) && (
-            <div className="flex flex-wrap gap-1">
-              {damageElement && (
-                <ElementChip
-                  element={damageElement}
-                  kind="damage"
-                  preset={sourcePreset}
-                />
-              )}
-              {resistElement && (
-                <ElementChip
-                  element={resistElement}
-                  kind="resist"
-                  preset={sourcePreset}
-                />
-              )}
-            </div>
-          )}
+          {(() => {
+            const srcTypeLabel = typeLabelFor(card, sourcePreset);
+            if (!damageElement && !resistElement && srcTypeLabel === "") {
+              return null;
+            }
+            return (
+              <div className="flex flex-wrap gap-1">
+                {srcTypeLabel !== "" && <TypeChip label={srcTypeLabel} />}
+                {damageElement && (
+                  <ElementChip
+                    element={damageElement}
+                    kind="damage"
+                    preset={sourcePreset}
+                  />
+                )}
+                {resistElement && (
+                  <ElementChip
+                    element={resistElement}
+                    kind="resist"
+                    preset={sourcePreset}
+                  />
+                )}
+              </div>
+            );
+          })()}
         </>
       )}
     </div>
@@ -249,14 +284,17 @@ export function AssetCard({
   onClick,
   compact,
   targetRealm,
+  targetPreset: targetPresetProp,
 }: Props) {
   const isWeapon = card.slot === "weapon";
 
   // Decide whether a real preset hop applies. The hook itself short-
   // circuits non-hop cases and returns the input card unchanged, but
   // we still need these locally to drive the strip + label vocabularies.
-  const sourcePreset = presetForRealm(card.realm);
-  const targetPreset = targetRealm ? presetForRealm(targetRealm) : null;
+  // Fall back to card.realmPreset for cards from player-deployed realms
+  // that aren't in the seeded-realms map.
+  const sourcePreset = card.realmPreset ?? presetForRealm(card.realm);
+  const targetPreset = targetPresetProp ?? (targetRealm ? presetForRealm(targetRealm) : null);
   const isHop =
     !!sourcePreset &&
     !!targetPreset &&
@@ -270,7 +308,7 @@ export function AssetCard({
     data: translated,
     isFetching,
     isError,
-  } = useTranslatedCard(card, safeRealm);
+  } = useTranslatedCard(card, safeRealm, targetPresetProp);
 
   // `translated === card` (same identity) means the hook chose passthrough;
   // we only have a real translation to display when the identity differs.
@@ -346,24 +384,19 @@ export function AssetCard({
           </>
         )}
       </div>
-      {((isWeapon && displayCard.element && displayCard.element !== "none") ||
-        (!isWeapon &&
-          displayCard.resistElement &&
-          displayCard.resistElement !== "none") ||
-        (isWeapon && displayCard.weaponType && displayCard.weaponType !== "none") ||
-        (!isWeapon && displayCard.armorType && displayCard.armorType !== "none") ||
-        displayCard.catalogEffects.length > 0) && (
+      {(() => {
+        const topTypeLabel = typeLabelFor(displayCard, topLabelPreset);
+        const showAnyChip =
+          (isWeapon && displayCard.element && displayCard.element !== "none") ||
+          (!isWeapon &&
+            displayCard.resistElement &&
+            displayCard.resistElement !== "none") ||
+          topTypeLabel !== "" ||
+          displayCard.catalogEffects.length > 0;
+        if (!showAnyChip) return null;
+        return (
         <div className="flex flex-wrap gap-1">
-          {isWeapon &&
-            displayCard.weaponType &&
-            displayCard.weaponType !== "none" && (
-              <TypeChip label={displayCard.weaponType} />
-            )}
-          {!isWeapon &&
-            displayCard.armorType &&
-            displayCard.armorType !== "none" && (
-              <TypeChip label={displayCard.armorType} />
-            )}
+          {topTypeLabel !== "" && <TypeChip label={topTypeLabel} />}
           {isWeapon &&
             displayCard.element &&
             displayCard.element !== "none" && (
@@ -387,17 +420,19 @@ export function AssetCard({
           {displayCard.catalogEffects.map((e) => (
             <span
               key={e.name}
-              className="text-[10px] px-1.5 py-0.5 rounded"
+              className="text-[10px] px-1.5 py-0.5 rounded uppercase tracking-wider font-semibold"
               style={{
-                background: "rgba(255,255,255,0.06)",
-                border: "1px solid rgba(255,255,255,0.1)",
+                background: "rgba(45,212,191,0.10)",
+                color: "#5eead4",
+                border: "1px solid rgba(45,212,191,0.30)",
               }}
             >
               {e.name.replace(/_/g, " ")} {e.value}
             </span>
           ))}
         </div>
-      )}
+        );
+      })()}
       {displayCard.preseed && (
         <span className="text-[10px] opacity-50 uppercase tracking-wider">
           Genesis liquidity

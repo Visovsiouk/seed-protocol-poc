@@ -149,6 +149,9 @@ export function RoomNarration({
       {encounter?.kind === "ledger" && (
         <p className="text-xs uppercase tracking-wide opacity-50">Ledger</p>
       )}
+      {encounter?.kind === "rest" && (
+        <p className="text-xs uppercase tracking-wide opacity-50">Safe Room</p>
+      )}
     </section>
   );
 }
