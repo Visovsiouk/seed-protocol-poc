@@ -17,6 +17,7 @@
  */
 
 import { useMemo, useState } from "react";
+import { TrendingUp, TrendingDown, Minus } from "lucide-react";
 import type {
   AssetCard as AssetCardType,
   LootRoll,
@@ -218,7 +219,8 @@ function DeltaChip({
       : tone === "down"
         ? { bg: "rgba(244,63,94,0.10)", fg: "#fb7185", border: "rgba(244,63,94,0.30)" }
         : { bg: "rgba(148,163,184,0.10)", fg: "#cbd5e1", border: "rgba(148,163,184,0.30)" };
-  const glyph = tone === "up" ? "↑" : tone === "down" ? "↓" : "→";
+  const Icon =
+    tone === "up" ? TrendingUp : tone === "down" ? TrendingDown : Minus;
   return (
     <li
       className="text-[10px] px-1.5 py-0.5 rounded uppercase tracking-wider font-semibold tabular-nums inline-flex items-center gap-1"
@@ -228,9 +230,7 @@ function DeltaChip({
         border: `1px solid ${palette.border}`,
       }}
     >
-      <span aria-hidden="true" className="opacity-80">
-        {glyph}
-      </span>
+      <Icon aria-hidden="true" size={11} strokeWidth={2.5} className="shrink-0 opacity-90" />
       <span>{label}</span>
     </li>
   );
