@@ -359,6 +359,16 @@ export async function POST(req: Request) {
     : getOwnerSigner(body.preset);
   const publicClient = getPublicClient();
 
+  // Fetch the pending nonce (confirmed + in-mempool) so concurrent mint
+  // requests from the same signer key don't collide. The default viem
+  // auto-nonce reads `eth_getTransactionCount` against the latest
+  // *confirmed* block, which is stale whenever a prior tx is still
+  // pending — causing "nonce too low" on the second request.
+  const nonce = await publicClient.getTransactionCount({
+    address: signer.account.address,
+    blockTag: "pending",
+  });
+
   let hash: `0x${string}`;
   try {
     hash = await signer.wallet.writeContract({
@@ -377,6 +387,7 @@ export async function POST(req: Request) {
       ],
       account: signer.account,
       chain: signer.wallet.chain,
+      nonce,
     });
   } catch (e) {
     return reply(500, {
