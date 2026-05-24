@@ -3,6 +3,7 @@ import "server-only";
 import { NextResponse } from "next/server";
 
 import { getPlayerRealm } from "@/lib/server/realm-db";
+import { getSeededSchemaIds } from "@/lib/contracts/seeded-realms";
 
 /**
  * `GET /api/realm/[address]/meta`
@@ -42,6 +43,8 @@ export async function GET(
       { status: 404 },
     );
   }
+  const { loot: lootSchemaId } = getSeededSchemaIds(row.preset);
+
   return NextResponse.json({
     ok: true as const,
     realm: {
@@ -52,6 +55,8 @@ export async function GET(
       name: row.name,
       maxTier: row.maxTier,
       createdAt: row.createdAt,
+      // String — JSON cannot represent bigint. Consumers must BigInt() this.
+      lootSchemaId: lootSchemaId.toString(),
     },
   });
 }

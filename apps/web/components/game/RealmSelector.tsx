@@ -12,9 +12,9 @@
  *      order), creator-deployed realms after.
  *   3. Each card renders the appropriate variant — starters link to
  *      `/play/[preset]` and surface ready/not-deployed/inactive state;
- *      creator realms render as address-tagged placeholders for now
- *      (no `/play/[address]` route exists yet for player-deployed
- *      ecosystems).
+ *      creator realms link to `/play/realm/[address]` with registered
+ *      metadata (name, preset, boss) when available, or trial mode
+ *      otherwise.
  *
  * "Realms are ecosystems" — there's no separate PoC `RealmRegistry`
  * contract; the protocol-level `EcosystemRegistry` is the source of

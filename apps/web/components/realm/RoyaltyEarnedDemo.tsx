@@ -77,17 +77,18 @@ const INITIAL_STEPS: StepsState = {
 
 type Props = {
   realm: `0x${string}`;
-  /**
-   * Preset used purely for metadata flavor (loot name + trait labels).
-   * Creator realms without on-chain preset metadata pass "fantasy" as a
-   * trial-mode default — the on-chain mint doesn't care what name is
-   * baked into the JSON.
-   */
   preset: Preset;
   realmLabel: string;
+  /**
+   * Seeded loot schema ID for this realm's preset. When provided the
+   * component skips the `ownedSchemas(0)` on-chain read — player realms
+   * never register their own schemas, so that read always reverts; the
+   * server exposes the correct ID via `/api/realm/[address]/meta`.
+   */
+  lootSchemaId?: bigint;
 };
 
-export function RoyaltyEarnedDemo({ realm, preset, realmLabel }: Props) {
+export function RoyaltyEarnedDemo({ realm, preset, realmLabel, lootSchemaId }: Props) {
   const { address: viewer } = useAccount();
   const publicClient = usePublicClient();
   const qc = useQueryClient();
@@ -103,12 +104,12 @@ export function RoyaltyEarnedDemo({ realm, preset, realmLabel }: Props) {
   const [traderListingId, setTraderListingId] = useState<bigint | null>(null);
   const [royaltyEarned, setRoyaltyEarned] = useState<bigint>(0n);
 
-  // First-registered schema on this realm. `ownedSchemas(0)` reverts on a
-  // fresh clone — we surface that as a precondition rather than letting
-  // step 1 explode in the user's face. Read once per realm.
+  // When the caller passes `lootSchemaId` (player realms via meta endpoint)
+  // we skip the on-chain read entirely — player realms never call
+  // `registerSchema`, so `ownedSchemas(0)` always reverts for them.
   const schemaQuery = useQuery({
     queryKey: ["realm-owned-schema-0", realm],
-    enabled: !!publicClient,
+    enabled: !!publicClient && !lootSchemaId,
     staleTime: Infinity,
     queryFn: async (): Promise<bigint | null> => {
       if (!publicClient) return null;
@@ -128,6 +129,9 @@ export function RoyaltyEarnedDemo({ realm, preset, realmLabel }: Props) {
 
   const fees = useMemo(() => computeFeeBreakdown(DEMO_PRICE), []);
 
+  // Resolved schema ID: prop wins over on-chain read.
+  const resolvedSchemaId = lootSchemaId ?? schemaQuery.data ?? null;
+
   const setStep = useCallback((key: StepKey, patch: Partial<StepRecord>) => {
     setSteps((prev) => ({ ...prev, [key]: { ...prev[key], ...patch } }));
   }, []);
@@ -135,7 +139,7 @@ export function RoyaltyEarnedDemo({ realm, preset, realmLabel }: Props) {
   // ---- Step 1: mint -------------------------------------------------------
   const runMint = useCallback(async () => {
     if (!viewer || !publicClient) return;
-    const extensionSchemaId = schemaQuery.data;
+    const extensionSchemaId = resolvedSchemaId;
     if (!extensionSchemaId || extensionSchemaId === 0n) return;
 
     setStep("mint", { status: "pending", error: undefined });
@@ -208,7 +212,7 @@ export function RoyaltyEarnedDemo({ realm, preset, realmLabel }: Props) {
   }, [
     viewer,
     publicClient,
-    schemaQuery.data,
+    resolvedSchemaId,
     preset,
     realm,
     realmLabel,
@@ -329,7 +333,8 @@ export function RoyaltyEarnedDemo({ realm, preset, realmLabel }: Props) {
   const allDone = stepsOrder.every((s) => steps[s.key].status === "done");
   const anyPending = stepsOrder.some((s) => steps[s.key].status === "pending");
 
-  const schemaReady = schemaQuery.data !== null && schemaQuery.data !== 0n;
+  const schemaReady = resolvedSchemaId !== null && resolvedSchemaId !== 0n;
+  const schemaLoading = !lootSchemaId && schemaQuery.isLoading;
 
   return (
     <section
@@ -366,11 +371,11 @@ export function RoyaltyEarnedDemo({ realm, preset, realmLabel }: Props) {
         royalties follow the realm forever.
       </p>
 
-      {schemaQuery.isLoading && (
+      {schemaLoading && (
         <p className="text-xs opacity-60">Checking realm schemas…</p>
       )}
 
-      {!schemaQuery.isLoading && !schemaReady && (
+      {!schemaLoading && !schemaReady && (
         <aside
           className="rounded-md p-3 text-xs leading-relaxed"
           style={{
