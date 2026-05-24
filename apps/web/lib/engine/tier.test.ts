@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createRng } from "./rng";
-import { _tierTablesForTests, rollTier, tierStats } from "./tier";
+import { _tierTablesForTests, rollEffectCount, rollTier, tierStats } from "./tier";
 import type { Tier } from "./types";
 
 const SEED =
@@ -45,7 +45,10 @@ describe("tierStats", () => {
 });
 
 describe("rollTier", () => {
-  it("trivial → only T1/T2", () => {
+  it("trivial → only T1 or T2", () => {
+    // HP-carry rebalance: T1 was re-introduced to `trivial` so depth-1
+    // drops feel like real loot churn (most drops are sidegrades from
+    // the d6/+1 starter). See tier.ts for the rationale.
     const rng = createRng(SEED);
     for (let i = 0; i < 500; i++) {
       const t = rollTier(rng, "trivial");
@@ -53,66 +56,74 @@ describe("rollTier", () => {
     }
   });
 
-  it("standard → only T1/T2/T3", () => {
+  it("standard → only T2/T3/T4", () => {
+    // Rebalance: T1 was removed from `standard` to stop post-depth-1
+    // rooms dropping stat-identical-to-starter mints. See tier.ts.
     const rng = createRng(SEED);
     for (let i = 0; i < 500; i++) {
       const t = rollTier(rng, "standard");
-      expect([1, 2, 3]).toContain(t);
+      expect([2, 3, 4]).toContain(t);
     }
   });
 
-  it("boss → never T1, can be T5", () => {
+  it("boss → never T1 or T2, can be T5", () => {
+    // Rebalance: boss drops are guaranteed-premium — T3 floor.
     const rng = createRng(SEED);
     const seen = new Set<Tier>();
     for (let i = 0; i < 5000; i++) {
       const t = rollTier(rng, "boss");
       expect(t).not.toBe(1);
+      expect(t).not.toBe(2);
       seen.add(t);
     }
     expect(seen.has(5)).toBe(true);
   });
 
-  it("trivial distribution roughly matches the tier table", () => {
+  it("trivial distribution is roughly 70% T1 / 30% T2", () => {
+    // HP-carry rebalance: T1 carries 70% weight at trivial depth so
+    // most first drops are sidegrades; T2 lands the rest.
     const rng = createRng(SEED);
     const N = 10_000;
     const counts: Record<Tier, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
     for (let i = 0; i < N; i++) counts[rollTier(rng, "trivial")]++;
-    // 90% / 10% — generous bands so we don't flake on seed drift.
-    expect(counts[1] / N).toBeGreaterThan(0.86);
-    expect(counts[1] / N).toBeLessThan(0.94);
-    expect(counts[2] / N).toBeGreaterThan(0.06);
-    expect(counts[2] / N).toBeLessThan(0.14);
+    expect(counts[1] / N).toBeGreaterThan(0.66);
+    expect(counts[1] / N).toBeLessThan(0.74);
+    expect(counts[2] / N).toBeGreaterThan(0.26);
+    expect(counts[2] / N).toBeLessThan(0.34);
+    expect(counts[3] / N).toBe(0);
   });
 
-  it("standard distribution roughly matches the tier table", () => {
+  it("standard distribution roughly matches the rebalanced table", () => {
+    // Rebalance: 60% T2 / 30% T3 / 10% T4. With starter-realm
+    // maxTier=2, the renormaliser collapses this to 100% T2 — i.e.
+    // every post-depth-1 drop is a real upgrade.
     const rng = createRng(SEED);
     const N = 10_000;
     const counts: Record<Tier, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
     for (let i = 0; i < N; i++) counts[rollTier(rng, "standard")]++;
-    // 50% / 35% / 15%.
-    expect(counts[1] / N).toBeGreaterThan(0.46);
-    expect(counts[1] / N).toBeLessThan(0.54);
-    expect(counts[2] / N).toBeGreaterThan(0.31);
-    expect(counts[2] / N).toBeLessThan(0.39);
-    expect(counts[3] / N).toBeGreaterThan(0.11);
-    expect(counts[3] / N).toBeLessThan(0.19);
+    expect(counts[1] / N).toBe(0);
+    expect(counts[2] / N).toBeGreaterThan(0.56);
+    expect(counts[2] / N).toBeLessThan(0.64);
+    expect(counts[3] / N).toBeGreaterThan(0.26);
+    expect(counts[3] / N).toBeLessThan(0.34);
+    expect(counts[4] / N).toBeGreaterThan(0.06);
+    expect(counts[4] / N).toBeLessThan(0.14);
   });
 
-  it("boss distribution roughly matches the tier table", () => {
+  it("boss distribution roughly matches the rebalanced table", () => {
+    // Rebalance: 40% T3 / 45% T4 / 15% T5.
     const rng = createRng(SEED);
     const N = 20_000;
     const counts: Record<Tier, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
     for (let i = 0; i < N; i++) counts[rollTier(rng, "boss")]++;
-    // 0% / 30% / 50% / 18% / 2%.
     expect(counts[1] / N).toBe(0);
-    expect(counts[2] / N).toBeGreaterThan(0.26);
-    expect(counts[2] / N).toBeLessThan(0.34);
-    expect(counts[3] / N).toBeGreaterThan(0.46);
-    expect(counts[3] / N).toBeLessThan(0.54);
-    expect(counts[4] / N).toBeGreaterThan(0.14);
-    expect(counts[4] / N).toBeLessThan(0.22);
-    // 2% is small enough to be noisy — just confirm we see it.
-    expect(counts[5]).toBeGreaterThan(0);
+    expect(counts[2] / N).toBe(0);
+    expect(counts[3] / N).toBeGreaterThan(0.36);
+    expect(counts[3] / N).toBeLessThan(0.44);
+    expect(counts[4] / N).toBeGreaterThan(0.41);
+    expect(counts[4] / N).toBeLessThan(0.49);
+    expect(counts[5] / N).toBeGreaterThan(0.11);
+    expect(counts[5] / N).toBeLessThan(0.19);
   });
 
   it("is deterministic across rng instances", () => {
@@ -129,6 +140,71 @@ describe("tier table integrity", () => {
     for (const [_, dist] of Object.entries(_tierTablesForTests.TIER_DISTRIBUTION)) {
       const sum = dist.reduce((acc, [, w]) => acc + w, 0);
       expect(sum).toBe(100);
+    }
+  });
+
+  it("every effect-count distribution sums to 100", () => {
+    for (const [_, dist] of Object.entries(
+      _tierTablesForTests.EFFECT_COUNT_DISTRIBUTION,
+    )) {
+      const sum = dist.reduce((acc, [, w]) => acc + w, 0);
+      expect(sum).toBe(100);
+    }
+  });
+});
+
+describe("rollEffectCount", () => {
+  it("T1 always returns 0", () => {
+    const rng = createRng(SEED);
+    for (let i = 0; i < 500; i++) {
+      expect(rollEffectCount(rng, 1)).toBe(0);
+    }
+  });
+
+  it("T2 returns 0 or 1, roughly 85/15", () => {
+    const rng = createRng(SEED);
+    const N = 10_000;
+    let zero = 0;
+    let one = 0;
+    for (let i = 0; i < N; i++) {
+      const c = rollEffectCount(rng, 2);
+      if (c === 0) zero++;
+      else if (c === 1) one++;
+      else throw new Error(`T2 produced unexpected count ${c}`);
+    }
+    expect(zero / N).toBeGreaterThan(0.81);
+    expect(zero / N).toBeLessThan(0.89);
+    expect(one / N).toBeGreaterThan(0.11);
+    expect(one / N).toBeLessThan(0.19);
+  });
+
+  it("T5 never returns 0", () => {
+    const rng = createRng(SEED);
+    for (let i = 0; i < 500; i++) {
+      const c = rollEffectCount(rng, 5);
+      expect(c).toBeGreaterThanOrEqual(1);
+      expect(c).toBeLessThanOrEqual(3);
+    }
+  });
+
+  it("T5 distribution roughly 60/35/5", () => {
+    const rng = createRng(SEED);
+    const N = 10_000;
+    const counts: Record<number, number> = { 1: 0, 2: 0, 3: 0 };
+    for (let i = 0; i < N; i++) counts[rollEffectCount(rng, 5)]!++;
+    expect(counts[1]! / N).toBeGreaterThan(0.55);
+    expect(counts[1]! / N).toBeLessThan(0.65);
+    expect(counts[2]! / N).toBeGreaterThan(0.30);
+    expect(counts[2]! / N).toBeLessThan(0.40);
+    expect(counts[3]! / N).toBeGreaterThan(0.02);
+    expect(counts[3]! / N).toBeLessThan(0.08);
+  });
+
+  it("is deterministic across rng instances", () => {
+    const a = createRng(SEED);
+    const b = createRng(SEED);
+    for (let i = 0; i < 200; i++) {
+      expect(rollEffectCount(a, 4)).toEqual(rollEffectCount(b, 4));
     }
   });
 });

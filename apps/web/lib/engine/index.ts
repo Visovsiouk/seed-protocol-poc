@@ -48,7 +48,7 @@ import {
 import { pickSlot, rollLoot, type RealmSchemas } from "./loot";
 import type { Difficulty } from "./tier";
 import { getFlavorBank } from "../flavor";
-import { pickVariant } from "./narration";
+import { monsterTitle, pickVariant } from "./narration";
 import type { FlavorBank } from "../flavor/types";
 import { respawnVoiceFor } from "../story/genesis";
 
@@ -123,7 +123,15 @@ function playerStartHp(equipped: RunState["equipped"]): {
   maxHp: number;
   ac: number;
 } {
-  const baseHp = 25;
+  // Rebalance (HP-carry era): baseHp lifted to 40. Per-encounter
+  // resets used to make 30 viable, but with persistent HP the player
+  // walks into the boss having absorbed 5 rooms of damage, and 30
+  // collapsed the boss-clear rate to ~3%. At 40 the pool can absorb
+  // attrition (≈ 5-8 HP/room with reverted attackDies) and still
+  // arrive at the boss above 50%. T1-only paths remain walled at
+  // depth 4-5 by the d8 mobs there. See
+  // `scripts/balance-sweep.ts --mode=run`.
+  const baseHp = 40;
   const baseAc = 10;
   const hpBonus = equipped.armor?.hpBonus ?? 0;
   const acBonus = equipped.armor?.acBonus ?? 0;
@@ -134,6 +142,58 @@ function difficultyFor(depth: number, isBoss: boolean): Difficulty {
   if (isBoss) return "boss";
   if (depth <= 1) return "trivial";
   return "standard";
+}
+
+/**
+ * Per-preset flavor for rest encounters. Kept inline (not in flavor banks)
+ * because it's a single short string-pair per preset and the rest
+ * mechanic isn't preset-authored content the way monsters/rooms are. If
+ * a future realm wants custom rest flavor, lift this into `FlavorBank`.
+ */
+function restFlavorFor(
+  preset: Preset,
+): ReadonlyArray<{ prompt: string; actionLabel: string }> {
+  if (preset === "fantasy") {
+    return [
+      {
+        prompt:
+          "An abandoned shrine offers an unguarded breath. You set down your pack.",
+        actionLabel: "Make Camp",
+      },
+      {
+        prompt:
+          "Sunlight filters through a collapsed ceiling onto soft moss — no claws, no echoes.",
+        actionLabel: "Rest a Spell",
+      },
+    ];
+  }
+  if (preset === "scifi") {
+    return [
+      {
+        prompt:
+          "A dormant maintenance bay. Cooling fans hum; no hostiles on scan.",
+        actionLabel: "Patch Up",
+      },
+      {
+        prompt:
+          "Telemetry shows a quiet pocket of corridor. Your medkit pings ready.",
+        actionLabel: "Medkit",
+      },
+    ];
+  }
+  // cyberpunk
+  return [
+    {
+      prompt:
+        "A cracked netcafe with no patrons and one working chair. You boot a hostile-free node.",
+      actionLabel: "Reboot",
+    },
+    {
+      prompt:
+        "An empty rooftop — neon hum, no drones, no eyes. You jack into a clean stream.",
+      actionLabel: "Cycle Buffers",
+    },
+  ];
 }
 
 /** Picks a room template at the given depth from the bank. */
@@ -194,13 +254,15 @@ function generateEncounter(
     const player = playerStartHp(state.equipped);
     const combat = createBossEncounter({
       boss,
-      playerHp: player.hp,
-      playerMaxHp: player.maxHp,
+      // Persistent HP carry: player arrives at the boss with whatever
+      // pool they had at the end of the previous room (not at max).
+      playerHp: state.playerHp,
+      playerMaxHp: state.playerMaxHp,
       playerAc: player.ac,
       suppressedBakedEffects: state.runSuppressedBossEffects,
     });
     lines.push({
-      text: `${boss.name} blocks your path.`,
+      text: `${monsterTitle(boss)} blocks your path.`,
       emphasis: "drama",
     });
     return {
@@ -239,7 +301,11 @@ function generateEncounter(
 
   // Regular room.
   const room = pickRoomTemplate(rng, bank, state.depth);
-  const archetype = pickArchetype(rng);
+  const archetype = pickArchetype(rng, {
+    depth: state.depth,
+    hp: state.playerHp,
+    maxHp: state.playerMaxHp,
+  });
   lines.push({ text: pickVariant(bank.rooms, room.narrationKey, rng), emphasis: "info" });
 
   if (archetype === "combat") {
@@ -252,8 +318,11 @@ function generateEncounter(
     const monster = pickMonster(rng, roomForPick, bank.monsters);
     const player = playerStartHp(state.equipped);
     const combat: CombatState = {
-      playerHp: player.hp,
-      playerMaxHp: player.maxHp,
+      // Persistent HP carry: room-to-room HP carries from `state.playerHp`.
+      // `playerMaxHp` is the run cap (re-pinned by equipItem). AC still
+      // comes from current equipment.
+      playerHp: state.playerHp,
+      playerMaxHp: state.playerMaxHp,
       playerAc: player.ac,
       monster,
       monsterHp: monster.hp,
@@ -262,6 +331,9 @@ function generateEncounter(
       regenDoubledThisTurn: false,
       thornsDoubledThisTurn: false,
       focusPrimed: false,
+      // Non-boss combats can't trigger phase transitions; this flag stays
+      // false but the field is required by the CombatState shape.
+      phase2PlayerBuffed: false,
       bleedStacks: 0,
       suppressedEffects: [],
       turn: 0,
@@ -273,13 +345,30 @@ function generateEncounter(
     };
   }
 
+  if (archetype === "rest") {
+    const flavor = restFlavorFor(state.preset);
+    const variant = flavor[rng.nextInt(flavor.length)]!;
+    // Heal is 50% maxHp, clamped against current HP so the field reflects
+    // the actual delta (no "+15 HP" line when only 4 HP was missing).
+    const fullHeal = Math.floor(state.playerMaxHp * 0.5);
+    const healAmount = Math.min(fullHeal, state.playerMaxHp - state.playerHp);
+    lines.push({ text: variant.prompt, emphasis: "info" });
+    return {
+      encounter: {
+        kind: "rest",
+        archetype: "rest",
+        prompt: variant.prompt,
+        actionLabel: variant.actionLabel,
+        healAmount,
+      },
+      lines,
+      roomTemplate: room,
+    };
+  }
+
   // trial
-  const plan = planTrial(rng, equippedFor(state), state.depth);
-  const flavor = pickVariant(
-    { trial: bank.trialPrompts as readonly string[] },
-    "trial",
-    rng,
-  );
+  const trial = rng.pick(bank.trials);
+  const plan = planTrial(trial.ability, equippedFor(state), state.depth);
   return {
     encounter: {
       kind: "trial",
@@ -287,7 +376,11 @@ function generateEncounter(
       ability: plan.ability,
       dc: plan.dc,
       bonus: plan.bonus,
-      flavor,
+      prompt: trial.prompt,
+      intent: trial.intent,
+      stakes: trial.stakes,
+      onSuccess: trial.onSuccess,
+      onFailure: trial.onFailure,
     },
     lines,
     roomTemplate: room,
@@ -327,6 +420,7 @@ const BOSS_STORE = new WeakMap<RunState, string>();
 
 /** Builds the initial RunState, depth 1, with the first encounter generated. */
 export function startRun(args: StartRunArgs): { state: RunState; lines: NarrationLine[] } {
+  const start = playerStartHp(args.equipped);
   const baseState: RunState = {
     preset: args.preset,
     realm: args.realm,
@@ -335,6 +429,8 @@ export function startRun(args: StartRunArgs): { state: RunState; lines: Narratio
     bossDepth: args.bossDepth ?? BOSS_DEPTH,
     encounter: null,
     equipped: args.equipped,
+    playerHp: start.hp,
+    playerMaxHp: start.maxHp,
     bossCleared: false,
     defeated: false,
     defeatMode: args.defeatMode ?? "permadeath",
@@ -400,8 +496,8 @@ export function step(state: RunState, choice: ActionChoice): StepResult {
       const isBoss = state.depth >= state.bossDepth;
       lines.push({
         text: isBoss
-          ? `${combat.monster.name} falls. The realm is cleared.`
-          : `${combat.monster.name} falls.`,
+          ? `${monsterTitle(combat.monster)} falls. The realm is cleared.`
+          : `${monsterTitle(combat.monster)} falls.`,
         emphasis: "drama",
       });
       let loot = rollLoot({
@@ -434,6 +530,9 @@ export function step(state: RunState, choice: ActionChoice): StepResult {
       const nextState: RunState = {
         ...state,
         encounter: null,
+        // Persistent HP write-back: the HP the player ended the fight on
+        // carries into the next room.
+        playerHp: Math.max(0, Math.min(combat.playerHp, state.playerMaxHp)),
         pendingLoot: loot,
         bossCleared: state.bossCleared || isBoss,
         firstWeaponDropped: nextFirstWeaponDropped,
@@ -457,11 +556,17 @@ export function step(state: RunState, choice: ActionChoice): StepResult {
           lines.push({ text: r, emphasis: "info" });
         }
         const reseeded = reseedForAttempt(state.rngSeed, nextAttempt);
+        const respawnStart = playerStartHp(state.equipped);
         const seededBase: RunState = {
           ...state,
           rngSeed: reseeded,
           depth: 1,
           encounter: null,
+          // Persistent HP resets to current-equipment max on respawn —
+          // the Seed grows the player back whole. Gear acquired during
+          // the failed attempt is retained, so the new pool reflects it.
+          playerHp: respawnStart.hp,
+          playerMaxHp: respawnStart.maxHp,
           runAttempt: nextAttempt,
           firstWeaponDropped: false,
           pendingLoot: undefined,
@@ -484,7 +589,7 @@ export function step(state: RunState, choice: ActionChoice): StepResult {
 
       // Permadeath.
       lines.push({
-        text: `You fall. ${combat.monster.name} stands over you.`,
+        text: `You fall. ${monsterTitle(combat.monster)} stands over you.`,
         emphasis: "drama",
       });
       events.push({ type: "PlayerDefeated", depth: state.depth, turn: combat.turn });
@@ -517,42 +622,112 @@ export function step(state: RunState, choice: ActionChoice): StepResult {
     }
     const plan = { ability: enc.ability, dc: enc.dc, bonus: enc.bonus };
     const r = resolveTrial(rng, plan, state.depth);
-    const bank = getFlavorBank(state.preset);
     const lines: NarrationLine[] = [];
+    // Apply heal/damage to persistent HP. Until HP carry landed these
+    // values were narration-only; now they actually move the pool.
+    const delta = r.success ? r.healOnSuccess : -r.damageOnFail;
+    const nextHp = Math.max(0, Math.min(state.playerHp + delta, state.playerMaxHp));
     if (r.success) {
-      lines.push({
-        text: pickVariant(
-          { ok: bank.trialSuccess as readonly string[] },
-          "ok",
-          rng,
-        ),
-        emphasis: "info",
-      });
+      lines.push({ text: enc.onSuccess, emphasis: "info" });
       lines.push({
         text: `You roll d20 ${r.dieRoll}+${plan.bonus}=${r.total} vs DC ${plan.dc}. You recover ${r.healOnSuccess} HP.`,
         emphasis: "heal",
       });
-      events.push({ type: "RoomCleared", depth: state.depth });
-      const nextState: RunState = { ...state, encounter: null };
+    } else {
+      lines.push({ text: enc.onFailure, emphasis: "damage" });
+      lines.push({
+        text: `You roll d20 ${r.dieRoll}+${plan.bonus}=${r.total} vs DC ${plan.dc}. You lose ${r.damageOnFail} HP.`,
+        emphasis: "damage",
+      });
+    }
+
+    // Trial damage can kill — run the same defeat fork combat uses.
+    if (nextHp <= 0) {
+      if (state.defeatMode === "seed-mercy") {
+        const nextAttempt = state.runAttempt + 1;
+        const voice = respawnVoiceFor(state.preset, nextAttempt);
+        lines.push({ text: voice.death, emphasis: "drama" });
+        for (const v of voice.respawn) {
+          lines.push({ text: v, emphasis: "info" });
+        }
+        const reseeded = reseedForAttempt(state.rngSeed, nextAttempt);
+        const respawnStart = playerStartHp(state.equipped);
+        const seededBase: RunState = {
+          ...state,
+          rngSeed: reseeded,
+          depth: 1,
+          encounter: null,
+          playerHp: respawnStart.hp,
+          playerMaxHp: respawnStart.maxHp,
+          runAttempt: nextAttempt,
+          firstWeaponDropped: false,
+          pendingLoot: undefined,
+          runSuppressedBossEffects: [],
+          ledgerConsumed: false,
+        };
+        SCHEMA_STORE.set(seededBase, schemas);
+        const bossId = BOSS_STORE.get(state);
+        if (bossId) BOSS_STORE.set(seededBase, bossId);
+        const gen = generateEncounter(seededBase, bossId ?? "");
+        lines.push(...gen.lines);
+        const nextState: RunState = { ...seededBase, encounter: gen.encounter };
+        SCHEMA_STORE.set(nextState, schemas);
+        if (bossId) BOSS_STORE.set(nextState, bossId);
+        return { state: nextState, outcome: lines, events };
+      }
+      // Permadeath via trial failure.
+      lines.push({ text: "The toll is too steep. You fall.", emphasis: "drama" });
+      events.push({ type: "PlayerDefeated", depth: state.depth, turn: 0 });
+      const nextState: RunState = {
+        ...state,
+        encounter: null,
+        playerHp: 0,
+        defeated: true,
+        defeatedAtDepth: state.depth,
+        defeatedTurn: 0,
+      };
       SCHEMA_STORE.set(nextState, schemas);
       const bossId = BOSS_STORE.get(state);
       if (bossId) BOSS_STORE.set(nextState, bossId);
       return { state: nextState, outcome: lines, events };
     }
-    lines.push({
-      text: pickVariant(
-        { fail: bank.trialFailure as readonly string[] },
-        "fail",
-        rng,
-      ),
-      emphasis: "damage",
-    });
-    lines.push({
-      text: `You roll d20 ${r.dieRoll}+${plan.bonus}=${r.total} vs DC ${plan.dc}. You lose ${r.damageOnFail} HP.`,
-      emphasis: "damage",
-    });
+
     events.push({ type: "RoomCleared", depth: state.depth });
-    const nextState: RunState = { ...state, encounter: null };
+    const nextState: RunState = {
+      ...state,
+      encounter: null,
+      playerHp: nextHp,
+    };
+    SCHEMA_STORE.set(nextState, schemas);
+    const bossId = BOSS_STORE.get(state);
+    if (bossId) BOSS_STORE.set(nextState, bossId);
+    return { state: nextState, outcome: lines, events };
+  }
+
+  if (enc.kind === "rest") {
+    if (choice.kind !== "rest") {
+      throw new Error("step: rest encounter requires a rest choice");
+    }
+    const lines: NarrationLine[] = [];
+    const heal = Math.min(enc.healAmount, state.playerMaxHp - state.playerHp);
+    const nextHp = state.playerHp + heal;
+    if (heal > 0) {
+      lines.push({
+        text: `You patch up and steady yourself. (+${heal} HP)`,
+        emphasis: "heal",
+      });
+    } else {
+      lines.push({
+        text: "You are already at full strength. You move on.",
+        emphasis: "info",
+      });
+    }
+    events.push({ type: "RoomCleared", depth: state.depth });
+    const nextState: RunState = {
+      ...state,
+      encounter: null,
+      playerHp: nextHp,
+    };
     SCHEMA_STORE.set(nextState, schemas);
     const bossId = BOSS_STORE.get(state);
     if (bossId) BOSS_STORE.set(nextState, bossId);
@@ -618,13 +793,50 @@ export function advance(
   if (state.encounter) {
     throw new Error("advance: current encounter is still active");
   }
-  const next: RunState = { ...state, depth: state.depth + 1 };
+
+  // Inter-room trickle heal: +10% maxHp when transitioning to a non-boss
+  // depth, AND only when the player is meaningfully chipped (HP/maxHp <
+  // 85%). Skipped on entry to the boss room — the boss is supposed to
+  // close on a chipped player. Rounds down (10% of 40-base = 4 HP).
+  //
+  // The "<85%" gate has two jobs: (1) kills the spammy "+0 HP" / "+1 HP"
+  // narration lines on rooms where the player took no damage, and (2)
+  // keeps the breath-catching narrative beat meaningful — when it
+  // appears, you really did just survive something. Prior 25-30% rates
+  // (always-on) topped near-full players up to capacity and made the
+  // run feel friction-free; the rest archetype (+50% maxHp on demand)
+  // is the heavier recovery lever the run is balanced around. See the
+  // heal-variants comparison in scripts/heal-variants.ts.
+  const nextDepth = state.depth + 1;
+  const isEnteringBoss = nextDepth >= state.bossDepth;
+  const healPct = 0.1;
+  const chippedEnough =
+    state.playerMaxHp > 0 && state.playerHp / state.playerMaxHp < 0.85;
+  const healAmount =
+    isEnteringBoss || !chippedEnough
+      ? 0
+      : Math.floor(state.playerMaxHp * healPct);
+  const healedHp = Math.min(state.playerHp + healAmount, state.playerMaxHp);
+  const actualHeal = healedHp - state.playerHp;
+  const lines: NarrationLine[] = [];
+  if (actualHeal > 0) {
+    lines.push({
+      text: `You catch your breath. (+${actualHeal} HP)`,
+      emphasis: "heal",
+    });
+  }
+  const next: RunState = {
+    ...state,
+    depth: nextDepth,
+    playerHp: healedHp,
+  };
   const gen = generateEncounter(next, bossId);
+  lines.push(...gen.lines);
   const out: RunState = { ...next, encounter: gen.encounter };
   const schemas = SCHEMA_STORE.get(state);
   if (schemas) SCHEMA_STORE.set(out, schemas);
   BOSS_STORE.set(out, bossId);
-  return { state: out, lines: gen.lines };
+  return { state: out, lines };
 }
 
 /**
@@ -644,9 +856,19 @@ export function equipItem(
   slot: "weapon" | "armor" | "accessory",
   card: AssetCard,
 ): RunState {
+  const nextEquipped = { ...state.equipped, [slot]: card };
+  // Re-pin the HP cap from the new armor's hpBonus. Extending the cap
+  // does NOT refill the pool — gear upgrade ≠ free heal — but shrinking
+  // it (e.g. swapping out a +10HP cuirass for a +5HP one) clamps current
+  // HP down so the player can never exceed the new max.
+  const repinned = playerStartHp(nextEquipped);
+  const newMax = repinned.maxHp;
+  const newHp = Math.min(state.playerHp, newMax);
   const next: RunState = {
     ...state,
-    equipped: { ...state.equipped, [slot]: card },
+    equipped: nextEquipped,
+    playerHp: newHp,
+    playerMaxHp: newMax,
   };
   const schemas = SCHEMA_STORE.get(state);
   if (schemas) SCHEMA_STORE.set(next, schemas);

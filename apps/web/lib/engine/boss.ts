@@ -23,6 +23,7 @@ import type {
   CombatState,
   NarrationLine,
 } from "./types";
+import { monsterTitle } from "./narration";
 
 /**
  * Builds the initial CombatState for a boss encounter. `playerAc` includes
@@ -60,6 +61,7 @@ export function createBossEncounter(args: {
     regenDoubledThisTurn: false,
     thornsDoubledThisTurn: false,
     focusPrimed: false,
+    phase2PlayerBuffed: false,
     bleedStacks: 0,
     suppressedEffects: [],
     turn: 0,
@@ -115,10 +117,17 @@ export function checkPhaseTransition(state: CombatState): PhaseTransition {
     ...state,
     bossPhase: 2,
     suppressedEffects,
+    // Rebalance: phase 2 also primes the player. The boss is exposed —
+    // bleeding, off-balance — and the player gets +2 to-hit for the
+    // rest of the fight. Combined with the unchanged `phase2AttackDie`
+    // bump on the boss side, the beat reads as "trade blows harder",
+    // not "you die faster". See.
+    phase2PlayerBuffed: true,
   };
 
   const lines: NarrationLine[] = [
-    { text: `The ${monster.name} grows more dangerous.`, emphasis: "drama" },
+    { text: `${monsterTitle(monster)} grows more dangerous.`, emphasis: "drama" },
+    { text: "You see the opening. Your strikes find purchase.", emphasis: "heal" },
   ];
   if (monster.phase2SuppressEffect) {
     lines.push({

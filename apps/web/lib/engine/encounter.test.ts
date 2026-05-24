@@ -47,21 +47,50 @@ function armor(
 }
 
 describe("pickArchetype", () => {
-  it("distribution ≈ 80/20 combat/trial", () => {
-    const counts = { combat: 0, trial: 0 };
+  // Full-HP context: rest is never eligible (would heal 0), so the base
+  // 80/20 split holds at every depth.
+  const fullHpCtx = { depth: 2, hp: 30, maxHp: 30 };
+  // Chipped context, depth ≥ 3: rest carve-out activates (60/20/20).
+  const chippedCtx = { depth: 3, hp: 15, maxHp: 30 };
+
+  it("distribution ≈ 80/20 combat/trial at full HP", () => {
+    const counts: Record<string, number> = { combat: 0, trial: 0, rest: 0 };
     for (let i = 1; i <= 5000; i++) {
-      const a = pickArchetype(createRng(seedHex(i)));
-      counts[a]++;
+      const a = pickArchetype(createRng(seedHex(i)), fullHpCtx);
+      counts[a] = (counts[a] ?? 0) + 1;
     }
-    expect(counts.combat).toBeGreaterThan(5000 * 0.76);
-    expect(counts.combat).toBeLessThan(5000 * 0.84);
-    expect(counts.trial).toBeGreaterThan(5000 * 0.16);
-    expect(counts.trial).toBeLessThan(5000 * 0.24);
+    expect(counts.combat!).toBeGreaterThan(5000 * 0.76);
+    expect(counts.combat!).toBeLessThan(5000 * 0.84);
+    expect(counts.trial!).toBeGreaterThan(5000 * 0.16);
+    expect(counts.trial!).toBeLessThan(5000 * 0.24);
+    expect(counts.rest!).toBe(0);
+  });
+
+  it("distribution ≈ 60/20/20 when chipped past depth 2", () => {
+    const counts: Record<string, number> = { combat: 0, trial: 0, rest: 0 };
+    for (let i = 1; i <= 5000; i++) {
+      const a = pickArchetype(createRng(seedHex(i)), chippedCtx);
+      counts[a] = (counts[a] ?? 0) + 1;
+    }
+    expect(counts.combat!).toBeGreaterThan(5000 * 0.56);
+    expect(counts.combat!).toBeLessThan(5000 * 0.64);
+    expect(counts.trial!).toBeGreaterThan(5000 * 0.16);
+    expect(counts.trial!).toBeLessThan(5000 * 0.24);
+    expect(counts.rest!).toBeGreaterThan(5000 * 0.16);
+    expect(counts.rest!).toBeLessThan(5000 * 0.24);
+  });
+
+  it("no rest at depth 2 even when chipped", () => {
+    const ctx = { depth: 2, hp: 5, maxHp: 30 };
+    for (let i = 1; i <= 1000; i++) {
+      const a = pickArchetype(createRng(seedHex(i)), ctx);
+      expect(a).not.toBe("rest");
+    }
   });
 
   it("never returns ledger (caller forces those)", () => {
     for (let i = 1; i <= 1000; i++) {
-      const a = pickArchetype(createRng(seedHex(i)));
+      const a = pickArchetype(createRng(seedHex(i)), fullHpCtx);
       expect(a).not.toBe("ledger");
     }
   });
@@ -130,30 +159,22 @@ describe("trialBonusFor", () => {
 
 describe("planTrial", () => {
   it("DC scales as 8 + depth", () => {
-    const rng = createRng(seedHex(1));
-    expect(planTrial(rng, {}, 1).dc).toBe(9);
-    expect(planTrial(rng, {}, 3).dc).toBe(11);
-    expect(planTrial(rng, {}, 5).dc).toBe(13);
+    expect(planTrial("agility", {}, 1).dc).toBe(9);
+    expect(planTrial("agility", {}, 3).dc).toBe(11);
+    expect(planTrial("endurance", {}, 5).dc).toBe(13);
   });
 
-  it("ability roughly 50/50", () => {
-    let agility = 0;
-    for (let i = 1; i <= 2000; i++) {
-      const p = planTrial(createRng(seedHex(i)), {}, 3);
-      if (p.ability === "agility") agility++;
-    }
-    expect(agility / 2000).toBeGreaterThan(0.42);
-    expect(agility / 2000).toBeLessThan(0.58);
+  it("echoes the ability the caller asked for", () => {
+    expect(planTrial("agility", {}, 3).ability).toBe("agility");
+    expect(planTrial("endurance", {}, 3).ability).toBe("endurance");
   });
 
-  it("bonus snapshot matches trialBonusFor for the chosen ability", () => {
+  it("bonus matches trialBonusFor for the supplied ability", () => {
     const equipped = {
       armor: armor([{ name: "dodge_chance", value: 30 }, { name: "damage_reduction", value: 2 }]),
     };
-    for (let i = 1; i <= 50; i++) {
-      const p = planTrial(createRng(seedHex(i)), equipped, 4);
-      expect(p.bonus).toBe(trialBonusFor(p.ability, equipped));
-    }
+    expect(planTrial("agility", equipped, 4).bonus).toBe(trialBonusFor("agility", equipped));
+    expect(planTrial("endurance", equipped, 4).bonus).toBe(trialBonusFor("endurance", equipped));
   });
 });
 
@@ -171,8 +192,8 @@ describe("resolveTrial", () => {
       }
     }
     expect(successes).toBe(200);
-    // healOnSuccess = 2 + floor(3/2) = 3
-    expect(healSum).toBe(200 * 3);
+    // healOnSuccess = 1 + floor(3/3) = 2
+    expect(healSum).toBe(200 * 2);
   });
 
   it("failure when d20 + bonus < dc; damage>0 heal=0", () => {
@@ -182,11 +203,18 @@ describe("resolveTrial", () => {
       if (!r.success) {
         failures++;
         expect(r.healOnSuccess).toBe(0);
-        // damageOnFail = 2 + floor(5/2) = 4
-        expect(r.damageOnFail).toBe(4);
+        // damageOnFail = 3 + 5 = 8
+        expect(r.damageOnFail).toBe(8);
       }
     }
     expect(failures).toBe(200);
+  });
+
+  it("failure damage exceeds success heal at the same depth", () => {
+    // The asymmetry is the design — fail should sting more than pass rewards.
+    const fail = resolveTrial(createRng(seedHex(1)), { ability: "agility", dc: 99, bonus: 0 }, 3);
+    const pass = resolveTrial(createRng(seedHex(1)), { ability: "agility", dc: 0, bonus: 0 }, 3);
+    expect(fail.damageOnFail).toBeGreaterThan(pass.healOnSuccess);
   });
 
   it("total = dieRoll + bonus", () => {

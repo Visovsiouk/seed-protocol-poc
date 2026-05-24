@@ -20,6 +20,28 @@
 
 import type { BossDef, MonsterDef, RoomTemplate } from "../engine/types";
 
+/**
+ * One self-contained trial obstacle. The obstacle dictates the ability
+ * (no random ability/flavor pairing — "leap the chasm" is always agility,
+ * "shove through rubble" is always endurance), and carries its own
+ * intent, stakes, and pass/fail narration so resolution renders a
+ * coherent beat instead of pulling from disconnected pools.
+ */
+export type TrialFlavor = {
+  /** Which ability the obstacle exercises. */
+  ability: "agility" | "endurance";
+  /** Scene-setting line: what the obstacle is. */
+  prompt: string;
+  /** Player goal: what you're trying to do about it. */
+  intent: string;
+  /** What's on the line if you fail. */
+  stakes: string;
+  /** Narration on a successful roll. */
+  onSuccess: string;
+  /** Narration on a failed roll. */
+  onFailure: string;
+};
+
 export type FlavorBank = {
   /** Display name shown on `/play/[preset]`. */
   presetDisplayName: string;
@@ -31,15 +53,12 @@ export type FlavorBank = {
   bossPhases: Readonly<Record<string, readonly string[]>>;
 
   /**
-   * Trial-room flavor: short obstacle prompts ("leap the gap"). The
-   * engine picks one per room and renders it above the DC banner. The
-   * ability is rolled, not flavored, so a single bank covers both
-   * agility and endurance trials.
+   * Trial-room obstacles. Each entry is a complete beat — the engine
+   * picks one per trial room and uses its ability/intent/stakes/outcome
+   * lines verbatim so the prompt, the check, and the resolution all
+   * speak about the same thing.
    */
-  trialPrompts: readonly string[];
-  /** Trial pass/fail outcome lines. */
-  trialSuccess: readonly string[];
-  trialFailure: readonly string[];
+  trials: readonly TrialFlavor[];
 
   /** Ledger-room intro flavor — mood-setting only. */
   ledgerPrompts: readonly string[];

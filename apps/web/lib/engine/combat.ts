@@ -33,6 +33,7 @@ import type {
   NarrationLine,
 } from "./types";
 import type { Rng } from "./rng";
+import { monsterLower, monsterTitle } from "./narration";
 
 /**
  * Maps the equipped armor's defensive catalog effect to one of five
@@ -182,8 +183,16 @@ function rollPlayerAttack(
   // Focus-primed attacks add +2 to-hit on top of the weapon's attackBonus.
   // The flag is set by the previous turn's Secondary→Focus; the caller
   // clears it after this roll so the next swing reverts to baseline.
+  //
+  // Rebalance: when `phase2PlayerBuffed` is set (boss crossed the 50% HP
+  // threshold), every player swing for the rest of the fight gets a
+  // permanent +2 to-hit. Paired with the unchanged phase-2 attack-die
+  // bump on the boss side, the beat reads as "trade blows harder", not
+  // "you die faster". See.
   const attackBonus =
-    (weapon?.attackBonus ?? 0) + (modifiers.focusPrimed ? 2 : 0);
+    (weapon?.attackBonus ?? 0) +
+    (modifiers.focusPrimed ? 2 : 0) +
+    (state.phase2PlayerBuffed ? 2 : 0);
   const damageBonus = weapon?.damageBonus ?? 0;
   const pierce = getActiveEffectValue(state, equipped, "armor_pierce") > 0;
   const monsterAc = pierce ? Math.max(10, state.monster.ac - 2) : state.monster.ac;
@@ -627,41 +636,53 @@ export function resolveRound(
   let playerDefeated = false;
 
   // --- 3. monster attack ---------------------------------------------------
+  // Rebalance: monster-side `multi_hit` (baked into some bosses' bakedEffects,
+  // e.g. Dragon) was previously dead code — `rollMonsterAttack` only ever
+  // produced one swing. We now honor it the same way the player path does:
+  // 1 + N swings, each rolled independently. Boss baked-effect values are
+  // capped in `getMonsterEffectValue` so this is "+1 swing", not "+2".
+  // Brace and other per-turn defensive flags persist across the swing
+  // sequence (only consumed once at the end of the monster's turn).
   if (!monsterDefeated) {
-    const ma = rollMonsterAttack(s, equipped, rng);
-    if (ma.dodged) {
-      lines.push({ text: `You dodge the ${s.monster.name}'s attack.`, emphasis: "info" });
-    } else if (!ma.hit) {
-      lines.push({
-        text:
-          (ma.fumble
-            ? `The ${s.monster.name} stumbles and misses.`
-            : `The ${s.monster.name}'s attack glances off.`) + monsterRollTag(ma),
-        emphasis: "info",
-      });
-    } else {
-      const reducedTag = ma.reducedBy > 0 ? ` (-${ma.reducedBy} reduced)` : "";
-      const critTag = ma.crit ? " — CRITICAL!" : "";
-      const resistTag = ma.resisted ? " (your armor wards it)" : "";
-      s = { ...s, playerHp: Math.max(0, s.playerHp - ma.damageToPlayer) };
-      lines.push({
-        text: `The ${s.monster.name} hits you for ${ma.damageToPlayer}${critTag}${resistTag}${reducedTag}.${monsterRollTag(ma)}`,
-        emphasis: ma.crit ? "drama" : "damage",
-      });
-
-      // Thorns reflects regardless of whether the player just died.
-      if (ma.thornsToMonster > 0) {
-        s = { ...s, monsterHp: Math.max(0, s.monsterHp - ma.thornsToMonster) };
+    const monsterMulti = getMonsterEffectValue(s, "multi_hit");
+    const monsterSwings = 1 + monsterMulti;
+    for (let i = 0; i < monsterSwings; i++) {
+      if (playerDefeated || monsterDefeated) break;
+      const ma = rollMonsterAttack(s, equipped, rng);
+      if (ma.dodged) {
+        lines.push({ text: `You dodge ${monsterLower(s.monster)}'s attack.`, emphasis: "info" });
+      } else if (!ma.hit) {
         lines.push({
-          text: `Thorns reflects ${ma.thornsToMonster} damage.`,
-          emphasis: "damage",
+          text:
+            (ma.fumble
+              ? `${monsterTitle(s.monster)} stumbles and misses.`
+              : `${monsterTitle(s.monster)}'s attack glances off.`) + monsterRollTag(ma),
+          emphasis: "info",
         });
-        if (s.monsterHp <= 0) monsterDefeated = true;
-      }
+      } else {
+        const reducedTag = ma.reducedBy > 0 ? ` (-${ma.reducedBy} reduced)` : "";
+        const critTag = ma.crit ? " — CRITICAL!" : "";
+        const resistTag = ma.resisted ? " (your armor wards it)" : "";
+        s = { ...s, playerHp: Math.max(0, s.playerHp - ma.damageToPlayer) };
+        lines.push({
+          text: `${monsterTitle(s.monster)} hits you for ${ma.damageToPlayer}${critTag}${resistTag}${reducedTag}.${monsterRollTag(ma)}`,
+          emphasis: ma.crit ? "drama" : "damage",
+        });
 
-      if (s.playerHp <= 0) playerDefeated = true;
+        // Thorns reflects regardless of whether the player just died.
+        if (ma.thornsToMonster > 0) {
+          s = { ...s, monsterHp: Math.max(0, s.monsterHp - ma.thornsToMonster) };
+          lines.push({
+            text: `Thorns reflects ${ma.thornsToMonster} damage.`,
+            emphasis: "damage",
+          });
+          if (s.monsterHp <= 0) monsterDefeated = true;
+        }
+
+        if (s.playerHp <= 0) playerDefeated = true;
+      }
     }
-    // Brace was consumed by this incoming swing (whether or not it landed).
+    // Brace was consumed by this incoming swing-sequence (whether or not anything landed).
     s = { ...s, bracedThisTurn: false };
   }
 
@@ -672,7 +693,7 @@ export function resolveRound(
     for (const n of postTurn.notes) {
       if (n.kind === "bleed_tick") {
         lines.push({
-          text: `The ${s.monster.name} bleeds for ${n.amount}.`,
+          text: `${monsterTitle(s.monster)} bleeds for ${n.amount}.`,
           emphasis: "damage",
         });
       }

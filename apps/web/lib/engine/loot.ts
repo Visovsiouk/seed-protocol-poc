@@ -35,7 +35,7 @@ import {
 } from "./types";
 import type { Rng } from "./rng";
 import { rollEffectValue } from "./catalog";
-import { type Difficulty, rollTier, tierStats } from "./tier";
+import { type Difficulty, rollEffectCount, rollTier, tierStats } from "./tier";
 
 /**
  * Per-drop element roll. Half of weapon drops carry a non-"none" element
@@ -68,6 +68,26 @@ function rollWeaponType(rng: Rng, preset: Preset): WeaponType {
 
 function rollArmorType(rng: Rng, preset: Preset): ArmorType {
   return rng.pick(combatArmorTypesFor(preset)) as ArmorType;
+}
+
+/**
+ * Pick `n` items from `pool` without replacement, deterministic on `rng`.
+ * Uses partial Fisher-Yates so the RNG consumption scales with `n`, not
+ * `pool.length` — keeps the RNG stream stable when count is small (the
+ * common case). Returns `[]` when `n <= 0`, the whole pool (in order)
+ * when `n >= pool.length`.
+ */
+function pickN<T>(rng: Rng, pool: readonly T[], n: number): T[] {
+  if (n <= 0) return [];
+  if (n >= pool.length) return [...pool];
+  const work = [...pool];
+  for (let i = 0; i < n; i++) {
+    const j = i + rng.nextInt(work.length - i);
+    const tmp = work[i]!;
+    work[i] = work[j]!;
+    work[j] = tmp;
+  }
+  return work.slice(0, n);
 }
 
 export type SchemaSpec = {
@@ -127,7 +147,17 @@ export function rollLoot(args: {
   const stats = tierStats(tier, slot);
   const schema = schemas[slot];
 
-  const catalogEffects: CatalogEffect[] = schema.catalogEffects.map((name) => ({
+  // Catalog effects (HP-carry-era model): the schema's declared
+  // `catalogEffects` is the *pool* a drop may carry, not the guaranteed
+  // payload. We roll an effect-count by tier (see `EFFECT_COUNT_DISTRIBUTION`
+  // in tier.ts) and then pick that many effects from the pool without
+  // replacement. Clamps if the rolled count exceeds the pool size, so a
+  // T5 roll against a 2-effect schema just yields both. T1 always yields
+  // zero effects regardless of pool. Effect *values* are still rolled by
+  // tier via `rollEffectValue`.
+  const desiredCount = rollEffectCount(rng, tier);
+  const pickedNames = pickN(rng, schema.catalogEffects, desiredCount);
+  const catalogEffects: CatalogEffect[] = pickedNames.map((name) => ({
     name,
     value: rollEffectValue(rng, name, tier),
   }));

@@ -41,8 +41,8 @@ const ALL_ELEMENTS: ReadonlySet<string> = new Set<string>([
 /** Tier sets that the distribution can produce per difficulty. */
 const TIERS_BY_DIFFICULTY: Record<Difficulty, ReadonlySet<Tier>> = {
   trivial: new Set([1, 2]),
-  standard: new Set([1, 2, 3]),
-  boss: new Set([2, 3, 4, 5]),
+  standard: new Set([2, 3, 4]),
+  boss: new Set([3, 4, 5]),
 };
 
 /** Replica of `difficultyFor` in the engine — kept private to keep this module pure. */

@@ -20,8 +20,8 @@ const monsters = {
   drone: {
     id: "drone",
     name: "Patrol Drone",
-    hp: 8,
-    attackDie: 4,
+    hp: 12,
+    attackDie: 6,
     ac: 12,
     attackVerbs: [
       "strafes you with laser-fire for {dmg}",
@@ -34,9 +34,9 @@ const monsters = {
   scavenger: {
     id: "scavenger",
     name: "Hull Scavenger",
-    hp: 14,
+    hp: 20,
     attackDie: 6,
-    ac: 12,
+    ac: 13,
     attackVerbs: [
       "swings a torque-wrench for {dmg}",
       "lashes out with a sparking grip for {dmg}",
@@ -46,7 +46,7 @@ const monsters = {
   drifter: {
     id: "drifter",
     name: "Void Drifter",
-    hp: 18,
+    hp: 22,
     attackDie: 6,
     ac: 13,
     attackVerbs: [
@@ -61,8 +61,8 @@ const monsters = {
   warbot: {
     id: "warbot",
     name: "Decommissioned Warbot",
-    hp: 26,
-    attackDie: 8,
+    hp: 24,
+    attackDie: 6,
     ac: 14,
     attackVerbs: [
       "stomps and rakes for {dmg}",
@@ -74,9 +74,9 @@ const monsters = {
   xenoid: {
     id: "xenoid",
     name: "Xenoid",
-    hp: 22,
-    attackDie: 8,
-    ac: 13,
+    hp: 24,
+    attackDie: 6,
+    ac: 14,
     attackVerbs: [
       "ripples and slashes for {dmg}",
       "extrudes a barbed limb that pierces you for {dmg}",
@@ -88,7 +88,7 @@ const monsters = {
     id: "exo_hunter",
     name: "Exo Hunter",
     hp: 24,
-    attackDie: 8,
+    attackDie: 6,
     ac: 15,
     attackVerbs: [
       "fires a railgun shot for {dmg}",
@@ -101,7 +101,7 @@ const monsters = {
   saboteur: {
     id: "saboteur",
     name: "Mutineer Saboteur",
-    hp: 12,
+    hp: 16,
     attackDie: 6,
     ac: 12,
     attackVerbs: [
@@ -112,9 +112,9 @@ const monsters = {
   spore_husk: {
     id: "spore_husk",
     name: "Spore Husk",
-    hp: 16,
+    hp: 24,
     attackDie: 6,
-    ac: 11,
+    ac: 12,
     attackVerbs: [
       "exhales a cloud of dust that burns your lungs for {dmg}",
       "swings a malformed arm for {dmg}",
@@ -125,7 +125,7 @@ const monsters = {
     id: "cryo_revenant",
     name: "Cryo Revenant",
     hp: 24,
-    attackDie: 8,
+    attackDie: 6,
     ac: 14,
     attackVerbs: [
       "drags rime across your suit seals for {dmg}",
@@ -150,8 +150,8 @@ const monsters = {
   ai_acolyte: {
     id: "ai_acolyte",
     name: "AI Acolyte",
-    hp: 18,
-    attackDie: 8,
+    hp: 22,
+    attackDie: 6,
     ac: 13,
     attackVerbs: [
       "recites diagnostic prayers; your HUD bleeds for {dmg}",
@@ -163,8 +163,8 @@ const monsters = {
   void_lich: {
     id: "void_lich",
     name: "Void Lich",
-    hp: 26,
-    attackDie: 8,
+    hp: 24,
+    attackDie: 6,
     ac: 15,
     attackVerbs: [
       "opens a hairline rift; vacuum bites your shoulder for {dmg}",
@@ -182,12 +182,12 @@ const bosses = {
     id: "ai_core",
     preset: "scifi" as const,
     name: "The AI Core",
-    baseHp: 34,
+    baseHp: 14,
     attackDie: 6 as const,
     ac: 14,
     bakedEffects: ["multi_hit", "crit_chance"] as ["multi_hit", "crit_chance"],
     phase2NarrationKey: "ai_core_phase2",
-    phase2AttackDie: 8 as const,
+    phase2AttackDie: 6 as const,
     element: "ion" as const,
     weakTo: "ion" as const,
   },
@@ -311,20 +311,55 @@ export const scifiBank: FlavorBank = {
       "A second voice joins its first. They harmonize.",
     ],
   },
-  trialPrompts: [
-    "A pressure-blown bulkhead. The gap is jumpable. Maybe.",
-    "An exposed conduit arcs across the corridor.",
-    "A floor panel is gone; a long drop into deck-machinery.",
-  ],
-  trialSuccess: [
-    "Your magboots catch the lip; you make it across.",
-    "You time the arc and slip past it untouched.",
-    "You vault clean over the gap.",
-  ],
-  trialFailure: [
-    "The arc catches you mid-step; circuitry burns through cloth.",
-    "You miss the lip and hit hard.",
-    "Your boot slips — the deck eats the difference.",
+  trials: [
+    {
+      ability: "agility",
+      prompt: "A blown bulkhead opens onto void. The gap is jumpable. Maybe.",
+      intent: "Release your magboots and clear the gap on the next pressure pulse.",
+      stakes: "Mistime it and the pulse will throw you wrong.",
+      onSuccess: "You release on the count. Your boots find the lip of the next plate.",
+      onFailure: "The pulse hits before you push. You hit metal hard and bounce.",
+    },
+    {
+      ability: "agility",
+      prompt: "An exposed conduit arcs across the corridor in irregular pulses.",
+      intent: "Slip under between arcs.",
+      stakes: "Catch the arc and live current writes across your suit.",
+      onSuccess: "You read the rhythm and pass clean under a dark beat.",
+      onFailure: "The arc catches you mid-step; circuitry burns through cloth.",
+    },
+    {
+      ability: "agility",
+      prompt: "A floor panel is gone; a long drop into deck-machinery below.",
+      intent: "Step across to the next solid plate.",
+      stakes: "Miss the plate and the machinery doesn't care.",
+      onSuccess: "Your boot finds steel. You're across.",
+      onFailure: "You misjudge the plate. You catch the next edge with a knee.",
+    },
+    {
+      ability: "endurance",
+      prompt: "The corridor is half-vented. Your suit can hold maybe twelve seconds.",
+      intent: "Sprint the length before your seal gives.",
+      stakes: "Run too slow and the pressure-drop will work on your blood.",
+      onSuccess: "You hit the seal-door inside ten. Pressure equalizes around you.",
+      onFailure: "You make it — but your suit alarms keep going long after the door shuts.",
+    },
+    {
+      ability: "endurance",
+      prompt: "A reactor coupling hisses superheated air across the doorway.",
+      intent: "Push through the heat-band to the cool side.",
+      stakes: "Linger and the heat reaches under your suit.",
+      onSuccess: "You move quick and steady. The cool side comes up before the heat does.",
+      onFailure: "Heat works through a seam. You stumble out red-skinned and short of breath.",
+    },
+    {
+      ability: "endurance",
+      prompt: "Service ducts. Long, low, lined with hot pipes.",
+      intent: "Crawl the duct without brushing the pipes.",
+      stakes: "Skin a pipe and the burn will travel with you.",
+      onSuccess: "You keep your shoulders square and your hands clear. You emerge sweating but clean.",
+      onFailure: "A pipe catches your forearm. You finish the crawl with a stripe of burn.",
+    },
   ],
   ledgerPrompts: [
     "A black-box terminal blinks. Crew records. Names. Names.",

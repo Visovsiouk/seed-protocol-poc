@@ -267,9 +267,39 @@ export function getActiveEffectValue(
 }
 
 /**
+ * Boss baked-effect strength table. Hand-tuned so a baseline-equipped
+ * player has a credible chance against a starter boss.
+ *
+ * History: previously this returned `spec.cap` for every effect — i.e.
+ * every boss ran with end-game-cap effect values. That made starter
+ * bosses unwinnable at maxTier 2 (regen 3/turn alone exceeded the
+ * player's expected DPS at T1–T2 weapons). The new values are roughly
+ * 40–60% of cap, tuned per-effect rather than uniformly.
+ *
+ * For Boolean effects (`armor_pierce`) the value is 1 — the effect's
+ * presence is the effect.
+ */
+const MONSTER_EFFECT_STRENGTH: Readonly<Record<CatalogEffectName, number>> = {
+  // weapon-side
+  lifesteal: 2, // was 5
+  armor_pierce: 1, // boolean — keep
+  crit_chance: 12, // was 25 (% chance)
+  multi_hit: 1, // was 2 (extra swings — caps boss-side combos)
+  bleed: 2, // was 5 (DoT per turn, 3 turns)
+  // armor-side
+  regen: 1, // was 3 (HP / turn — the big offender pre-rebalance)
+  thorns: 2, // was 5
+  dodge_chance: 12, // was 25 (% chance)
+  damage_reduction: 2, // was 4 (flat DR; was eating most of a d4–d6)
+};
+
+/**
  * Same lookup, but for the monster's baked-in effects (boss data carries
  * `bakedEffects`; a hostile monster doesn't). Encapsulated here so combat.ts
  * doesn't need to know boss vs monster shape distinctions.
+ *
+ * Returns the value from `MONSTER_EFFECT_STRENGTH` rather than `spec.cap`
+ * (which is intended as the *player* gear cap, not a boss baseline).
  */
 export function getMonsterEffectValue(
   state: CombatState,
@@ -279,9 +309,5 @@ export function getMonsterEffectValue(
   const monster = state.monster as { bakedEffects?: readonly CatalogEffectName[] };
   if (!monster.bakedEffects) return 0;
   if (!monster.bakedEffects.includes(name)) return 0;
-  // Boss baked-in effects are pre-scaled — they always apply at "boss strength."
-  // The boss roster definitions encode the right magnitude; the catalog spec's
-  // cap is the source of truth for a "max" value if needed.
-  const spec = getEffectSpec(name);
-  return spec?.cap ?? 1;
+  return MONSTER_EFFECT_STRENGTH[name] ?? 1;
 }

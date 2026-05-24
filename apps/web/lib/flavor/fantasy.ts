@@ -43,9 +43,9 @@ const monsters = {
   bandit: {
     id: "bandit",
     name: "Bandit",
-    hp: 12,
+    hp: 16,
     attackDie: 6,
-    ac: 12,
+    ac: 13,
     attackVerbs: [
       "slashes with a notched blade for {dmg}",
       "feints and stabs for {dmg}",
@@ -55,9 +55,9 @@ const monsters = {
   skeleton: {
     id: "skeleton",
     name: "Skeleton",
-    hp: 14,
+    hp: 20,
     attackDie: 6,
-    ac: 13,
+    ac: 14,
     attackVerbs: [
       "rattles and swings a rusted sword for {dmg}",
       "lunges with bony fingers for {dmg}",
@@ -68,7 +68,7 @@ const monsters = {
   wolf: {
     id: "wolf",
     name: "Dire Wolf",
-    hp: 16,
+    hp: 20,
     attackDie: 6,
     ac: 13,
     attackVerbs: [
@@ -80,9 +80,9 @@ const monsters = {
   ghoul: {
     id: "ghoul",
     name: "Ghoul",
-    hp: 18,
+    hp: 22,
     attackDie: 6,
-    ac: 13,
+    ac: 14,
     attackVerbs: [
       "rakes you with rotting claws for {dmg}",
       "shrieks and lunges for {dmg}",
@@ -94,8 +94,8 @@ const monsters = {
   forest_hag_minion: {
     id: "forest_hag_minion",
     name: "Bramble Wisp",
-    hp: 10,
-    attackDie: 4,
+    hp: 16,
+    attackDie: 6,
     ac: 14,
     attackVerbs: [
       "wraps thorns around your arm for {dmg}",
@@ -106,7 +106,7 @@ const monsters = {
   ogre: {
     id: "ogre",
     name: "Ogre",
-    hp: 28,
+    hp: 26,
     attackDie: 8,
     ac: 13,
     attackVerbs: [
@@ -119,7 +119,7 @@ const monsters = {
     id: "wraith",
     name: "Wraith",
     hp: 22,
-    attackDie: 8,
+    attackDie: 6,
     ac: 14,
     attackVerbs: [
       "drifts through your guard and chills you for {dmg}",
@@ -132,8 +132,8 @@ const monsters = {
   troll: {
     id: "troll",
     name: "Troll",
-    hp: 26,
-    attackDie: 8,
+    hp: 24,
+    attackDie: 6,
     ac: 14,
     attackVerbs: [
       "swings a wet limb for {dmg}",
@@ -144,9 +144,9 @@ const monsters = {
   cultist: {
     id: "cultist",
     name: "Cultist",
-    hp: 14,
+    hp: 22,
     attackDie: 6,
-    ac: 12,
+    ac: 13,
     attackVerbs: [
       "chants and slashes for {dmg}",
       "calls down a sickly light that burns you for {dmg}",
@@ -157,8 +157,8 @@ const monsters = {
   shadow_drake: {
     id: "shadow_drake",
     name: "Shadow Drake",
-    hp: 22,
-    attackDie: 8,
+    hp: 24,
+    attackDie: 6,
     ac: 15,
     attackVerbs: [
       "lashes its tail for {dmg}",
@@ -176,12 +176,12 @@ const bosses = {
     id: "forest_hag",
     preset: "fantasy" as const,
     name: "The Forest Hag",
-    baseHp: 42,
+    baseHp: 36,
     attackDie: 6 as const,
     ac: 14,
     bakedEffects: ["dodge_chance", "regen"] as ["dodge_chance", "regen"],
     phase2NarrationKey: "forest_hag_phase2",
-    phase2AttackDie: 8 as const,
+    phase2AttackDie: 6 as const,
     phase2SuppressEffect: "regen" as const,
     element: "unholy" as const,
     weakTo: "fire" as const,
@@ -309,20 +309,55 @@ export const fantasyBank: FlavorBank = {
       "It steps through its own shadow, faster than it should be.",
     ],
   },
-  trialPrompts: [
-    "A chasm splits the path. Far side is dark.",
-    "A rotted rope-bridge sways over a long fall.",
-    "The floor here is wrong — old planks, deep mire beneath.",
-  ],
-  trialSuccess: [
-    "You time it right and land clean on the far side.",
-    "Your boots find purchase. You're across.",
-    "You read the gap and trust your legs. You're through.",
-  ],
-  trialFailure: [
-    "Your footing betrays you; you take the fall hard.",
-    "Wood splinters under you. The drop hurts.",
-    "Too slow — the floor punishes you for hesitating.",
+  trials: [
+    {
+      ability: "agility",
+      prompt: "A chasm splits the path. The far ledge is just within reach.",
+      intent: "Leap across before the moment passes.",
+      stakes: "Misjudge it and you'll catch the lip — or miss entirely.",
+      onSuccess: "You time the jump clean and land light on the far side.",
+      onFailure: "You come up short. You catch the edge hard before hauling yourself up.",
+    },
+    {
+      ability: "agility",
+      prompt: "A rotted rope-bridge sways over a long fall.",
+      intent: "Cross light-footed before the boards give.",
+      stakes: "Snap a plank under your weight and the drop will hurt.",
+      onSuccess: "You move quick and quiet. The bridge holds.",
+      onFailure: "A plank snaps mid-stride. You catch a rope, but the wood catches you back.",
+    },
+    {
+      ability: "agility",
+      prompt: "The floor here is wrong — old planks over deep mire beneath.",
+      intent: "Pick your steps fast and stay on the firm boards.",
+      stakes: "Hesitate on a soft plank and the mire takes you.",
+      onSuccess: "You read the rot in time and dance across.",
+      onFailure: "A board gives. You sink to the knee before tearing free, bleeding.",
+    },
+    {
+      ability: "endurance",
+      prompt: "The way ahead is choked with rubble. You'll have to shove through.",
+      intent: "Force a path through the loose stones.",
+      stakes: "Stones can shift back on you — and the dust eats your wind.",
+      onSuccess: "You set your shoulder and the pile gives. You're through, breathing hard.",
+      onFailure: "Stone shifts the wrong way. You take the weight before you can twist clear.",
+    },
+    {
+      ability: "endurance",
+      prompt: "Black water fills the passage waist-deep. The cold bites on contact.",
+      intent: "Wade through before the cold drags you under.",
+      stakes: "Linger and your legs go numb.",
+      onSuccess: "You move steady and reach the far stones with limbs that still work.",
+      onFailure: "The cold gets ahead of you. You stagger out shaking, half your warmth gone.",
+    },
+    {
+      ability: "endurance",
+      prompt: "The ceiling drops to a crawl. The air is thin and stale.",
+      intent: "Drag yourself through the long crawl without stopping.",
+      stakes: "Stall in the middle and the bad air punishes you.",
+      onSuccess: "You push through on knees and elbows and find clean air on the other side.",
+      onFailure: "Your chest tightens halfway. You make it out — but rib-bruised and rasping.",
+    },
   ],
   ledgerPrompts: [
     "A stone ledger sits open in the chamber. Names. Debts. Names.",

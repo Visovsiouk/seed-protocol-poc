@@ -23,6 +23,35 @@ export function render(
 }
 
 /**
+ * Sentence-start form of a monster/boss name with a definite article:
+ *
+ *   { name: "Goblin"         } → "The Goblin"
+ *   { name: "The Forest Hag" } → "The Forest Hag"   (no double prefix)
+ *
+ * Use this instead of hand-rolling `` `The ${m.name}` `` in narration —
+ * boss names in the flavor banks bake the article into the proper noun
+ * (so "The Forest Hag" reads as a name, not a description), and a naive
+ * template was producing "The The Forest Hag".
+ */
+export function monsterTitle(m: { name: string }): string {
+  return m.name.startsWith("The ") ? m.name : `The ${m.name}`;
+}
+
+/**
+ * Mid-sentence form of {@link monsterTitle}:
+ *
+ *   { name: "Goblin"         } → "the Goblin"
+ *   { name: "The Forest Hag" } → "the Forest Hag"
+ *
+ * Used for lines like "you dodge the Forest Hag's attack."
+ */
+export function monsterLower(m: { name: string }): string {
+  return m.name.startsWith("The ")
+    ? `the ${m.name.slice(4)}`
+    : `the ${m.name}`;
+}
+
+/**
  * Picks a uniformly-random variant from a string array. Throws when the
  * key is missing or empty — these are bank-authoring bugs we want to catch
  * loudly in tests, not silently degrade to an empty narration line.

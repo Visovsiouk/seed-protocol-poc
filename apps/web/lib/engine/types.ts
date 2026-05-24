@@ -336,6 +336,13 @@ export type AssetCard = {
   realm: `0x${string}`;
   /** Resolved off-chain (Bazaar reads / RealmRegistry). */
   realmName: string;
+  /**
+   * Preset this asset was originally minted under. Parsed from the
+   * `Schema` metadata attribute (e.g. `"scifi:3"` → `"scifi"`).
+   * Used by the adapter translation layer to resolve cross-realm hops
+   * for player-deployed realms that aren't in the seeded-realms map.
+   */
+  realmPreset?: Preset;
   slot: Slot;
   tier: Tier;
   /** Assembled from the realm's flavor bank at mint time. */
@@ -430,7 +437,7 @@ export type BossDef = {
   resistTo?: Element;
 };
 
-export type EncounterArchetype = "combat" | "trial" | "ledger";
+export type EncounterArchetype = "combat" | "trial" | "ledger" | "rest";
 
 export type RoomTemplate = {
   id: string;
@@ -470,6 +477,16 @@ export type CombatState = {
    * only consumed by an Attack action, not by ending the round.
    */
   focusPrimed: boolean;
+  /**
+   * Rebalance: set once when a boss crosses the phase-1→phase-2
+   * threshold. Adds +2 to the player's to-hit on every subsequent
+   * Attack swing for the rest of the fight. The intent is to make
+   * phase 2 feel like a climax — the boss bleeds and rages (its
+   * attackDie bumps up; sometimes a player effect is suppressed) and
+   * the player rolls hot in the same beat. Never cleared mid-fight.
+   * On non-boss combats this stays false.
+   */
+  phase2PlayerBuffed: boolean;
   /** Turns of bleed DoT remaining on the monster (per-attacker is overkill for PoC). */
   bleedStacks: number;
   /** Suppressed catalog effects on the player, set at boss phase 2 if applicable. */
@@ -486,19 +503,29 @@ export type EncounterState =
   /**
    * Visible skill check. The player sees the DC and their bonus up
    * front, taps Attempt, rolls d20 + bonus. Success → small heal;
-   * failure → small HP loss (scales with depth).
+   * failure → larger HP loss (depth-scaled). Pass/fail narration is
+   * baked onto the encounter at generation so the resolution lines
+   * match the obstacle, intent, and stakes the player saw.
    */
   | {
       kind: "trial";
       archetype: "trial";
-      /** Ability axis — drives which armor effect feeds the bonus. */
+      /** Ability axis — driven by the chosen obstacle, not a die roll. */
       ability: "agility" | "endurance";
       /** Static DC the player must meet or exceed. */
       dc: number;
       /** Player's bonus from equipped armor, locked at room generation. */
       bonus: number;
-      /** Flavor line describing the obstacle (e.g. "leap the gap"). */
-      flavor: string;
+      /** Scene-setting line: what the obstacle is. */
+      prompt: string;
+      /** Player goal: what you're trying to do about it. */
+      intent: string;
+      /** What's on the line on failure. */
+      stakes: string;
+      /** Narration rendered on a passed roll. */
+      onSuccess: string;
+      /** Narration rendered on a failed roll. */
+      onFailure: string;
     }
   /**
    * Ledger room — once-per-run at a fixed depth. Player picks one of
@@ -511,6 +538,22 @@ export type EncounterState =
       bossName: string;
       /** The two baked effects on the upcoming boss. */
       effects: [CatalogEffectName, CatalogEffectName];
+    }
+  /**
+   * Rest room — safe-haven beat. Single button heals +50% maxHp,
+   * clamped, no risk. Spawned probabilistically past depth 2 and only
+   * when the player is meaningfully chipped (HP < ~80% maxHp); at full
+   * HP the slot reverts to a trial so the safe room isn't wasted.
+   */
+  | {
+      kind: "rest";
+      archetype: "rest";
+      /** Scene-setting line (preset-flavored). */
+      prompt: string;
+      /** Button label for the heal action ("Make Camp" / "Patch Up" / "Reboot"). */
+      actionLabel: string;
+      /** Pre-rolled heal amount, clamped at generation against current HP/maxHp. */
+      healAmount: number;
     };
 
 export type LootRoll = {
@@ -581,6 +624,23 @@ export type RunState = {
   bossDepth: number;
   encounter: EncounterState | null;
   equipped: { weapon?: AssetCard; armor?: AssetCard; accessory?: AssetCard };
+  /**
+   * Persistent player HP across encounters. Seeded at run start (and on
+   * seed-mercy respawn) from `playerStartHp(equipped).hp`, then carried
+   * room-to-room: combat write-back copies `CombatState.playerHp` onto
+   * this field when a fight resolves; trial resolution applies heal/damage
+   * against it directly. Encounter generation reads from here instead of
+   * resetting to max. Clamped `[0, playerMaxHp]`; zero terminates the run
+   * via the standard defeat fork (seed-mercy or permadeath).
+   */
+  playerHp: number;
+  /**
+   * Player HP cap, pinned at run start from equipped armor. Re-pinned on
+   * `equipItem` so armor with a larger `hpBonus` raises the cap (the
+   * extension does NOT refill — gear upgrade is not a free heal). On
+   * seed-mercy respawn maxHp is recomputed from current equipment.
+   */
+  playerMaxHp: number;
   pendingLoot?: LootRoll;
   bossCleared: boolean;
   bossClearedTimestamp?: number;
@@ -653,7 +713,8 @@ export type ActionChoice =
   | { kind: "attack" }
   | { kind: "secondary" }
   | { kind: "trial" }
-  | { kind: "ledger"; suppress: CatalogEffectName | null };
+  | { kind: "ledger"; suppress: CatalogEffectName | null }
+  | { kind: "rest" };
 
 export type NarrationLine = {
   text: string;

@@ -25,14 +25,33 @@ import type { Rng } from "./rng";
 import { getActiveEffectValue } from "./catalog";
 
 /**
- * Non-boss archetype mix — 80% combat / 20% trial. Ledger rooms are
- * forced at a specific depth by the caller, not rolled here. Boss rooms
- * are forced to combat by the caller too.
+ * Non-boss archetype mix.
+ *
+ * Base distribution: 80% combat / 20% trial.
+ *
+ * Rest carve-out: when the player is meaningfully chipped (HP < 85% of
+ * maxHp) AND past depth 2 (so the rest mechanic surfaces only after the
+ * player has felt attrition), reshape to 60% combat / 20% trial / 20%
+ * rest. At full HP rests would heal 0 — degenerate UX — so the carve-out
+ * is HP-gated. The 85% threshold and 20% weight were dialed in via the
+ * run-mode balance sweep: anything stingier left mean-rests near zero
+ * and runs collapsed in depths 4-5 because recovery never surfaced.
+ * Ledger rooms are still forced at a specific depth by the caller, not
+ * rolled here. Boss rooms are forced to combat by the caller too.
  */
 export function pickArchetype(
   rng: Rng,
+  ctx: { depth: number; hp: number; maxHp: number },
 ): Exclude<EncounterArchetype, "ledger"> {
-  return rng.next() < 0.8 ? "combat" : "trial";
+  const chippedEnough = ctx.maxHp > 0 && ctx.hp / ctx.maxHp < 0.85;
+  const restEligible = ctx.depth >= 3 && chippedEnough;
+  const roll = rng.next();
+  if (restEligible) {
+    if (roll < 0.6) return "combat";
+    if (roll < 0.8) return "trial";
+    return "rest";
+  }
+  return roll < 0.8 ? "combat" : "trial";
 }
 
 /**
@@ -106,16 +125,17 @@ export function trialBonusFor(
 }
 
 /**
- * Builds the trial room's plan. DC scales with depth (8 + depth); the
- * ability is picked deterministically off the rng. Bonus is locked in
- * at generation time so the player sees what they're rolling against.
+ * Builds the trial room's plan. The ability is supplied by the caller
+ * (driven by the chosen trial obstacle — see `FlavorBank.trials`), so
+ * the prompt ("leap the chasm") always lines up with the check
+ * ("agility"). DC scales with depth (8 + depth); bonus is computed off
+ * equipped armor and locked at generation time.
  */
 export function planTrial(
-  rng: Rng,
+  ability: TrialAbility,
   equipped: { weapon?: AssetCard; armor?: AssetCard },
   depth: number,
 ): TrialPlan {
-  const ability: TrialAbility = rng.chance(0.5) ? "agility" : "endurance";
   const dc = 8 + depth;
   const bonus = trialBonusFor(ability, equipped);
   return { ability, dc, bonus };
@@ -125,15 +145,21 @@ export type TrialResult = {
   success: boolean;
   dieRoll: number;
   total: number;
-  /** Heal on success (small, depth-scaled). */
+  /** Heal on success (small reward — depth-scaled). */
   healOnSuccess: number;
-  /** HP loss on failure (small, depth-scaled). */
+  /** HP loss on failure (larger than the success heal — depth-scaled). */
   damageOnFail: number;
 };
 
 /**
- * Trial resolver. Rolls d20 + plan.bonus vs plan.dc. Pass: small heal
- * (2 + floor(depth / 2)). Fail: small HP loss (2 + floor(depth / 2)).
+ * Trial resolver. Rolls d20 + plan.bonus vs plan.dc. The swing is
+ * intentionally asymmetric so the roll has real downside risk:
+ *
+ *   - Pass: heal = 1 + floor(depth / 3)  (small reward)
+ *   - Fail: damage = 3 + depth          (real cost, scales harder)
+ *
+ * At depth 3 that's +2 HP vs −6 HP. Players who can't afford the swing
+ * should be feeling the DC, not waved through.
  */
 export function resolveTrial(
   rng: Rng,
@@ -143,13 +169,12 @@ export function resolveTrial(
   const dieRoll = rng.rollDie(20);
   const total = dieRoll + plan.bonus;
   const success = total >= plan.dc;
-  const tick = 2 + Math.floor(depth / 2);
   return {
     success,
     dieRoll,
     total,
-    healOnSuccess: success ? tick : 0,
-    damageOnFail: success ? 0 : tick,
+    healOnSuccess: success ? 1 + Math.floor(depth / 3) : 0,
+    damageOnFail: success ? 0 : 3 + depth,
   };
 }
 

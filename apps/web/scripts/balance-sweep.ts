@@ -33,6 +33,7 @@ import type {
   CombatState,
   MonsterDef,
   Preset,
+  RoomTemplate,
   Tier,
 } from "../lib/engine/types";
 import { createRng } from "../lib/engine/rng";
@@ -40,6 +41,7 @@ import { resolveRound } from "../lib/engine/combat";
 import { checkPhaseTransition } from "../lib/engine/boss";
 import { tierStats } from "../lib/engine/tier";
 import { getFlavorBank } from "../lib/flavor";
+import { pickArchetype, pickMonster, resolveTrial } from "../lib/engine/encounter";
 
 const REALM = "0x0000000000000000000000000000000000000001" as `0x${string}`;
 const seedHex = (i: number) =>
@@ -47,7 +49,7 @@ const seedHex = (i: number) =>
 
 const PRESETS: readonly Preset[] = ["fantasy", "scifi", "cyberpunk"];
 /** Mirrors `playerStartHp` in `lib/engine/index.ts`. */
-const BASE_HP = 25;
+const BASE_HP = 40;
 const BASE_AC = 10;
 /** Trials per (preset, depth, tier, monster) cell. */
 const SEEDS_PER_CELL = 500;
@@ -113,6 +115,7 @@ function initialCombat(
     regenDoubledThisTurn: false,
     thornsDoubledThisTurn: false,
     focusPrimed: false,
+    phase2PlayerBuffed: false,
     bleedStacks: 0,
     suppressedEffects: [],
     turn: 0,
@@ -236,6 +239,256 @@ function header(): string {
   ].join("  ");
 }
 
+// ---------------------------------------------------------------------------
+// Run-mode harness — simulates whole runs (depth 1 → boss) with HP carry,
+// advance-heal (+10% maxHp on non-boss transitions, gated to HP<85%),
+// and rest spawns (50% maxHp heal at 20% rate when chipped past depth 2,
+// HP<85%). Mirrors the engine post-HP-persistence path. Reports run
+// completion %, death-depth histogram, and HP-at-boss-entry distribution.
+// ---------------------------------------------------------------------------
+
+/** Mirrors `index.ts` advance() heal rate. */
+const ADVANCE_HEAL_PCT = 0.1;
+/** Mirrors `index.ts` advance() heal gate threshold. */
+const ADVANCE_HEAL_GATE = 0.85;
+/** Mirrors `index.ts` rest encounter heal rate. */
+const REST_HEAL_PCT = 0.5;
+/** Boss depth used by the run simulator. Matches `BOSS_DEPTH` in engine. */
+const RUN_BOSS_DEPTH = 6;
+
+type RunOutcome =
+  | { kind: "cleared"; hpAtBoss: number; totalTurns: number; restsTaken: number }
+  | { kind: "died"; atDepth: number; totalTurns: number; restsTaken: number };
+
+/**
+ * Simulate one encounter at the given depth with carried HP. Returns the
+ * post-encounter HP and turn count, or null if the player died.
+ *
+ *   - "combat" → uses `simulate()` with a tweaked initial HP
+ *   - "trial"  → resolveTrial; apply heal/damage to carried HP
+ *   - "rest"   → +50% maxHp clamped
+ */
+function simulateEncounter(args: {
+  preset: Preset;
+  depth: number;
+  archetype: "combat" | "trial" | "rest";
+  hp: number;
+  maxHp: number;
+  loadout: { weapon: AssetCard; armor: AssetCard };
+  bossId: string;
+  seed: `0x${string}`;
+}): { hp: number; turns: number; died: boolean } {
+  const { preset, depth, archetype, hp, maxHp, loadout, seed } = args;
+  if (archetype === "combat") {
+    const bank = getFlavorBank(preset);
+    const rooms = bank.roomTemplates.filter(
+      (r) => r.depth === depth && r.archetype === "combat",
+    );
+    const pool = Array.from(
+      new Set(rooms.flatMap((r) => r.monsterPool ?? [])),
+    );
+    if (pool.length === 0) return { hp, turns: 0, died: false };
+    const room: RoomTemplate = {
+      id: "sim",
+      depth,
+      archetype: "combat",
+      narrationKey: "",
+      monsterPool: pool,
+    };
+    const monster = pickMonster(createRng(seed), room, bank.monsters);
+    // Build a CombatState with carried HP rather than the full pool.
+    const combat: CombatState = {
+      playerHp: hp,
+      playerMaxHp: maxHp,
+      playerAc: BASE_AC + (loadout.armor.acBonus ?? 0),
+      monster,
+      monsterHp: monster.hp,
+      bracedThisTurn: false,
+      guaranteedDodgeThisTurn: false,
+      regenDoubledThisTurn: false,
+      thornsDoubledThisTurn: false,
+      focusPrimed: false,
+      phase2PlayerBuffed: false,
+      bleedStacks: 0,
+      suppressedEffects: [],
+      turn: 0,
+    };
+    return resolveCombat(combat, loadout, seed, false);
+  }
+  if (archetype === "trial") {
+    // Bonus = 0 with the synthetic catalog-free loadout (matches the
+    // engine's `trialBonusFor` when no dodge/dr/hpBonus catalog rolls).
+    const r = resolveTrial(createRng(seed), { ability: "agility", dc: 8 + depth, bonus: 0 }, depth);
+    const delta = r.success ? r.healOnSuccess : -r.damageOnFail;
+    const nextHp = Math.max(0, Math.min(hp + delta, maxHp));
+    return { hp: nextHp, turns: 0, died: nextHp <= 0 };
+  }
+  // rest
+  const heal = Math.floor(maxHp * REST_HEAL_PCT);
+  return { hp: Math.min(hp + heal, maxHp), turns: 0, died: false };
+}
+
+/** Drive a combat to completion with the given starting state. */
+function resolveCombat(
+  initial: CombatState,
+  loadout: { weapon: AssetCard; armor: AssetCard },
+  seed: `0x${string}`,
+  isBoss: boolean,
+): { hp: number; turns: number; died: boolean } {
+  let combat = initial;
+  let turns = 0;
+  while (turns < TURN_CAP) {
+    const rng = createRng(
+      seedHex(Number(BigInt(seed) ^ BigInt(turns + 1))),
+    );
+    const result = resolveRound(
+      combat,
+      { kind: "attack" },
+      { weapon: loadout.weapon, armor: loadout.armor },
+      rng,
+    );
+    combat = result.state;
+    turns++;
+    if (result.monsterDefeated) {
+      return { hp: combat.playerHp, turns, died: false };
+    }
+    if (result.playerDefeated) {
+      return { hp: 0, turns, died: true };
+    }
+    if (isBoss) {
+      const pt = checkPhaseTransition(combat);
+      if (pt.transitioned) combat = pt.state;
+    }
+  }
+  // Stalemate counts as a loss for run-mode (player can't progress).
+  return { hp: combat.playerHp, turns, died: true };
+}
+
+function simulateRun(
+  preset: Preset,
+  loadout: { weapon: AssetCard; armor: AssetCard },
+  bossId: string,
+  seed: `0x${string}`,
+): RunOutcome {
+  const maxHp = BASE_HP + (loadout.armor.hpBonus ?? 0);
+  let hp = maxHp;
+  let totalTurns = 0;
+  let restsTaken = 0;
+
+  for (let depth = 1; depth < RUN_BOSS_DEPTH; depth++) {
+    // Pick archetype with the same rules the engine uses.
+    const archetypeRng = createRng(
+      seedHex(Number(BigInt(seed) ^ BigInt(depth * 977))),
+    );
+    const archetype = pickArchetype(archetypeRng, { depth, hp, maxHp });
+
+    const encSeed = seedHex(Number(BigInt(seed) ^ BigInt(depth * 31)));
+    const r = simulateEncounter({
+      preset,
+      depth,
+      archetype,
+      hp,
+      maxHp,
+      loadout,
+      bossId,
+      seed: encSeed,
+    });
+    hp = r.hp;
+    totalTurns += r.turns;
+    if (archetype === "rest") restsTaken++;
+    if (r.died) {
+      return { kind: "died", atDepth: depth, totalTurns, restsTaken };
+    }
+
+    // Inter-room trickle heal (skip into boss, gated to chipped players).
+    const nextDepth = depth + 1;
+    if (nextDepth < RUN_BOSS_DEPTH && hp / maxHp < ADVANCE_HEAL_GATE) {
+      const heal = Math.floor(maxHp * ADVANCE_HEAL_PCT);
+      hp = Math.min(hp + heal, maxHp);
+    }
+  }
+
+  // Boss fight at RUN_BOSS_DEPTH.
+  const bank = getFlavorBank(preset);
+  const boss = bank.bosses[bossId];
+  if (!boss) throw new Error(`simulateRun: unknown bossId "${bossId}"`);
+  const bossCombat: CombatState = {
+    playerHp: hp,
+    playerMaxHp: maxHp,
+    playerAc: BASE_AC + (loadout.armor.acBonus ?? 0),
+    monster: boss,
+    monsterHp: boss.baseHp,
+    bossPhase: 1,
+    bracedThisTurn: false,
+    guaranteedDodgeThisTurn: false,
+    regenDoubledThisTurn: false,
+    thornsDoubledThisTurn: false,
+    focusPrimed: false,
+    phase2PlayerBuffed: false,
+    bleedStacks: 0,
+    suppressedEffects: [],
+    turn: 0,
+  };
+  const hpAtBoss = hp;
+  const bossSeed = seedHex(Number(BigInt(seed) ^ BigInt(0xb055)));
+  const bossResult = resolveCombat(bossCombat, loadout, bossSeed, true);
+  totalTurns += bossResult.turns;
+  if (bossResult.died) {
+    return { kind: "died", atDepth: RUN_BOSS_DEPTH, totalTurns, restsTaken };
+  }
+  return { kind: "cleared", hpAtBoss, totalTurns, restsTaken };
+}
+
+function runRunMode(seedsPerCell: number): void {
+  console.log("\n# Run-mode sweep — full d1→boss with HP carry, +10% advance-heal (gated <85%), 50% rest");
+  for (const preset of PRESETS) {
+    const bossId = STARTER_BOSSES[preset];
+    for (const tier of [1, 2] as Tier[]) {
+      const loadout = makeLoadout(tier);
+      const outcomes: RunOutcome[] = [];
+      for (let i = 0; i < seedsPerCell; i++) {
+        const seed = seedHex(i + 70000 + tier * 1000);
+        outcomes.push(simulateRun(preset, loadout, bossId, seed));
+      }
+      const cleared = outcomes.filter((o) => o.kind === "cleared");
+      const died = outcomes.filter((o) => o.kind === "died");
+      const deathDepths: Record<number, number> = {};
+      for (const d of died) {
+        const k = (d as { atDepth: number }).atDepth;
+        deathDepths[k] = (deathDepths[k] ?? 0) + 1;
+      }
+      const clearedHps = cleared
+        .map((o) => (o as { hpAtBoss: number }).hpAtBoss)
+        .sort((a, b) => a - b);
+      const medianHpAtBoss =
+        clearedHps.length === 0
+          ? 0
+          : clearedHps[Math.floor(clearedHps.length / 2)]!;
+      const meanRests =
+        outcomes.reduce((s, o) => s + o.restsTaken, 0) / outcomes.length;
+
+      console.log(
+        `\n## ${preset} · T${tier} loadout · ${seedsPerCell} runs vs ${bossId}`,
+      );
+      console.log(
+        `  cleared: ${fmtPct(cleared.length / outcomes.length)}  ` +
+          `(median HP at boss: ${medianHpAtBoss}/${BASE_HP + (loadout.armor.hpBonus ?? 0)}, ` +
+          `mean rests: ${meanRests.toFixed(2)})`,
+      );
+      const sortedDepths = Object.keys(deathDepths)
+        .map(Number)
+        .sort((a, b) => a - b);
+      if (sortedDepths.length > 0) {
+        const parts = sortedDepths.map((d) => {
+          const label = d === RUN_BOSS_DEPTH ? "boss" : `d${d}`;
+          return `${label}=${fmtPct(deathDepths[d]! / outcomes.length).trim()}`;
+        });
+        console.log(`  death-depths: ${parts.join(" · ")}`);
+      }
+    }
+  }
+}
+
 function runStandardRoom(
   preset: Preset,
   depth: number,
@@ -304,9 +557,18 @@ const STARTER_BOSSES: Record<Preset, string> = {
 type CliFilter =
   | { kind: "default" }
   | { kind: "all-bosses" }
-  | { kind: "single-boss"; preset: Preset; bossId: string };
+  | { kind: "single-boss"; preset: Preset; bossId: string }
+  | { kind: "run"; seedsPerCell: number };
 
 function parseArgs(argv: string[]): CliFilter {
+  if (argv.includes("--mode=run") || argv.includes("--run")) {
+    const seedsIdx = argv.indexOf("--seeds");
+    const seeds =
+      seedsIdx >= 0 && argv[seedsIdx + 1]
+        ? Number(argv[seedsIdx + 1])
+        : SEEDS_PER_CELL;
+    return { kind: "run", seedsPerCell: seeds };
+  }
   if (argv.includes("--bosses")) return { kind: "all-bosses" };
   const bossFlagIdx = argv.indexOf("--boss");
   if (bossFlagIdx >= 0) {
@@ -369,6 +631,9 @@ function main(): void {
     case "single-boss":
       runBoss(filter.preset, filter.bossId, 1 as Tier);
       runBoss(filter.preset, filter.bossId, 2 as Tier);
+      break;
+    case "run":
+      runRunMode(filter.seedsPerCell);
       break;
   }
 }

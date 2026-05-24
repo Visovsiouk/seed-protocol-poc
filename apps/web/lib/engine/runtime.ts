@@ -21,9 +21,10 @@
 
 import type { AssetCard as AssetCardType, LootRoll, Preset } from "@/lib/engine/types";
 import type { RealmSchemas } from "@/lib/engine/loot";
-import { lootName } from "@/lib/loot/names";
+import { evocativeName } from "@/lib/loot/names";
 import { buildLootMetadataURI } from "@/lib/contracts/loot-derive";
 import { buildAssetCardFromMetadata } from "@/lib/metadata/asset-card";
+import { getEffectsByPreset } from "@/lib/contracts/catalog-effects";
 
 export const VALID_PRESETS: ReadonlySet<Preset> = new Set([
   "fantasy",
@@ -101,12 +102,17 @@ export function makeStarterGear(
     scifi: "carapace",
     cyberpunk: "vest",
   };
+  // Rebalance: starter weapon bumped from d4/+0/+0 to d6/+1/+0 — roughly
+  // a T1.5 profile. Real T2+ drops still outclass it (damageBonus +1, a
+  // catalog effect, and the larger die ceiling on T3+), so loot
+  // remains a meaningful upgrade — but the bare-bones first fight isn't
+  // a coin-flip against a goblin anymore. See.
   const weaponLoot: LootRoll = {
     tier: 1,
     slot: "weapon",
     schemaId: 0,
-    damageDie: 4,
-    attackBonus: 0,
+    damageDie: 6,
+    attackBonus: 1,
     damageBonus: 0,
     weaponType: starterWeaponType[preset],
     catalogEffects: [],
@@ -146,20 +152,44 @@ export function makeStarterGear(
 
 // PoC: canonical schema ids per preset. Real schemas come from the realm
 // contract; the engine only needs (schemaId, declared catalog effects).
-export const CANONICAL_SCHEMAS: Record<Preset, RealmSchemas> = {
-  fantasy: {
-    weapon: { schemaId: 101, catalogEffects: [] },
-    armor: { schemaId: 102, catalogEffects: [] },
-  },
-  scifi: {
-    weapon: { schemaId: 201, catalogEffects: [] },
-    armor: { schemaId: 202, catalogEffects: [] },
-  },
-  cyberpunk: {
-    weapon: { schemaId: 301, catalogEffects: [] },
-    armor: { schemaId: 302, catalogEffects: [] },
-  },
-};
+//
+// Each canonical schema declares its catalog effects from the on-chain
+// `CatalogEffectRegistry`. The off-chain
+// `CANONICAL_CATALOG_EFFECTS` table in
+// `lib/contracts/catalog-effects-config.ts` is the deploy-time input
+// and disconnected-mode fallback; this lookup is what every read site
+// resolves to at runtime, so a registry write propagates to every
+// starter realm + player-realm drop without code changes.
+//
+// The schemaId for weapon and armor is the *same* on-chain loot
+// schemaId — the sister-repo SchemaRegistry only assigns one loot
+// schema per realm. The off-chain RealmSchemas
+// shape still distinguishes weapon vs armor because the *catalog
+// effects* differ by slot; the resolver partitions the on-chain
+// effect list by slot using the WEAPON_EFFECTS / ARMOR_EFFECTS tables.
+//
+// Per-preset effect assignment (registry truth at seed time, fallback
+// table values otherwise): fantasy bleeds and regens (visceral /
+// pastoral), sci-fi crits and reduces damage (precision / armoured),
+// cyberpunk multi-hits and dodges (twitch / speed).
+function buildCanonicalSchemas(): Record<Preset, RealmSchemas> {
+  const map = {} as Record<Preset, RealmSchemas>;
+  for (const preset of ["fantasy", "scifi", "cyberpunk"] as const) {
+    const { weapon, armor } = getEffectsByPreset(preset);
+    // Synthetic ids retained for off-chain bookkeeping where the
+    // engine treats weapon and armor as distinct schemas; the on-chain
+    // registry doesn't see these. Real on-chain loot schemaId is
+    // resolved per call in the mint path via `getSeededSchemaIds`.
+    const base = preset === "fantasy" ? 100 : preset === "scifi" ? 200 : 300;
+    map[preset] = {
+      weapon: { schemaId: base + 1, catalogEffects: weapon },
+      armor: { schemaId: base + 2, catalogEffects: armor },
+    };
+  }
+  return map;
+}
+
+export const CANONICAL_SCHEMAS: Record<Preset, RealmSchemas> = buildCanonicalSchemas();
 
 /**
  * Draw a 256-bit hex seed from the browser's CSPRNG. The connected
@@ -192,13 +222,14 @@ export function lootRollToMockCard(
   opts?: { tokenId?: bigint },
 ): AssetCardType {
   // Story-object drops (e.g. Genesis' Pilgrim's Brand) ship with a name
-  // override on the LootRoll; skip the schema-native `name(type, tier)`
-  // ladder so the card reads as the named object the narration just
-  // described.
-  const archetype = loot.slot === "weapon" ? loot.weaponType : loot.armorType;
+  // override on the LootRoll; otherwise pick a preset-agnostic
+  // atmospheric name from the loot's seed + element (see
+  // `evocativeName` in `lib/loot/names.ts`). This name is the asset's
+  // identity and never changes across realms; the schema-native TYPE
+  // ladder is rendered separately as a chip.
+  const element = loot.slot === "weapon" ? loot.element : loot.resistElement;
   const assembledName =
-    loot.nameOverride ??
-    lootName(preset, loot.slot as "weapon" | "armor", archetype, loot.tier);
+    loot.nameOverride ?? evocativeName(loot.nameSeed, loot.tier, element);
   return lootRoundtripToCard({
     loot,
     preset,

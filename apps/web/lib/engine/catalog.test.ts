@@ -34,6 +34,7 @@ function makeCombatState(overrides: Partial<CombatState> = {}): CombatState {
     regenDoubledThisTurn: false,
     thornsDoubledThisTurn: false,
     focusPrimed: false,
+    phase2PlayerBuffed: false,
     bleedStacks: 0,
     suppressedEffects: [],
     turn: 0,

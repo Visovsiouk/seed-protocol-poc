@@ -72,19 +72,39 @@ describe("rollLoot", () => {
     expect(l.catalogEffects).toEqual([]);
   });
 
-  it("uses signature schemaId and rolls declared catalog effects", () => {
-    const l = rollLoot({
-      rng: createRng(SEED),
-      difficulty: "standard",
-      slot: "weapon",
-      schemas: signatureLifesteal,
-      preset: "fantasy",
-    });
-    expect(l.schemaId).toBe(100);
-    expect(l.catalogEffects.map((e) => e.name)).toEqual(["lifesteal", "crit_chance"]);
-    for (const e of l.catalogEffects) {
-      expect(e.value).toBeGreaterThan(0);
+  it("uses signature schemaId; rolled effects are a subset of the schema pool", () => {
+    // HP-carry rebalance: `schema.catalogEffects` is a *pool* the drop
+    // may draw from, not a guaranteed payload. The count is rolled per
+    // tier (see EFFECT_COUNT_DISTRIBUTION in tier.ts) and clamped to
+    // pool size. Across many seeds we expect:
+    //   - every rolled effect comes from the declared pool,
+    //   - some drops carry 0 effects (especially when tier rolls low),
+    //   - rolled values are >0 and within tier bounds (validator-side).
+    const pool = new Set(["lifesteal", "crit_chance"]);
+    let everyDropEmpty = true;
+    let everyDropFull = true;
+    for (let i = 1; i <= 200; i++) {
+      const l = rollLoot({
+        rng: createRng(seedHex(i)),
+        difficulty: "standard",
+        slot: "weapon",
+        schemas: signatureLifesteal,
+        preset: "fantasy",
+      });
+      expect(l.schemaId).toBe(100);
+      for (const e of l.catalogEffects) {
+        expect(pool.has(e.name)).toBe(true);
+        expect(e.value).toBeGreaterThan(0);
+      }
+      if (l.catalogEffects.length > 0) everyDropEmpty = false;
+      if (l.catalogEffects.length < pool.size) everyDropFull = false;
     }
+    // The pool is large enough and tier mix is wide enough that 200
+    // seeds should produce both kinds of drops (some empty, some not
+    // full). Catches a regression that always returns the whole pool
+    // or always returns nothing.
+    expect(everyDropEmpty).toBe(false);
+    expect(everyDropFull).toBe(false);
   });
 
   it("same seed → same LootRoll", () => {

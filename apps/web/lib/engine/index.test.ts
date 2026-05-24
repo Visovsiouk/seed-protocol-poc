@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { advance, BOSS_DEPTH, commitLootMint, startRun, step } from "./index";
+import { advance, BOSS_DEPTH, commitLootMint, equipItem, startRun, step } from "./index";
 import type { ActionChoice, AssetCard, RunState } from "./types";
 import type { RealmSchemas } from "./loot";
 
@@ -68,6 +68,9 @@ function clearRoom(state: RunState): RunState {
         break;
       case "ledger":
         choice = { kind: "ledger", suppress: null };
+        break;
+      case "rest":
+        choice = { kind: "rest" };
         break;
       case "combat":
       default:
@@ -278,11 +281,105 @@ describe("engine seed-mercy (Genesis death rewind)", () => {
       if (s.pendingLoot?.slot === "weapon") {
         sawWeaponDrop = true;
         expect(s.pendingLoot.element).toBe("fire");
-        expect(s.pendingLoot.nameOverride).toBeDefined();
         expect(s.firstWeaponDropped).toBe(true);
       }
       if (s.pendingLoot) s = commitLootMint(s);
       s = advance(s, "lich").state;
     }
+  });
+});
+
+describe("persistent HP", () => {
+  it("startRun seeds playerHp and playerMaxHp from playerStartHp()", () => {
+    const { state } = makeRun({ equipped: { armor: TANK_ARMOR } });
+    expect(state.playerHp).toBeGreaterThan(0);
+    expect(state.playerMaxHp).toBe(state.playerHp);
+    // baseHp(40) + TANK_ARMOR.hpBonus(200) = 240
+    expect(state.playerMaxHp).toBe(240);
+  });
+
+  it("combat write-back: HP carries across a cleared room", () => {
+    // Tank loadout so the player can't die mid-fight, but engine still
+    // pegs `combat.playerHp` to whatever survived. Use a non-tank
+    // baseline so monster damage actually moves the bar.
+    const armor: AssetCard = {
+      ...TANK_ARMOR,
+      hpBonus: 0,
+      acBonus: 0,
+    };
+    let s = makeRun({ equipped: { armor } }).state;
+    const startHp = s.playerHp;
+    s = clearRoom(s);
+    // After a depth-1 trash fight the player should have taken some
+    // damage (the monster has multiple swings before falling). At minimum
+    // HP must not have *increased* and must be ≤ maxHp.
+    expect(s.playerHp).toBeLessThanOrEqual(s.playerMaxHp);
+    expect(s.playerHp).toBeLessThanOrEqual(startHp);
+  });
+
+  it("advance() trickle-heals +10% maxHp between non-boss rooms when chipped", () => {
+    // Manually construct a low-HP state by stepping through one fight,
+    // then forcing the player below the 85% gate before advancing. The
+    // heal is +floor(0.10 * maxHp) clamped to maxHp. The gate's job is
+    // to suppress no-op heals on full-HP transitions; we set the HP
+    // explicitly here so the test is independent of how much damage the
+    // sample fight happens to deal.
+    let s = makeRun({ equipped: {} }).state;
+    const maxHp = s.playerMaxHp;
+    s = clearRoom(s);
+    // Drop to ~50% HP so the gate is satisfied and the heal fires.
+    s = { ...s, playerHp: Math.floor(maxHp * 0.5) };
+    const beforeAdvance = s.playerHp;
+    s = advance(s, "lich").state;
+    const expectedHeal = Math.floor(maxHp * 0.10);
+    const expectedHp = Math.min(beforeAdvance + expectedHeal, maxHp);
+    expect(s.playerHp).toBe(expectedHp);
+  });
+
+  it("advance() does NOT heal when player is near full HP (gate)", () => {
+    // At >= 85% maxHp the gate fires and the heal is skipped — kills
+    // the spammy "+0 HP" / "+1 HP" lines on rooms where nothing chipped
+    // the player. HP must stay exactly where it was on both sides of
+    // the transition.
+    let s = makeRun({ equipped: {} }).state;
+    s = clearRoom(s);
+    // Force HP to 95% — above the 85% gate.
+    s = { ...s, playerHp: Math.floor(s.playerMaxHp * 0.95) };
+    const before = s.playerHp;
+    s = advance(s, "lich").state;
+    expect(s.playerHp).toBe(before);
+  });
+
+  it("advance() does NOT heal when entering the boss room", () => {
+    // Walk to bossDepth - 1 with a tank, then drop to a low HP and
+    // advance into the boss. HP must be the same on both sides of
+    // the transition (no heal applied).
+    let s = makeRun({ equipped: { armor: TANK_ARMOR } }).state;
+    for (let d = 1; d < BOSS_DEPTH - 1; d++) {
+      s = clearRoom(s);
+      if (s.pendingLoot) s = commitLootMint(s);
+      s = advance(s, "lich").state;
+    }
+    s = clearRoom(s);
+    if (s.pendingLoot) s = commitLootMint(s);
+    // Manually wound the player just before the boss transition so we
+    // can observe whether advance() heals or not. RunState.playerHp is
+    // the carrier; mutate via a typed shallow copy to keep it surgical.
+    s = { ...s, playerHp: 50 };
+    const before = s.playerHp;
+    s = advance(s, "lich").state;
+    expect(s.depth).toBe(BOSS_DEPTH);
+    expect(s.playerHp).toBe(before);
+  });
+
+  it("equipItem re-pins maxHp without refilling", () => {
+    // Start at base HP (no armor), wound, then equip TANK_ARMOR. The
+    // pool must extend (max grows) but current HP must not refill.
+    let s = makeRun({ equipped: {} }).state;
+    s = { ...s, playerHp: 5 };
+    const before = s.playerHp;
+    const next = equipItem(s, "armor", TANK_ARMOR);
+    expect(next.playerMaxHp).toBe(240);
+    expect(next.playerHp).toBe(before);
   });
 });

@@ -20,9 +20,9 @@ const monsters = {
   street_punk: {
     id: "street_punk",
     name: "Street Punk",
-    hp: 8,
-    attackDie: 4,
-    ac: 11,
+    hp: 12,
+    attackDie: 6,
+    ac: 12,
     attackVerbs: [
       "swings a length of chain for {dmg}",
       "stabs with a sharpened bolt for {dmg}",
@@ -32,9 +32,9 @@ const monsters = {
   fixer: {
     id: "fixer",
     name: "Corporate Fixer",
-    hp: 14,
+    hp: 18,
     attackDie: 6,
-    ac: 12,
+    ac: 13,
     attackVerbs: [
       "fires a suppressed pistol for {dmg}",
       "cracks a stun-baton across your ribs for {dmg}",
@@ -44,9 +44,9 @@ const monsters = {
   ripper: {
     id: "ripper",
     name: "Cyber Ripper",
-    hp: 18,
+    hp: 24,
     attackDie: 6,
-    ac: 13,
+    ac: 14,
     attackVerbs: [
       "extends an arm-blade for {dmg}",
       "rakes you with mono-claws for {dmg}",
@@ -69,9 +69,9 @@ const monsters = {
   netrunner: {
     id: "netrunner",
     name: "Hostile Netrunner",
-    hp: 16,
+    hp: 22,
     attackDie: 8,
-    ac: 12,
+    ac: 13,
     attackVerbs: [
       "slams your firewall and feedback burns you for {dmg}",
       "shorts your subdermals for {dmg}",
@@ -83,8 +83,8 @@ const monsters = {
   enforcer: {
     id: "enforcer",
     name: "Sector Enforcer",
-    hp: 22,
-    attackDie: 10,
+    hp: 24,
+    attackDie: 8,
     ac: 15,
     attackVerbs: [
       "fires a rail-pistol for {dmg}",
@@ -97,8 +97,8 @@ const monsters = {
   ad_mascot: {
     id: "ad_mascot",
     name: "Glitched Ad-Mascot",
-    hp: 10,
-    attackDie: 4,
+    hp: 12,
+    attackDie: 6,
     ac: 11,
     attackVerbs: [
       "tackles you with rictus enthusiasm for {dmg}",
@@ -108,7 +108,7 @@ const monsters = {
   ganger_lieutenant: {
     id: "ganger_lieutenant",
     name: "Ganger Lieutenant",
-    hp: 20,
+    hp: 22,
     attackDie: 6,
     ac: 13,
     attackVerbs: [
@@ -121,7 +121,7 @@ const monsters = {
     id: "chrome_monk",
     name: "Chrome Monk",
     hp: 22,
-    attackDie: 8,
+    attackDie: 6,
     ac: 14,
     attackVerbs: [
       "whirls; a mirrored heel finds your jaw for {dmg}",
@@ -133,8 +133,8 @@ const monsters = {
   ice_sentinel: {
     id: "ice_sentinel",
     name: "ICE Sentinel",
-    hp: 26,
-    attackDie: 8,
+    hp: 24,
+    attackDie: 6,
     ac: 15,
     attackVerbs: [
       "scans you; a numeric lash flays your nerves for {dmg}",
@@ -148,8 +148,8 @@ const monsters = {
     id: "corp_assassin",
     name: "Corp Assassin",
     hp: 24,
-    attackDie: 10,
-    ac: 14,
+    attackDie: 8,
+    ac: 15,
     attackVerbs: [
       "moves once; you bleed twice for {dmg}",
       "depresses a smart-trigger from across the room for {dmg}",
@@ -159,7 +159,7 @@ const monsters = {
     id: "rogue_synth",
     name: "Rogue Synth",
     hp: 24,
-    attackDie: 8,
+    attackDie: 6,
     ac: 15,
     attackVerbs: [
       "swings a load-bearing arm like a wrecking ball for {dmg}",
@@ -176,12 +176,12 @@ const bosses = {
     id: "black_ice",
     preset: "cyberpunk" as const,
     name: "Black ICE",
-    baseHp: 30,
+    baseHp: 26,
     attackDie: 6 as const,
     ac: 14,
     bakedEffects: ["crit_chance", "armor_pierce"] as ["crit_chance", "armor_pierce"],
     phase2NarrationKey: "black_ice_phase2",
-    phase2AttackDie: 8 as const,
+    phase2AttackDie: 6 as const,
     element: "cryogenic" as const,
     weakTo: "incendiary" as const,
     resistTo: "cryogenic" as const,
@@ -304,20 +304,55 @@ export const cyberpunkBank: FlavorBank = {
       "A circle of doctors stands up at once, faces wrong.",
     ],
   },
-  trialPrompts: [
-    "Camera arc. A two-second window to slip under.",
-    "A live rail crosses the alley. The gap is narrow.",
-    "Security drones patrol the gantry. You'll need to time the run.",
-  ],
-  trialSuccess: [
-    "You slip the arc clean — green diodes blink past you.",
-    "You make the gap. The rail doesn't see you.",
-    "You time the patrol; you're through before they cycle back.",
-  ],
-  trialFailure: [
-    "Alarms. You eat a stun-bolt and stagger.",
-    "The rail catches your sleeve; current bites through.",
-    "A drone tags you — you take the hit and keep moving.",
+  trials: [
+    {
+      ability: "agility",
+      prompt: "Camera arc. A two-second window to slip under.",
+      intent: "Move through the dark frame before the lens swings back.",
+      stakes: "Get tagged and the alarms will know your face.",
+      onSuccess: "You slip the arc clean — green diodes blink past you.",
+      onFailure: "Half a second late. A tone pulses. Something registers your shape.",
+    },
+    {
+      ability: "agility",
+      prompt: "A live rail crosses the alley. The gap above it is narrow.",
+      intent: "Vault the rail without touching it.",
+      stakes: "Brush the rail and current bites through to bone.",
+      onSuccess: "You go over light. The rail hums on, indifferent.",
+      onFailure: "Your sleeve drags the rail. Current bites through to bone.",
+    },
+    {
+      ability: "agility",
+      prompt: "Security drones patrol the gantry on a tight cycle.",
+      intent: "Cross between patrols without being seen.",
+      stakes: "Get spotted and the drones don't carry warning-shots.",
+      onSuccess: "You time the patrol. You're through before they cycle back.",
+      onFailure: "A drone clips you with a stun-bolt. You ride out the rest on adrenaline.",
+    },
+    {
+      ability: "endurance",
+      prompt: "The air down here is wrong — industrial runoff in a dead pocket.",
+      intent: "Hold your breath through the bad-air zone.",
+      stakes: "Breathe it in and your lungs will protest for a while.",
+      onSuccess: "You hold the whole stretch and break clean on the far side.",
+      onFailure: "You take a breath halfway. You spend the next minute coughing through it.",
+    },
+    {
+      ability: "endurance",
+      prompt: "A long rooftop run — gaps and rust between you and the exit.",
+      intent: "Keep the pace through every gap.",
+      stakes: "Slow down on a soft roof and you'll go through it.",
+      onSuccess: "You keep moving. Nothing under you has time to give.",
+      onFailure: "A roof-panel softens under your weight. You catch yourself, but the climb out hurts.",
+    },
+    {
+      ability: "endurance",
+      prompt: "A crowd is going feral two blocks ahead. You have to push through.",
+      intent: "Bull through the press without going down.",
+      stakes: "Lose your feet in that crowd and they won't stop for you.",
+      onSuccess: "You set your shoulders and shove. The press gives ground.",
+      onFailure: "You're carried sideways into a wall before you tear free, bruised and short.",
+    },
   ],
   ledgerPrompts: [
     "A corporate ledger blinks open on a dead terminal.",
