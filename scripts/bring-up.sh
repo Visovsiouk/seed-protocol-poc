@@ -10,9 +10,10 @@
 # This script:
 #   1. installs workspace deps
 #   2. seeds the three preset realms + loot schemas
-#   3. forge-builds the 12 adapter contracts
+#   3. forge-builds the 12 adapter contracts + CatalogEffectRegistry
 #   4. seeds + registers all 12 adapters
-#   5. starts `pnpm dev`
+#   5. seeds the catalog-effect registry (per-preset loot schema effects)
+#   6. starts `pnpm dev`
 #
 # `set -e` aborts on the first failing step so you don't accidentally
 # end up running the dev server against a half-seeded chain.
@@ -34,6 +35,9 @@ echo "==> forge build (12 adapter contracts)"
 
 echo "==> seeding adapters (12 deploys + registry writes)"
 pnpm --filter web seed:adapters
+
+echo "==> seeding catalog-effect registry (1 deploy + 3 schema writes)"
+pnpm --filter web seed:catalog
 
 echo "==> starting dev server"
 exec pnpm dev

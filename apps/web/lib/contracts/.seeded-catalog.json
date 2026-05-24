@@ -1,0 +1,26 @@
+{
+  "31337": {
+    "registry": "0x0e801d84fa97b50751dbf25036d067dcf18858bf",
+    "schemas": {
+      "2": [
+        "bleed",
+        "regen"
+      ],
+      "4": [
+        "crit_chance",
+        "damage_reduction"
+      ],
+      "6": [
+        "multi_hit",
+        "dodge_chance"
+      ]
+    },
+    "seededAt": "2026-05-24T10:00:10.212Z"
+  },
+  "84532": {
+    "registry": "0x0000000000000000000000000000000000000000",
+    "schemas": {},
+    "seededAt": null
+  },
+  "$schema": "Per-chainId map of the deployed CatalogEffectRegistry address + per-schema effect lists, written by `pnpm seed:catalog`. Placeholder zeros until the seeder runs."
+}

@@ -4,11 +4,13 @@ import { foundry } from "@wagmi/cli/plugins";
 /**
  * Wagmi CLI codegen config.
  *
- * Reads Foundry build artifacts from the sibling `seed-protocol/out/` directory
- * (the Foundry repo is run independently via anvil) and emits typed bindings
- * into `packages/abis/generated/`.
+ * Reads Foundry build artifacts from two locations:
+ *   1. the sibling `seed-protocol` repo (protocol surface — schema +
+ *      adapter + ecosystem registries, factory, etc.)
+ *   2. this repo's local `contracts/` (PoC-specific contracts — adapter
+ *      implementations and the catalog-effect registry)
  *
- * If the contracts repo is moved, only `project` needs to change.
+ * Both sets are emitted into `packages/abis/generated/index.ts`.
  *
  * Run: `pnpm wagmi:gen`
  */
@@ -34,6 +36,15 @@ export default defineConfig({
         // before the contracts are written.
         "MetadataRenderer.sol/**",
         "RealmRegistry.sol/**",
+      ],
+    }),
+    foundry({
+      // Local PoC repo: D:/Projects/seed-protocol-poc/contracts/
+      project: "../../contracts",
+      include: [
+        // on-chain commitment of
+        // (loot-schemaId → catalog-effect names).
+        "CatalogEffectRegistry.sol/**",
       ],
     }),
   ],

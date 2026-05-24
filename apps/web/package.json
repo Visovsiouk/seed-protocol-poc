@@ -12,7 +12,9 @@
     "test:watch": "vitest",
     "wagmi:gen": "wagmi generate",
     "seed": "tsx --env-file=.env.local scripts/seed-realms.ts",
-    "seed:adapters": "tsx --env-file=.env.local scripts/seed-adapters.ts"
+    "seed:adapters": "tsx --env-file=.env.local scripts/seed-adapters.ts",
+    "seed:catalog": "tsx --env-file=.env.local scripts/seed-catalog-effects.ts",
+    "seed:all": "pnpm seed && pnpm seed:adapters && pnpm seed:catalog"
   },
   "dependencies": {
     "@coinbase/wallet-sdk": "^4.3.0",
