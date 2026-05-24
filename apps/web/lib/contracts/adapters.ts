@@ -66,7 +66,6 @@ import {
   weaponTypeIndex,
 } from "@/lib/engine/types";
 import { buildAssetCardFromMetadata } from "@/lib/metadata/asset-card";
-import { armorName, weaponName } from "@/lib/loot/names";
 import { adapterAbi } from "./adapter-abi";
 import { getAdapterAddress } from "./seeded-adapters";
 import { getSeededRealm } from "./seeded-realms";
@@ -357,18 +356,14 @@ function buildTranslatedMetadataURI(args: {
   for (const eff of original.catalogEffects) {
     attributes.push({ trait_type: eff.name, value: eff.value });
   }
-  // Translated display name: mirror of the on-chain `name(type, tier)`
-  // view for the target preset, when a type was present. Falls back to
-  // the original (source-preset) name for un-archetyped legacy gear.
-  const translatedName =
-    weapon && weapon.weaponType !== "none"
-      ? weaponName(targetPreset, weapon.weaponType, original.tier) || original.name
-      : armor && armor.armorType !== "none"
-        ? armorName(targetPreset, armor.armorType, original.tier) || original.name
-        : original.name;
+  // The asset's *name* is its identity and never translates — pass the
+  // original's atmospheric label (chosen at mint time by `evocativeName`
+  // from `nameSeed` + element) through unchanged. The schema-native
+  // TYPE label (Stiletto ↔ Switchblade) translates via the on-chain
+  // adapter and is rendered as a separate chip by `<AssetCard/>`.
   const json = {
-    name: translatedName,
-    description: `${translatedName} (translated for ${targetPreset}).`,
+    name: original.name,
+    description: `${original.name} (translated for ${targetPreset}).`,
     image: TRANSLATED_PLACEHOLDER_SVG_URI,
     attributes,
     seed_protocol: {
@@ -390,6 +385,12 @@ export type TranslateArgs = {
   /** The realm the player is *entering* — translation target. */
   targetRealm: `0x${string}`;
   publicClient: PublicClient;
+  /**
+   * Optional preset hint for the target realm. Used when the target is a
+   * player-deployed realm not in the seeded-realms map — the play page
+   * already knows the preset from its realm-meta fetch.
+   */
+  targetPreset?: Preset;
 };
 
 export class AdapterCallFailed extends Error {
@@ -405,9 +406,10 @@ export async function translateCardForRealm({
   card,
   targetRealm,
   publicClient,
+  targetPreset: targetPresetHint,
 }: TranslateArgs): Promise<AssetCard> {
-  const sourcePreset = presetForRealm(card.realm);
-  const targetPreset = presetForRealm(targetRealm);
+  const sourcePreset = card.realmPreset ?? presetForRealm(card.realm);
+  const targetPreset = targetPresetHint ?? presetForRealm(targetRealm);
   if (!sourcePreset || !targetPreset) return card;
   if (sourcePreset === targetPreset) return card;
   if (card.slot !== "weapon" && card.slot !== "armor") return card;
@@ -475,11 +477,12 @@ export async function translateCardForRealm({
 export function useTranslatedCard(
   card: AssetCard | undefined,
   targetRealm: `0x${string}`,
+  targetPresetHint?: Preset,
 ): { data: AssetCard | undefined; isFetching: boolean; isError: boolean } {
   const publicClient = usePublicClient();
 
-  const sourcePreset = card ? presetForRealm(card.realm) : null;
-  const targetPreset = presetForRealm(targetRealm);
+  const sourcePreset = card ? (card.realmPreset ?? presetForRealm(card.realm)) : null;
+  const targetPreset = targetPresetHint ?? presetForRealm(targetRealm);
   const needsTranslation =
     !!card &&
     !!sourcePreset &&
@@ -503,7 +506,7 @@ export function useTranslatedCard(
     retry: false,
     queryFn: async () => {
       if (!card || !publicClient) return card;
-      return translateCardForRealm({ card, targetRealm, publicClient });
+      return translateCardForRealm({ card, targetRealm, publicClient, targetPreset: targetPresetHint });
     },
   });
 

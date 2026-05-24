@@ -16,6 +16,7 @@ import type {
   CatalogEffectName,
   DamageDie,
   Element,
+  Preset,
   Slot,
   Tier,
   WeaponType,
@@ -127,6 +128,7 @@ export function buildAssetCardFromMetadata(args: {
   let realmLabel = "";
   const catalogEffects: CatalogEffect[] = [];
   const extraFields: Record<string, string | number | boolean> = {};
+  let realmPreset: Preset | undefined;
   let damageDie: DamageDie | undefined;
   let attackBonus: number | undefined;
   let damageBonus: number | undefined;
@@ -148,6 +150,14 @@ export function buildAssetCardFromMetadata(args: {
 
       if (key === "slot" && typeof attr.value === "string") {
         attrSlot = attr.value.toLowerCase();
+        continue;
+      }
+
+      if (key === "schema" && typeof attr.value === "string") {
+        const prefix = attr.value.split(":")[0]?.toLowerCase();
+        if (prefix === "fantasy" || prefix === "scifi" || prefix === "cyberpunk") {
+          realmPreset = prefix as Preset;
+        }
         continue;
       }
 
@@ -224,6 +234,7 @@ export function buildAssetCardFromMetadata(args: {
     schemaId,
     realm: mintedByRealm,
     realmName: realmLabel,
+    realmPreset,
     slot,
     tier,
     name,

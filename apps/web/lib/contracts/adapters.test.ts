@@ -223,9 +223,10 @@ describe("buildTranslatedMetadataURI", () => {
     expect(rebuilt.damageBonus).toBe(2);
     expect(rebuilt.element).toBe("plasma");
     expect(rebuilt.weaponType).toBe("cannon");
-    // Name should be re-labeled with the target preset's tier-3 cannon
-    // entry from lib/loot/names.ts (mirror of the on-chain `name()`).
-    expect(rebuilt.name).toBe("Plasma Cannon");
+    // Name is the asset's identity — passes through untranslated. The
+    // schema-native TYPE label (Plasma Cannon) is rendered separately
+    // as a chip via `weaponName(targetPreset, weaponType, tier)`.
+    expect(rebuilt.name).toBe("Test Card");
   });
 
   it("emits a data: URI whose payload decodes back to the translated stats", () => {
@@ -259,8 +260,8 @@ describe("buildTranslatedMetadataURI", () => {
     expect(json.seed_protocol.schemaId).toBe(4);
     expect(json.seed_protocol.translated_target_preset).toBe("scifi");
     expect(json.seed_protocol.minted_by_realm_label).toBe("Test Realm");
-    // Tier-3 scifi cannon ladder entry from lib/loot/names.ts.
-    expect(json.name).toBe("Plasma Cannon");
+    // Name is the asset's identity — passes through untranslated.
+    expect(json.name).toBe("Test Card");
     const traits: Record<string, string | number> = {};
     for (const a of json.attributes) traits[a.trait_type] = a.value;
     expect(traits.damage_die).toBe(6);
