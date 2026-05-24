@@ -12,7 +12,8 @@
     "test": "pnpm -r test",
     "wagmi:gen": "pnpm --filter web wagmi:gen",
     "seed": "pnpm --filter web seed",
-    "bring-up": "bash scripts/bring-up.sh"
+    "bring-up": "bash scripts/bring-up.sh",
+    "bring-up-clean": "bash scripts/bring-up.sh --clean"
   },
   "engines": {
     "node": ">=20"

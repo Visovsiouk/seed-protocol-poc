@@ -20,9 +20,19 @@
 
 set -euo pipefail
 
+CLEAN=false
+for arg in "$@"; do
+  [[ "$arg" == "--clean" ]] && CLEAN=true
+done
+
 # Always run relative to repo root, regardless of cwd.
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
+
+if $CLEAN; then
+  echo "==> --clean: removing SQLite db"
+  rm -f apps/web/data/realms.db apps/web/data/realms.db-shm apps/web/data/realms.db-wal
+fi
 
 echo "==> pnpm install"
 pnpm install
