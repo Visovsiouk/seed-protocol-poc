@@ -26,39 +26,37 @@
 
 import type { AssetCard, Preset } from "@/lib/engine/types";
 import { buildAssetCardFromMetadata } from "@/lib/metadata/asset-card";
-import {
-  getSeededRealm,
-  getSeededSchemaIds,
-} from "@/lib/contracts/seeded-realms";
+import { getSeededSchemaIds } from "@/lib/contracts/seeded-realms";
 import { fetchInventory } from "./inventory";
 import { fetchAssetSummary } from "./provenance";
 
 /**
- * Build the set of `(realm, schemaId)` keys that identify clearReceipt
- * assets across every seeded preset. clearReceipts have no slot/stats,
- * so `buildAssetCardFromMetadata` falls back to the schemaId-parity
- * heuristic and routes them into weapon/armor — surfacing them as
- * phantom "d0 / +0 attack" entries in the drawer. The receipt tokens
- * are already tracked separately via `useBossClears`, so the inventory
- * hydration must drop them entirely.
+ * Build the set of clearReceipt schemaIds across every seeded preset.
+ * clearReceipts have no slot/stats, so `buildAssetCardFromMetadata` falls
+ * back to the schemaId-parity heuristic and routes them into weapon/armor —
+ * surfacing them as phantom "d0 / +0 attack" entries in the drawer.
+ *
+ * Player-made realms reuse the starter preset's clearReceipt schemaId, so
+ * filtering by schemaId alone (not realm+schemaId) correctly drops receipts
+ * from both starter and player realms. The receipt tokens are already tracked
+ * separately via `useBossClears`.
  */
-function buildClearReceiptFilter(): ReadonlySet<string> {
-  const keys = new Set<string>();
+function buildClearReceiptSchemaIds(): ReadonlySet<string> {
+  const ids = new Set<string>();
   const presets: readonly Preset[] = ["fantasy", "scifi", "cyberpunk"];
   for (const preset of presets) {
-    const realm = getSeededRealm(preset).toLowerCase();
     const schemaId = getSeededSchemaIds(preset).clearReceipt;
     if (schemaId === 0n) continue;
-    keys.add(`${realm}:${schemaId.toString()}`);
+    ids.add(schemaId.toString());
   }
-  return keys;
+  return ids;
 }
 
 /**
  * Hydrates the player's inventory into engine-shaped cards. Skips
  * accessory-slot assets — the PoC engine equips weapon/armor only, and
  * the drawer's tabbed UI doesn't have a third slot anyway. Also drops
- * clearReceipts (see `buildClearReceiptFilter`).
+ * clearReceipts (see `buildClearReceiptSchemaIds`).
  */
 export async function fetchInventoryCards(
   player: `0x${string}`,
@@ -70,12 +68,11 @@ export async function fetchInventoryCards(
     balances.map((b) => fetchAssetSummary(b.tokenId)),
   );
 
-  const receiptKeys = buildClearReceiptFilter();
+  const receiptSchemaIds = buildClearReceiptSchemaIds();
 
   const cards: AssetCard[] = [];
   for (const summary of summaries) {
-    const key = `${summary.mintedByRealm.toLowerCase()}:${summary.schemaId.toString()}`;
-    if (receiptKeys.has(key)) continue;
+    if (receiptSchemaIds.has(summary.schemaId.toString())) continue;
     const card = buildAssetCardFromMetadata({
       tokenId: summary.tokenId,
       tier: summary.tier,
