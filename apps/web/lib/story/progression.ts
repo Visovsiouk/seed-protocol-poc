@@ -97,20 +97,6 @@ export function stakesNoteFor(preset: Preset): string {
   return "";
 }
 
-/**
- * Hero copy variants for the landing page. Pre-3-clear the landing is
- * replaced entirely by the cold-open Book + continue card (see
- * `RealmSelector`), so this hero is only ever rendered post-3-clear.
- */
-export const STORY_HERO_GENESIS = {
-  eyebrow: "Field record · door I",
-  title: "Every world begins in a forest.",
-  body:
-    "You wake in mud. Five rooms down, then a wet laugh you'll learn the name of. " +
-    "The ground here is kind; it grows you back from the dead as many times as it " +
-    "takes. Two more doors will open when this one closes.",
-} as const;
-
 export const STORY_HERO_OPEN = {
   eyebrow: "The doors stand open",
   title: "Three doors closed behind you. The rest are up to you.",

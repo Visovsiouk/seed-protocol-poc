@@ -52,16 +52,6 @@ export default function HomePage() {
                 Create realm
               </Link>
               <Link
-                href="/genesis"
-                className="rounded-md px-3 py-1.5 text-sm transition"
-                style={{
-                  background: "rgba(255,255,255,0.06)",
-                  border: "1px solid rgba(255,255,255,0.1)",
-                }}
-              >
-                Genesis
-              </Link>
-              <Link
                 href="/bazaar"
                 className="rounded-md px-3 py-1.5 text-sm transition"
                 style={{
