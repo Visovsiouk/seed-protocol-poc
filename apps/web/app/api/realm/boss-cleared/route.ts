@@ -189,6 +189,29 @@ export async function POST(req: Request) {
     : getOwnerSigner(body.preset);
   const publicClient = getPublicClient();
 
+  // Idempotency: a deterministic tokenId means re-submitting the same run
+  // (e.g. double-tap, network retry) must not produce a second on-chain mint.
+  // Fail open on RPC error — the mintAsset call below will still revert if the
+  // contract enforces uniqueness, and a duplicate receipt is preferable to a
+  // broken mint flow.
+  try {
+    const existingBalance = await publicClient.readContract({
+      address: realm,
+      abi: ecosystemTemplateAbi,
+      functionName: "balanceOf",
+      args: [player, tokenId],
+    });
+    if (existingBalance > 0n) {
+      return reply(200, {
+        ok: true,
+        tokenId: tokenId.toString(),
+        txHash: "0x" as `0x${string}`,
+      });
+    }
+  } catch {
+    // RPC read failed — proceed to mint attempt.
+  }
+
   let hash: `0x${string}`;
   try {
     hash = await signer.wallet.writeContract({
