@@ -80,8 +80,8 @@ describe("pickArchetype", () => {
     expect(counts.rest!).toBeLessThan(5000 * 0.24);
   });
 
-  it("no rest at depth 2 even when chipped", () => {
-    const ctx = { depth: 2, hp: 5, maxHp: 30 };
+  it("no rest at depth 1 even when chipped", () => {
+    const ctx = { depth: 1, hp: 5, maxHp: 30 };
     for (let i = 1; i <= 1000; i++) {
       const a = pickArchetype(createRng(seedHex(i)), ctx);
       expect(a).not.toBe("rest");
