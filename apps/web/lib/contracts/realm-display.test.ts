@@ -21,11 +21,11 @@ function starter(
 }
 
 describe("buildRealmDisplay", () => {
-  it("emits starters first in preset order, then creator realms by createdAt asc", () => {
+  it("emits starters first in input order (canonical fantasy → cyberpunk → scifi), then creator realms by createdAt asc", () => {
     const starters = [
       starter("fantasy", FANTASY),
-      starter("scifi", SCIFI),
       starter("cyberpunk", CYBER),
+      starter("scifi", SCIFI),
     ];
     const registry = [
       summary(CREATOR_B, true, 200n),
@@ -42,8 +42,8 @@ describe("buildRealmDisplay", () => {
       "creator",
     ]);
     expect(result[0]!.kind === "starter" && result[0].preset).toBe("fantasy");
-    expect(result[1]!.kind === "starter" && result[1].preset).toBe("scifi");
-    expect(result[2]!.kind === "starter" && result[2].preset).toBe("cyberpunk");
+    expect(result[1]!.kind === "starter" && result[1].preset).toBe("cyberpunk");
+    expect(result[2]!.kind === "starter" && result[2].preset).toBe("scifi");
     expect(result[3]!.kind === "creator" && result[3].address).toBe(CREATOR_A);
     expect(result[4]!.kind === "creator" && result[4].address).toBe(CREATOR_B);
   });

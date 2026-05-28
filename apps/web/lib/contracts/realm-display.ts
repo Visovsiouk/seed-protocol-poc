@@ -8,7 +8,8 @@
  * load). Same isolation pattern as `realm-picker.ts`.
  *
  * Output ordering:
- *   1. Starter realms in preset order (fantasy → scifi → cyberpunk),
+ *   1. Starter realms in canonical narrative order (fantasy → cyberpunk →
+ *      scifi — matches `REALM_ORDER` in `lib/story/progression.ts`),
  *      whether or not they're already on-chain. Slots that aren't
  *      seeded yet still render with `onchain: undefined` so the UI can
  *      show a "Not yet deployed" indicator instead of silently dropping

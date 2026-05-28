@@ -106,7 +106,11 @@ const STARTER_DISPLAY_BY_PRESET: Record<Preset, { name: string; tagline: string 
   },
 };
 
-const PRESETS: readonly Preset[] = ["fantasy", "scifi", "cyberpunk"];
+// Display order matches the canonical narrative arc
+// (`REALM_ORDER` in `lib/story/progression.ts`): fantasy → cyberpunk → scifi.
+// Sci-fi is the third door — longest tonal stretch, hardest starter — so
+// it appears last in the selector.
+const PRESETS: readonly Preset[] = ["fantasy", "cyberpunk", "scifi"];
 
 /**
  * Returns the configured starter realm for a preset. The `realm` may be
