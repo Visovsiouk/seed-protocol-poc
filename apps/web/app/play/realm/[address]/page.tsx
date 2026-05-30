@@ -203,7 +203,7 @@ export default function CreatorRealmPlayPage() {
 
   const chainMintAvailable = walletConnected && isRegistered;
 
-  const handleLootMinted = async (loot: LootRoll, ctx: { depth: number }) => {
+  const handleLootMinted = async (loot: LootRoll, ctx: { depth: number; equip: boolean }) => {
     if (!address) return;
     let newCard: AssetCardType;
     if (chainMintAvailable && initial && walletAddress) {
@@ -220,7 +220,7 @@ export default function CreatorRealmPlayPage() {
       newCard = lootRollToMockCard(loot, preset, address, realmName);
       setLocalInventory((prev) => [...prev, newCard]);
     }
-    if (newCard.slot === "weapon" || newCard.slot === "armor") {
+    if (ctx.equip && (newCard.slot === "weapon" || newCard.slot === "armor")) {
       setEquipped((prev) => ({
         ...prev,
         [newCard.slot as "weapon" | "armor"]: newCard,

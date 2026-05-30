@@ -152,17 +152,33 @@ export function ChoiceRow({
     setArmed(true);
   }, [sig]);
 
+  // Re-evaluate focus whenever individual disabled states change (e.g. a
+  // timed unlock like the Skip delay in LootMintPrompt).
+  const disabledSig = choices.map((c) => (c.disabled ? "1" : "0")).join("");
+
   // Programmatically focus the selected element so Tab order is preserved
-  // and the user can see where they are. We use it for visual focus only;
-  // activation goes through our gated handler below.
+  // and the user can see where they are. If the selected element is disabled
+  // (e.g. Skip during its 1-second lock), focus the first enabled button
+  // instead so keyboard navigation works immediately. We use it for visual
+  // focus only; activation goes through our gated handler below.
   useEffect(() => {
     if (disabled) return;
-    const el = refs.current[selected];
+    let el = refs.current[selected];
+    if (!el || (el as HTMLButtonElement).disabled) {
+      // Fall through to the first enabled button.
+      for (let i = 0; i < choices.length; i++) {
+        const candidate = refs.current[i];
+        if (candidate && !(candidate as HTMLButtonElement).disabled) {
+          el = candidate;
+          break;
+        }
+      }
+    }
     if (!el) return;
-    if ((el as HTMLButtonElement).disabled) return;
     if (document.activeElement === el) return;
     el.focus({ preventScroll: false });
-  }, [selected, sig, disabled]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected, sig, disabled, disabledSig]);
 
   function step(delta: 1 | -1) {
     let next = selected;

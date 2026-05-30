@@ -91,7 +91,7 @@ type Props = {
    * `startRun`, so callers needing the *real* depth (e.g. for the
    * server-side tier-vs-difficulty bounds check) must read it from here.
    */
-  onLootMinted?: (loot: LootRoll, ctx: { depth: number }) => Promise<void> | void;
+  onLootMinted?: (loot: LootRoll, ctx: { depth: number; equip: boolean }) => Promise<void> | void;
   /**
    * Optional narrative beat rendered inside the run-over panel once the
    * boss is down. Owned by the parent so it can supply post-clear
@@ -253,7 +253,7 @@ export function EncounterFrame({
     [appendLines, busy, combat, onEvent, state],
   );
 
-  const handleMint = useCallback(async () => {
+  const handleMint = useCallback(async (equip: boolean) => {
     const loot = state.pendingLoot;
     if (!loot) return;
     // Run the caller's mint handler first — if it throws (tx revert,
@@ -261,7 +261,7 @@ export function EncounterFrame({
     // player can retry without losing the drop.
     if (onLootMinted) {
       try {
-        await onLootMinted(loot, { depth: state.depth });
+        await onLootMinted(loot, { depth: state.depth, equip });
       } catch (err) {
         appendLines([
           {
@@ -274,7 +274,7 @@ export function EncounterFrame({
     }
     const next = engineCommitLoot(state);
     appendLines([
-      { text: "Loot stowed in your pack.", emphasis: "heal" },
+      { text: equip ? "Loot equipped." : "Loot stowed in your pack.", emphasis: "heal" },
     ]);
     setState(next);
   }, [appendLines, onLootMinted, state]);

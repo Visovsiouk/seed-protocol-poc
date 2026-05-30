@@ -407,7 +407,7 @@ export default function PlayPage() {
     starterGear,
   ]);
 
-  const handleLootMinted = async (loot: LootRoll, ctx: { depth: number }) => {
+  const handleLootMinted = async (loot: LootRoll, ctx: { depth: number; equip: boolean }) => {
     let newCard: AssetCardType;
     if (chainMintAvailable && initial) {
       // Real path — fire the tx and let the inventory query reconcile.
@@ -431,11 +431,7 @@ export default function PlayPage() {
       newCard = lootRollToMockCard(loot, preset, cfg.realm, cfg.name);
       setLocalInventory((prev) => [...prev, newCard]);
     }
-    // Auto-equip the freshly-minted card — the prompt's CTA is literally
-    // "Mint and equip", so honor that. Per-slot replacement matches the
-    // drawer's equip path. Per spec the active CombatState's stats
-    // stay frozen until the next room, so this can't yank gear mid-fight.
-    if (newCard.slot === "weapon" || newCard.slot === "armor") {
+    if (ctx.equip && (newCard.slot === "weapon" || newCard.slot === "armor")) {
       // Newly-minted gear is native to `cfg.realm` (we just minted it
       // here), so the engine-side and persisted-native shapes are the
       // same card — no adapter hop required.

@@ -16,7 +16,7 @@
  * before paying gas.
  */
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { TrendingUp, TrendingDown, Minus } from "lucide-react";
 import type {
   AssetCard as AssetCardType,
@@ -50,7 +50,8 @@ type Props = {
    * truth combat resolves against.
    */
   comparedTo?: AssetCardType;
-  onMint: () => Promise<void> | void;
+  /** Called with `equip=true` for "Mint and equip", `equip=false` for "Mint". */
+  onMint: (equip: boolean) => Promise<void> | void;
   onSkip: () => void;
 };
 
@@ -246,6 +247,13 @@ export function LootMintPrompt({
   onSkip,
 }: Props) {
   const [minting, setMinting] = useState(false);
+  // Skip is disabled for the first second so players read the drop before
+  // accidentally dismissing it.
+  const [skipEnabled, setSkipEnabled] = useState(false);
+  useEffect(() => {
+    const timer = setTimeout(() => setSkipEnabled(true), 1000);
+    return () => clearTimeout(timer);
+  }, []);
 
   // Preview the loot as the exact AssetCard the engine will produce
   // post-mint. The mock tokenId is fine here — the prompt is a preview
@@ -264,10 +272,10 @@ export function LootMintPrompt({
     return computeDeltas(previewCard, comparedTo);
   }, [previewCard, comparedTo]);
 
-  const handleMint = async () => {
+  const handleMint = async (equip: boolean) => {
     setMinting(true);
     try {
-      await onMint();
+      await onMint(equip);
     } finally {
       setMinting(false);
     }
@@ -314,15 +322,21 @@ export function LootMintPrompt({
         choices={
           [
             {
-              key: "mint",
-              label: minting ? "Minting…" : "Mint and equip",
-              variant: "primary",
-              onClick: handleMint,
-            },
-            {
               key: "skip",
               label: "Skip",
               onClick: onSkip,
+              disabled: !skipEnabled,
+            },
+            {
+              key: "mint",
+              label: minting ? "Minting…" : "Mint",
+              onClick: () => handleMint(false),
+            },
+            {
+              key: "mint-equip",
+              label: minting ? "Minting…" : "Mint and equip",
+              variant: "primary",
+              onClick: () => handleMint(true),
             },
           ] satisfies Choice[]
         }
