@@ -15,7 +15,7 @@
 import { useAccount } from "wagmi";
 import { useRealmStats } from "@/lib/reads/hooks";
 import type { Preset } from "@/lib/engine/types";
-import { LedgerStamp } from "@/components/ledger/Ledger";
+import { Panel, Stamp } from "@/components/ui";
 
 function short(addr: `0x${string}`): string {
   return `${addr.slice(0, 6)}…${addr.slice(-4)}`;
@@ -33,23 +33,21 @@ export function BossLeaderboard({
   const rows = stats.data?.leaderboard ?? [];
 
   return (
-    <section
+    <Panel
+      as="section"
+      tone="glass-1"
       aria-label="Boss leaderboard"
-      className="flex flex-col gap-3 p-4 rounded-md"
-      style={{
-        background: "rgba(255,255,255,0.03)",
-        border: "1px solid rgba(255,255,255,0.08)",
-      }}
+      className="flex flex-col gap-3 p-4"
     >
       <header className="flex items-baseline justify-between gap-2">
-        <LedgerStamp>Boss leaderboard</LedgerStamp>
+        <Stamp>Boss leaderboard</Stamp>
         <span className="text-[10px] opacity-50">fewest turns wins</span>
       </header>
 
       {stats.isLoading ? (
         <p className="text-sm opacity-60">Tallying clears…</p>
       ) : stats.isError ? (
-        <p className="text-sm" style={{ color: "#ffb38a" }}>
+        <p className="text-sm text-[var(--color-danger)]">
           Failed to load leaderboard.
         </p>
       ) : rows.length === 0 ? (
@@ -67,10 +65,10 @@ export function BossLeaderboard({
                 className="grid grid-cols-[1.25rem_1fr_auto] items-baseline gap-3 text-xs px-2 py-1.5 rounded"
                 style={{
                   background: isYou
-                    ? "rgba(255,217,122,0.08)"
-                    : "rgba(255,255,255,0.02)",
+                    ? "color-mix(in oklab, var(--color-warn) 8%, transparent)"
+                    : "var(--surface-2)",
                   border: isYou
-                    ? "1px solid rgba(255,217,122,0.35)"
+                    ? "1px solid color-mix(in oklab, var(--color-warn) 35%, transparent)"
                     : "1px solid transparent",
                 }}
               >
@@ -80,10 +78,7 @@ export function BossLeaderboard({
                 <span className="font-mono opacity-90 truncate">
                   {short(r.player)}
                   {isYou && (
-                    <span
-                      className="ml-2 text-[10px] uppercase tracking-wider"
-                      style={{ color: "#ffd97a" }}
-                    >
+                    <span className="ml-2 text-[10px] uppercase tracking-wider text-[var(--color-warn)]">
                       you
                     </span>
                   )}
@@ -96,6 +91,6 @@ export function BossLeaderboard({
           })}
         </ol>
       )}
-    </section>
+    </Panel>
   );
 }

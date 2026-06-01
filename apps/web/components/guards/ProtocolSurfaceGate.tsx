@@ -44,11 +44,7 @@ export function ProtocolSurfaceGate({ children }: { children: React.ReactNode })
       <main className="min-h-screen px-6 py-10">
         <section
           aria-label="Sealed"
-          className="mx-auto flex max-w-md flex-col items-center gap-3 rounded-md p-6 text-center"
-          style={{
-            background: "rgba(255,255,255,0.04)",
-            border: "1px dashed rgba(255,255,255,0.18)",
-          }}
+          className="mx-auto flex max-w-md flex-col items-center gap-3 rounded-md p-6 text-center bg-[var(--surface-2)] border border-dashed border-[var(--border-2)]"
         >
           <h2 className="text-lg font-semibold">Sealed</h2>
           <p className="text-sm opacity-75 leading-relaxed">

@@ -32,13 +32,10 @@ export function ValueFlowAnimation({
         {formatEth(fees.total)} ETH paid
       </div>
 
-      <div
-        className="relative h-24 overflow-hidden rounded-md"
-        style={{ background: "rgba(255,255,255,0.03)" }}
-      >
-        <Stream delayMs={0} colorVar="#7ad6a0" />
-        <Stream delayMs={250} colorVar="#7c5cff" />
-        <Stream delayMs={500} colorVar="#f5c542" />
+      <div className="relative h-24 overflow-hidden rounded-md bg-[var(--surface-2)]">
+        <Stream delayMs={0} colorVar="var(--color-ok)" />
+        <Stream delayMs={250} colorVar="var(--color-preset-accent)" />
+        <Stream delayMs={500} colorVar="var(--color-warn)" />
       </div>
 
       <FlowRow
@@ -46,21 +43,21 @@ export function ValueFlowAnimation({
         addr={seller}
         amount={fees.seller}
         pct={sellerPct}
-        color="#7ad6a0"
+        color="var(--color-ok)"
       />
       <FlowRow
         label="Creator (realm)"
         addr={creator}
         amount={fees.creator}
         pct={creatorPct}
-        color="#7c5cff"
+        color="var(--color-preset-accent)"
       />
       <FlowRow
         label="Treasury"
         addr={treasury}
         amount={fees.treasury}
         pct={treasuryPct}
-        color="#f5c542"
+        color="var(--color-warn)"
       />
 
       <style jsx>{`

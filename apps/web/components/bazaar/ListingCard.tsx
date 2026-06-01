@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { PreseedBadge } from "./PreseedBadge";
 import { AssetCard } from "@/components/inventory/AssetCard";
+import { Button } from "@/components/ui";
 import { formatEth, shortAddress } from "@/lib/utils";
 import {
   usePurchase,
@@ -100,23 +101,11 @@ export function ListingCard({
   };
 
   return (
-    <article
-      className="flex flex-col gap-3 rounded-xl p-4 transition hover:translate-y-[-2px]"
-      style={{
-        background: "rgba(255,255,255,0.04)",
-        border: "1px solid rgba(255,255,255,0.08)",
-      }}
-    >
+    <article className="flex flex-col gap-3 rounded-xl p-4 transition hover:translate-y-[-2px] bg-[var(--surface-1)] border border-[var(--border-1)]">
       {card ? (
         <AssetCard card={card} />
       ) : (
-        <div
-          className="rounded-md p-3 text-xs opacity-60"
-          style={{
-            background: "rgba(255,255,255,0.02)",
-            border: "1px solid rgba(255,255,255,0.08)",
-          }}
-        >
+        <div className="rounded-md p-3 text-xs opacity-60 bg-[var(--surface-2)] border border-[var(--border-1)]">
           Loading asset…
         </div>
       )}
@@ -145,32 +134,25 @@ export function ListingCard({
 
       <footer className="flex flex-col gap-1 pt-1">
         <div className="flex gap-2">
-          <button
+          <Button
+            intent="primary"
             onClick={onBuy}
             disabled={isPending || !asset}
-            className="flex-1 rounded-md px-3 py-2 text-sm font-medium disabled:opacity-50"
-            style={{
-              background: "var(--color-preset-accent, #7c5cff)",
-              color: "var(--color-preset-bg, #fff)",
-            }}
+            className="flex-1"
           >
             {isPending ? "Buying…" : "Buy"}
-          </button>
-          <button
+          </Button>
+          <Button
+            intent="ghost"
             onClick={onDemo}
             disabled={demoStatus === "running" || !asset}
-            className="rounded-md px-3 py-2 text-sm disabled:opacity-50"
-            style={{
-              background: "transparent",
-              border: "1px solid rgba(255,255,255,0.15)",
-            }}
             title="Buy via the Wandering Trader (server-side EOA)"
           >
             {demoStatus === "running" ? "Trader…" : "Value-flow demo"}
-          </button>
+          </Button>
         </div>
         {demoError && (
-          <p className="text-[11px]" style={{ color: "#ff7a7a" }}>
+          <p className="text-[11px] text-[var(--color-danger)]">
             {demoError}
           </p>
         )}

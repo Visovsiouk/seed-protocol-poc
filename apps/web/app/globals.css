@@ -10,30 +10,148 @@
   --color-preset-bg: var(--color-bg);
   --color-preset-fg: var(--color-fg);
   --color-preset-accent: var(--color-accent);
+
+  /* semantic status — replaces scattered #f77 / #7ed99a hardcodes */
+  --color-ok: #7ed99a;
+  --color-warn: #f0c860;
+  --color-danger: #f9706b;
+
+  /* tier ramp (loot rarity) — drives AssetCard spine + TierChip */
+  --color-tier-1: #8a8f98;
+  --color-tier-2: #5fa8d3;
+  --color-tier-3: #8b7be8;
+  --color-tier-4: #e0a458;
+  --color-tier-5: #ff5d8f;
+
+  /* motion */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --dur-fast: 140ms;
+  --dur: 240ms;
+  --dur-slow: 520ms;
+
+  /* three-voice type scale (filled by next/font in layout.tsx; falls back
+     to system stacks when the font fetch is unavailable) */
+  --font-display: var(--font-space-grotesk), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: var(--font-plex-mono), ui-monospace, "SFMono-Regular", "Menlo", monospace;
+}
+
+/* ─── derived semantic surfaces ("data-glass" + "parchment") ──────────────────
+   Kept out of @theme on purpose: these are color-mix() expressions over the
+   live preset vars, so they re-resolve per element under [data-preset] rather
+   than being frozen into static utility classes. Consume via arbitrary values,
+   e.g. bg-[var(--surface-1)] border-[var(--border-1)]. */
+:root {
+  --surface-1: color-mix(in oklab, var(--color-preset-fg) 4%, transparent);
+  --surface-2: color-mix(in oklab, var(--color-preset-fg) 7%, transparent);
+  --surface-3: color-mix(in oklab, var(--color-preset-fg) 11%, transparent);
+  --border-1: color-mix(in oklab, var(--color-preset-fg) 12%, transparent);
+  --border-2: color-mix(in oklab, var(--color-preset-accent) 35%, transparent);
+  --glow: color-mix(in oklab, var(--color-preset-accent) 40%, transparent);
+
+  --parchment: color-mix(in oklab, var(--color-preset-fg) 8%, var(--color-preset-bg));
+  --parchment-ink: var(--color-preset-fg);
+
+  --rare: var(--color-preset-accent);
+  --focus-ring: color-mix(in oklab, var(--color-preset-accent) 70%, transparent);
 }
 
 [data-preset="fantasy"] {
   --color-preset-bg: #1a120b;
   --color-preset-fg: #f3e8c8;
   --color-preset-accent: #c9a14a;
+  /* warm parchment grain */
+  --preset-texture:
+    repeating-linear-gradient(
+      120deg,
+      color-mix(in oklab, var(--color-preset-fg) 2%, transparent) 0px,
+      color-mix(in oklab, var(--color-preset-fg) 2%, transparent) 1px,
+      transparent 1px,
+      transparent 3px
+    );
 }
 
 [data-preset="scifi"] {
   --color-preset-bg: #050912;
   --color-preset-fg: #d6e6ff;
   --color-preset-accent: #4ad8ff;
+  /* cold scanline glass */
+  --preset-texture:
+    repeating-linear-gradient(
+      0deg,
+      color-mix(in oklab, var(--color-preset-accent) 3%, transparent) 0px,
+      color-mix(in oklab, var(--color-preset-accent) 3%, transparent) 1px,
+      transparent 1px,
+      transparent 4px
+    );
 }
 
 [data-preset="cyberpunk"] {
   --color-preset-bg: #0a0212;
   --color-preset-fg: #ffe2f9;
   --color-preset-accent: #ff2ea6;
+  /* neon noir grid */
+  --preset-texture:
+    repeating-linear-gradient(
+      90deg,
+      color-mix(in oklab, var(--color-preset-accent) 3%, transparent) 0px,
+      color-mix(in oklab, var(--color-preset-accent) 3%, transparent) 1px,
+      transparent 1px,
+      transparent 6px
+    );
 }
 
-html, body {
+html,
+body {
   background: var(--color-preset-bg);
   color: var(--color-preset-fg);
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-family: var(--font-sans);
 }
 
-* { box-sizing: border-box; }
+* {
+  box-sizing: border-box;
+}
+
+/* ─── focus ring (one token, every interactive element) ───────────────────── */
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* ─── ambient orbs (dark-glassmorphism backdrop) ──────────────────────────────
+   Rendered by <AmbientOrbs/> in the AppShell. Pure CSS, GPU-cheap, and turned
+   off entirely under prefers-reduced-motion. */
+.ambient-orb {
+  position: absolute;
+  border-radius: 9999px;
+  filter: blur(80px);
+  opacity: 0.18;
+  background: var(--color-preset-accent);
+  pointer-events: none;
+  will-change: transform;
+  animation: orb-drift 22s var(--ease-out) infinite alternate;
+}
+
+@keyframes orb-drift {
+  from {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  to {
+    transform: translate3d(6%, -8%, 0) scale(1.15);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ambient-orb {
+    animation: none;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

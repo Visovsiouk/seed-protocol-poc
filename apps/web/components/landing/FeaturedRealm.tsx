@@ -20,6 +20,7 @@ import { useMemo } from "react";
 import { listStarterRealms } from "@/lib/contracts/starter-realms";
 import { useRealmStats } from "@/lib/reads/hooks";
 import type { Preset } from "@/lib/engine/types";
+import { Panel, Button, Stamp } from "@/components/ui";
 
 function presetLabel(p: Preset): string {
   return p === "fantasy" ? "Fantasy" : p === "scifi" ? "Sci-Fi" : "Cyberpunk";
@@ -72,23 +73,16 @@ export function FeaturedRealm() {
   const { entry, stats } = featured;
   const m = stats.metrics;
   return (
-    <section
+    <Panel
+      as="section"
+      tone="glass-2"
+      glow="accent"
       aria-label={`Featured realm: ${entry.name}`}
       data-preset={entry.preset}
-      className="mb-8 rounded-md p-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-6"
-      style={{
-        background:
-          "linear-gradient(135deg, rgba(255,217,122,0.10), rgba(255,255,255,0.02))",
-        border: "1px solid rgba(255,217,122,0.35)",
-      }}
+      className="mb-8 p-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-6"
     >
       <div className="flex flex-col gap-1 min-w-0">
-        <span
-          className="text-[10px] uppercase tracking-widest"
-          style={{ color: "#ffd97a" }}
-        >
-          Featured realm · {presetLabel(entry.preset)}
-        </span>
+        <Stamp>Featured realm · {presetLabel(entry.preset)}</Stamp>
         <h2 className="text-lg font-semibold truncate">{entry.name}</h2>
         <p className="text-sm opacity-80 leading-relaxed">{entry.tagline}</p>
         <p className="mt-1 text-xs opacity-70 tabular-nums">
@@ -97,27 +91,17 @@ export function FeaturedRealm() {
         </p>
       </div>
       <div className="flex shrink-0 items-center gap-2">
-        <Link
-          href={`/realm/${entry.realm}`}
-          className="rounded-md px-3 py-1.5 text-sm transition"
-          style={{
-            background: "rgba(255,255,255,0.06)",
-            border: "1px solid rgba(255,255,255,0.1)",
-          }}
-        >
-          Dashboard →
+        <Link href={`/realm/${entry.realm}`}>
+          <Button intent="ghost" size="sm">
+            Dashboard →
+          </Button>
         </Link>
-        <Link
-          href={`/play/${entry.preset}`}
-          className="rounded-md px-3 py-1.5 text-sm font-medium transition"
-          style={{
-            background: "#ffd97a",
-            color: "#1a1410",
-          }}
-        >
-          Enter →
+        <Link href={`/play/${entry.preset}`}>
+          <Button intent="primary" size="sm">
+            Enter →
+          </Button>
         </Link>
       </div>
-    </section>
+    </Panel>
   );
 }

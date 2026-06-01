@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { ListDialog } from "./ListDialog";
+import { Button } from "@/components/ui";
 
 /**
  * Header-level "List an asset" button. Opens the ListDialog modal which
@@ -11,16 +12,9 @@ export function ListButton() {
   const [open, setOpen] = useState(false);
   return (
     <>
-      <button
-        onClick={() => setOpen(true)}
-        className="rounded-md px-3 py-1.5 text-sm font-medium"
-        style={{
-          background: "var(--color-preset-accent)",
-          color: "var(--color-preset-bg)",
-        }}
-      >
+      <Button intent="primary" size="sm" onClick={() => setOpen(true)}>
         List an asset
-      </button>
+      </Button>
       <ListDialog open={open} onClose={() => setOpen(false)} />
     </>
   );

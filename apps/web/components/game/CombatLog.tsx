@@ -16,9 +16,9 @@ const MAX_LINES = 60;
 
 const EMPHASIS_STYLES: Record<NonNullable<NarrationLine["emphasis"]>, string> = {
   info: "opacity-70",
-  damage: "text-rose-300",
-  heal: "text-emerald-300",
-  drama: "text-amber-300 font-medium",
+  damage: "text-[var(--color-danger)]",
+  heal: "text-[var(--color-ok)]",
+  drama: "text-[var(--color-warn)] font-medium",
 };
 
 export function CombatLog({
@@ -42,13 +42,7 @@ export function CombatLog({
     <section
       ref={scrollerRef}
       aria-label="Combat log"
-      className="h-64 overflow-y-auto px-4 py-3 rounded-md text-sm leading-relaxed flex flex-col gap-1"
-      style={{
-        background: "rgba(0,0,0,0.3)",
-        border: "1px solid rgba(255,255,255,0.06)",
-        fontFamily:
-          "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
-      }}
+      className="h-64 overflow-y-auto px-4 py-3 rounded-lg border text-sm leading-relaxed flex flex-col gap-1 font-[family-name:var(--font-mono)] bg-[var(--surface-2)] border-[var(--border-1)]"
     >
       {isTrial && <TrialPreview encounter={encounter} hasLog={tail.length > 0} />}
       {tail.length === 0
@@ -91,12 +85,7 @@ function TrialPreview({
         {encounter.ability === "agility" ? "Agility" : "Endurance"} check —
         roll d20+{encounter.bonus} vs DC {encounter.dc}
       </p>
-      {hasLog && (
-        <hr
-          className="my-1 border-0 h-px"
-          style={{ background: "rgba(255,255,255,0.08)" }}
-        />
-      )}
+      {hasLog && <hr className="my-1 border-0 h-px bg-[var(--border-1)]" />}
     </>
   );
 }

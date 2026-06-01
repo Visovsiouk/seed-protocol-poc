@@ -14,8 +14,7 @@ export function RecentSalesFeed() {
       {data.slice(0, 10).map((s) => (
         <li
           key={s.txHash}
-          className="flex items-center justify-between rounded-md px-3 py-2"
-          style={{ background: "rgba(255,255,255,0.04)" }}
+          className="flex items-center justify-between rounded-md px-3 py-2 bg-[var(--surface-2)]"
         >
           <span className="font-mono text-xs opacity-70">
             #{s.listingId.toString()}

@@ -24,6 +24,7 @@
  */
 
 import { useState } from "react";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import type { AssetCard as AssetCardType, Preset } from "@/lib/engine/types";
 import { AssetCard } from "@/components/inventory/AssetCard";
 import { ChoiceRow, type Choice } from "@/components/game/ChoiceRow";
@@ -35,11 +36,8 @@ import {
 } from "@/lib/contracts/adapters";
 import { getAdapterAddress } from "@/lib/contracts/seeded-adapters";
 import { shortAddress } from "@/lib/utils";
-import {
-  LedgerBody,
-  LedgerRule,
-  LedgerStamp,
-} from "@/components/ledger/Ledger";
+import { Body, Rule, Stamp } from "@/components/ui";
+import { warpCrossfade, withReducedMotion } from "@/lib/ui/motion";
 
 type Beat = "shard" | "gear" | "arrival";
 
@@ -79,25 +77,24 @@ export function WarpInterstitial({
   toPreset: Preset;
   equipped: { weapon?: AssetCardType; armor?: AssetCardType };
 }) {
+  const reduced = useReducedMotion();
   const [beat, setBeat] = useState<Beat>("shard");
   const toRealm = getStarterRealm(toPreset).realm;
   const arrival = ARRIVAL_BY_PRESET[toPreset];
   const fromArrival = ARRIVAL_BY_PRESET[fromPreset];
   const hasGear = !!(equipped.weapon || equipped.armor);
 
+  let content: React.ReactNode;
   if (beat === "shard") {
-    return (
+    content = (
       <Frame stamp={fromArrival.stamp}>
-        <h3
-          className="font-mono text-lg leading-snug font-medium"
-          style={{ color: "var(--color-preset-accent)" }}
-        >
+        <h3 className="font-mono text-lg leading-snug font-medium text-[var(--color-preset-accent)]">
           {fromArrival.title}
         </h3>
-        <LedgerBody size="sm">{fromArrival.body}</LedgerBody>
-        <LedgerBody size="sm">
+        <Body size="sm">{fromArrival.body}</Body>
+        <Body size="sm">
           A shard catches the light in your hand. It is warm. It is yours.
-        </LedgerBody>
+        </Body>
         <Footer>
           <ChoiceRow
             ariaLabel="Continue"
@@ -116,22 +113,17 @@ export function WarpInterstitial({
         </Footer>
       </Frame>
     );
-  }
-
-  if (beat === "gear") {
-    return (
+  } else if (beat === "gear") {
+    content = (
       <Frame stamp="Field record · the things you carried">
-        <h3
-          className="font-mono text-lg leading-snug font-medium"
-          style={{ color: "var(--color-preset-accent)" }}
-        >
+        <h3 className="font-mono text-lg leading-snug font-medium text-[var(--color-preset-accent)]">
           What you carried changes shape.
         </h3>
-        <LedgerBody size="sm">
+        <Body size="sm">
           The same blade, the same coat, the same token in the same wallet —
           but the ground beneath them speaks a different language now. The
           protocol translates. Watch.
-        </LedgerBody>
+        </Body>
 
         <div className="flex flex-col gap-4">
           {equipped.weapon && (
@@ -168,19 +160,15 @@ export function WarpInterstitial({
         </Footer>
       </Frame>
     );
-  }
-
-  // arrival
-  return (
-    <Frame stamp={arrival.stamp}>
-      <h3
-        className="font-mono text-lg leading-snug font-medium"
-        style={{ color: "var(--color-preset-accent)" }}
-      >
+  } else {
+    // arrival
+    content = (
+      <Frame stamp={arrival.stamp}>
+      <h3 className="font-mono text-lg leading-snug font-medium text-[var(--color-preset-accent)]">
         {arrival.title}
       </h3>
-      <LedgerBody size="sm">{arrival.body}</LedgerBody>
-      <LedgerBody size="sm">{arrival.arrival}</LedgerBody>
+      <Body size="sm">{arrival.body}</Body>
+      <Body size="sm">{arrival.arrival}</Body>
       <Footer>
         <ChoiceRow
           ariaLabel="Walk in"
@@ -198,6 +186,21 @@ export function WarpInterstitial({
         />
       </Footer>
     </Frame>
+    );
+  }
+
+  return (
+    <AnimatePresence mode="wait">
+      <motion.div
+        key={beat}
+        variants={withReducedMotion(warpCrossfade, reduced)}
+        initial="enter"
+        animate="center"
+        exit="exit"
+      >
+        {content}
+      </motion.div>
+    </AnimatePresence>
   );
 }
 
@@ -211,19 +214,14 @@ function Frame({
   return (
     <section
       aria-label="Warp"
-      className="flex flex-col gap-4 p-5 rounded-md relative overflow-hidden"
-      style={{
-        background:
-          "linear-gradient(135deg, rgba(255,255,255,0.04), rgba(255,255,255,0.01))",
-        border: "1px dashed var(--color-preset-accent)",
-      }}
+      className="flex flex-col gap-4 p-5 rounded-md relative overflow-hidden bg-[linear-gradient(135deg,var(--surface-2),var(--surface-1))] border border-dashed border-[var(--color-preset-accent)]"
     >
       <header className="flex items-baseline justify-between gap-3">
-        <LedgerStamp>{stamp}</LedgerStamp>
+        <Stamp>{stamp}</Stamp>
       </header>
-      <LedgerRule />
+      <Rule />
       {children}
-      <LedgerRule tone="muted" />
+      <Rule tone="muted" />
     </section>
   );
 }
@@ -264,18 +262,14 @@ function TranslationPair({
 
   return (
     <div className="flex flex-col gap-2">
-      <span
-        className="font-mono text-[10px] uppercase opacity-55"
-        style={{ letterSpacing: "0.28em" }}
-      >
+      <span className="font-mono text-[10px] uppercase opacity-55 tracking-[0.28em]">
         {label}
       </span>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_auto_1fr] sm:items-center">
         <AssetCard card={card} compact />
         <span
           aria-hidden
-          className="hidden sm:block font-mono text-xs uppercase opacity-60 text-center"
-          style={{ letterSpacing: "0.28em" }}
+          className="hidden sm:block font-mono text-xs uppercase opacity-60 text-center tracking-[0.28em]"
         >
           →
         </span>
@@ -318,18 +312,9 @@ function AdapterStrip({
   translating: boolean;
 }) {
   return (
-    <div
-      className="flex flex-col gap-1 rounded-md px-3 py-2 text-[11px]"
-      style={{
-        background: "rgba(255,255,255,0.03)",
-        border: "1px dashed rgba(255,255,255,0.12)",
-      }}
-    >
+    <div className="flex flex-col gap-1 rounded-md px-3 py-2 text-[11px] bg-[var(--surface-1)] border border-dashed border-[var(--border-2)]">
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-        <span
-          className="font-mono uppercase opacity-55"
-          style={{ letterSpacing: "0.22em" }}
-        >
+        <span className="font-mono uppercase opacity-55 tracking-[0.22em]">
           via adapter
         </span>
         <code

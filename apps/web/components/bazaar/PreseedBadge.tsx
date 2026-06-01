@@ -1,28 +1,18 @@
 "use client";
 
+import { Chip } from "@/components/ui";
+
 /**
  * Distinguishes dev-wallet-listed Genesis bazaar inventory from
- * player-listed assets.
+ * player-listed assets. Routed through the kit `Chip`
+ * so both states share the loot-pill shape; the two stable provenance
+ * hues (genesis violet, player-listed cyan) are intentionally realm-
+ * independent so the signal reads the same in every preset.
  */
 export function PreseedBadge({ preseed }: { preseed: boolean }) {
-  return (
-    <span
-      className="inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider"
-      style={
-        preseed
-          ? {
-              background: "rgba(124,92,255,0.15)",
-              color: "#b3a1ff",
-              border: "1px solid rgba(124,92,255,0.4)",
-            }
-          : {
-              background: "rgba(74,216,255,0.12)",
-              color: "#7be2ff",
-              border: "1px solid rgba(74,216,255,0.35)",
-            }
-      }
-    >
-      {preseed ? "Genesis liquidity" : "Player-listed"}
-    </span>
+  return preseed ? (
+    <Chip color="#7c5cff" label="Genesis liquidity" />
+  ) : (
+    <Chip color="#4ad8ff" label="Player-listed" />
   );
 }

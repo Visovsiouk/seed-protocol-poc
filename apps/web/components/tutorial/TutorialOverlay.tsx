@@ -147,7 +147,7 @@ export function TutorialOverlay({
       aria-label="Tutorial guidance"
       className="flex flex-col gap-2 p-4 rounded-md"
       style={{
-        background: "rgba(255,255,255,0.04)",
+        background: "var(--surface-1)",
         border: "1px solid var(--color-preset-accent)",
       }}
     >

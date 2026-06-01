@@ -69,7 +69,7 @@ export function ListingsGrid() {
   if (error) {
     return (
       <>
-        <p className="opacity-70" style={{ color: "#ff6b6b" }}>
+        <p className="opacity-70 text-[var(--color-danger)]">
           Failed to load listings: {(error as Error).message}
         </p>
         {receiptPortal}
@@ -79,10 +79,7 @@ export function ListingsGrid() {
   if (!listings || listings.length === 0) {
     return (
       <>
-        <div className="rounded-lg p-6 text-sm opacity-70" style={{
-          background: "rgba(255,255,255,0.03)",
-          border: "1px dashed rgba(255,255,255,0.15)",
-        }}>
+        <div className="rounded-lg p-6 text-sm opacity-70 bg-[var(--surface-2)] border border-dashed border-[var(--border-2)]">
           No active listings. List an asset from your inventory to get started.
         </div>
         {receiptPortal}

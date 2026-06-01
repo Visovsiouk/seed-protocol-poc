@@ -6,6 +6,7 @@ import { parseEther } from "viem";
 import { useInventoryCards } from "@/lib/reads/hooks";
 import { useList } from "@/lib/contracts/exchange";
 import { AssetCard } from "@/components/inventory/AssetCard";
+import { Dialog, Button } from "@/components/ui";
 
 /**
  * Modal that lets the connected wallet pick a held asset and create a
@@ -47,8 +48,6 @@ export function ListDialog({
     [inventory.data],
   );
 
-  if (!open) return null;
-
   const onSubmit = async () => {
     if (!selectedTokenId) return;
     let parsedPrice: bigint;
@@ -88,22 +87,14 @@ export function ListDialog({
     armors.length === 0;
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ background: "rgba(0,0,0,0.6)" }}
-      onClick={onClose}
-      role="dialog"
-      aria-label="List an asset"
+    <Dialog
+      open={open}
+      onClose={onClose}
+      label="List an asset"
+      size="lg"
+      className="max-h-[90vh] overflow-y-auto flex flex-col gap-4"
     >
-      <div
-        className="w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-xl p-6 flex flex-col gap-4"
-        style={{
-          background: "#15161b",
-          border: "1px solid rgba(255,255,255,0.1)",
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <header className="flex items-start justify-between gap-4">
+      <header className="flex items-start justify-between gap-4">
           <div className="flex flex-col gap-0.5">
             <h2 className="text-lg font-semibold">List an asset</h2>
             <p className="text-xs opacity-60">
@@ -160,51 +151,41 @@ export function ListDialog({
                 value={priceEth}
                 onChange={(e) => setPriceEth(e.target.value)}
                 disabled={!selectedTokenId}
-                className="mt-1 w-full rounded-md bg-black/30 px-3 py-2 text-sm disabled:opacity-50"
-                style={{ border: "1px solid rgba(255,255,255,0.1)" }}
+                className="mt-1 w-full rounded-md bg-black/30 px-3 py-2 text-sm disabled:opacity-50 border border-[var(--border-1)]"
               />
             </div>
 
             <div className="flex justify-end gap-2 pt-1">
-              <button
-                onClick={onClose}
-                className="rounded-md px-4 py-2 text-sm"
-                style={{ border: "1px solid rgba(255,255,255,0.15)" }}
-              >
+              <Button intent="ghost" onClick={onClose}>
                 Cancel
-              </button>
-              <button
+              </Button>
+              <Button
+                intent="primary"
                 onClick={onSubmit}
                 disabled={
                   !selectedTokenId ||
                   isPending ||
                   status.kind === "submitting"
                 }
-                className="rounded-md px-4 py-2 text-sm font-medium disabled:opacity-50"
-                style={{
-                  background: "var(--color-preset-accent, #7c5cff)",
-                  color: "var(--color-preset-bg, #fff)",
-                }}
               >
                 {status.kind === "submitting" ? "Listing…" : "List"}
-              </button>
+              </Button>
             </div>
 
             {status.kind === "error" && (
-              <p className="text-xs" style={{ color: "#ff7a7a" }}>
+              <p className="text-xs text-[var(--color-danger)]">
                 {status.message}
               </p>
             )}
             {status.kind === "success" && (
-              <p className="text-xs" style={{ color: "#7ad6a0" }}>
+              <p className="text-xs text-[var(--color-ok)]">
                 Listed as #{status.listingId.toString()} —{" "}
                 {status.txHash.slice(0, 10)}…
               </p>
             )}
           </>
         )}
-      </div>
-    </div>
+    </Dialog>
   );
 }
 

@@ -21,6 +21,7 @@ import type { TutorialProgress } from "@/lib/tutorial/progress";
 import { interstitialFor } from "@/lib/story/progression";
 import { ChoiceRow, type Choice } from "./ChoiceRow";
 import { WarpInterstitial } from "./WarpInterstitial";
+import { Stamp } from "@/components/ui";
 
 type Props = {
   justCleared: Preset;
@@ -64,23 +65,13 @@ export function RealmClearedInterstitial({
   return (
     <section
       aria-label="Story · realm cleared"
-      className="flex flex-col gap-4 p-5 rounded-md relative overflow-hidden"
-      style={{
-        background:
-          "linear-gradient(135deg, rgba(255,255,255,0.04), rgba(255,255,255,0.01))",
-        border: "1px dashed var(--color-preset-accent)",
-      }}
+      className="flex flex-col gap-4 p-5 rounded-md relative overflow-hidden bg-[linear-gradient(135deg,var(--surface-2),var(--surface-1))] border border-dashed border-[var(--color-preset-accent)]"
     >
       <header className="flex items-baseline justify-between gap-3">
-        <span className="text-[11px] uppercase tracking-widest opacity-60">
-          {story.eyebrow}
-        </span>
+        <Stamp>{story.eyebrow}</Stamp>
         <ShardTrack shards={shards} />
       </header>
-      <h3
-        className="text-lg font-semibold leading-snug"
-        style={{ color: "var(--color-preset-accent)" }}
-      >
+      <h3 className="text-lg font-semibold leading-snug text-[var(--color-preset-accent)]">
         {story.title}
       </h3>
       <p className="text-sm opacity-85 leading-relaxed">{story.body}</p>
@@ -154,7 +145,7 @@ function ShardTrack({ shards }: { shards: number }) {
               transform: "rotate(45deg)",
               background: lit ? "var(--color-preset-accent)" : "transparent",
               border: `1px solid ${
-                lit ? "var(--color-preset-accent)" : "rgba(255,255,255,0.25)"
+                lit ? "var(--color-preset-accent)" : "var(--border-2)"
               }`,
               boxShadow: lit
                 ? "0 0 10px var(--color-preset-accent)"

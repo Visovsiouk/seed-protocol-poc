@@ -33,13 +33,12 @@ export function BossPhaseBanner({
   return (
     <div
       role="alert"
-      className="rounded-md px-5 py-3 flex items-center gap-3 transition-opacity duration-500"
-      style={{
-        background: "rgba(212, 68, 68, 0.15)",
-        border: "1px solid rgba(212, 68, 68, 0.5)",
-      }}
+      className="rounded-lg px-5 py-3 flex items-center gap-3 transition-opacity duration-[var(--dur-slow)] border bg-[color-mix(in_oklab,var(--color-danger)_15%,transparent)] border-[color-mix(in_oklab,var(--color-danger)_50%,transparent)]"
     >
-      <span className="text-rose-200 text-xs uppercase tracking-widest">
+      <span
+        className="text-xs uppercase tracking-widest font-[family-name:var(--font-display)]"
+        style={{ color: "var(--color-danger)" }}
+      >
         Phase 2
       </span>
       <span className="font-semibold">

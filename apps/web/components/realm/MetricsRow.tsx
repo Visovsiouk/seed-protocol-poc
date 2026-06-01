@@ -12,6 +12,7 @@
 import { useRealmStats } from "@/lib/reads/hooks";
 import type { Preset } from "@/lib/engine/types";
 import type { RealmMetrics } from "@/lib/reads/realm-stats";
+import { Panel } from "@/components/ui";
 
 export function MetricsRow({
   realm,
@@ -68,27 +69,18 @@ function Cell({
   muted?: boolean;
 }) {
   return (
-    <div
-      className="flex flex-col gap-1 rounded-md px-3 py-2.5"
-      style={{
-        background: "rgba(255,255,255,0.03)",
-        border: "1px solid rgba(255,255,255,0.08)",
-        opacity: muted ? 0.55 : 1,
-      }}
+    <Panel
+      tone="glass-1"
+      className="flex flex-col gap-1 px-3 py-2.5"
+      style={{ opacity: muted ? 0.55 : 1 }}
     >
-      <span
-        className="font-mono text-[10px] uppercase opacity-65"
-        style={{
-          letterSpacing: "0.28em",
-          color: "var(--color-preset-accent)",
-        }}
-      >
+      <span className="font-mono text-[10px] uppercase tracking-[0.28em] opacity-65 text-[var(--color-preset-accent)]">
         {label}
       </span>
       <span className="font-mono text-xl font-medium tabular-nums">
         {loading ? "—" : value}
       </span>
-    </div>
+    </Panel>
   );
 }
 

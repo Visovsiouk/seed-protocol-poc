@@ -10,8 +10,11 @@
  *   2. Canonical mechanical stats from the tier table.
  *   3. Catalog effects (if any) and extra non-canonical fields.
  *
- * `selected` is presentational only — equip flow is driven by the
- * parent (`<InventoryDrawer/>`).
+ * Presentation is built entirely on the shared kit:
+ * a tier-ramp spine down the left edge keyed to `tierColor`, kit chips for
+ * tier / element / effect / provenance, and token-ized surfaces — no inline
+ * colour dicts. `selected` is presentational only — equip flow is driven by
+ * the parent (`<InventoryDrawer/>`).
  */
 
 import type {
@@ -26,6 +29,10 @@ import {
 } from "@/lib/contracts/adapters";
 import { getAdapterAddress } from "@/lib/contracts/seeded-adapters";
 import { armorName, weaponName } from "@/lib/loot/names";
+import { tierColor } from "@/lib/ui/loot-visuals";
+import { fadeRise, withReducedMotion } from "@/lib/ui/motion";
+import { Chip, TierChip, ElementChip, EffectChip, ProvenanceChip } from "@/components/ui";
+import { motion, useReducedMotion } from "framer-motion";
 
 const ZERO_ADDR = "0x0000000000000000000000000000000000000000" as const;
 
@@ -51,96 +58,27 @@ type Props = {
   targetPreset?: Preset;
 };
 
-const TIER_LABEL: Record<number, string> = {
-  1: "Common",
-  2: "Uncommon",
-  3: "Rare",
-  4: "Epic",
-  5: "Legendary",
-};
-
-/** Per-element accent colours for the inline element chip. Kept in this
- * component (rather than globals.css) because the engine itself never
- * needs to know about presentation — these are pure UI tokens.
- *
- * The three preset vocabularies share enum indices 1..5,
- * so all three names at a given index share a hue:
- *   1: fire / plasma / incendiary    → ember
- *   2: ice / cryo / cryogenic        → frost
- *   3: shock / ion / emp             → spark
- *   4: holy / photon / laser         → gold-light
- *   5: unholy / void / nano          → violet
+/**
+ * Element pill that resolves the preset-local vocabulary (e.g. holy →
+ * "laser" in cyberpunk) and delegates to the kit `ElementChip` so the hue
+ * stays canonical while the label follows the realm. `null` preset falls
+ * back to the canonical name.
  */
-const EMBER = { bg: "rgba(255,120,40,0.18)", fg: "#ffb38a" };
-const FROST = { bg: "rgba(120,200,255,0.18)", fg: "#a8dcff" };
-const SPARK = { bg: "rgba(255,230,80,0.18)", fg: "#ffeb8a" };
-const GOLD_LIGHT = { bg: "rgba(255,220,140,0.18)", fg: "#ffd97a" };
-const VIOLET = { bg: "rgba(180,120,255,0.18)", fg: "#caa6ff" };
-const ELEMENT_COLOR: Record<string, { bg: string; fg: string }> = {
-  fire: EMBER, plasma: EMBER, incendiary: EMBER,
-  ice: FROST, cryo: FROST, cryogenic: FROST,
-  shock: SPARK, ion: SPARK, emp: SPARK,
-  holy: GOLD_LIGHT, photon: GOLD_LIGHT, laser: GOLD_LIGHT,
-  unholy: VIOLET, void: VIOLET, nano: VIOLET,
-};
-const ELEMENT_COLOR_FALLBACK = { bg: "rgba(180,180,180,0.18)", fg: "#cccccc" };
-
-function ElementChip({
+function TranslatedElementChip({
   element,
   kind,
   preset,
 }: {
   element: Exclude<Element, "none">;
   kind: "damage" | "resist";
-  /**
-   * The preset whose vocabulary should label the element. Maps the
-   * canonical enum onto the preset's local name (e.g. holy → "laser"
-   * in cyberpunk). `null` falls back to the canonical name. Colour
-   * stays element-keyed so the player still reads the same hue across
-   * realms.
-   */
   preset: Preset | null;
 }) {
-  const c = ELEMENT_COLOR[element] ?? ELEMENT_COLOR_FALLBACK;
   const label = useElementLabel(element, preset);
-  return (
-    <span
-      className="text-[10px] px-1.5 py-0.5 rounded uppercase tracking-wider font-semibold"
-      style={{
-        background: c.bg,
-        color: c.fg,
-        border: `1px solid ${c.fg}55`,
-      }}
-    >
-      {kind === "damage" ? `${label} dmg` : `resists ${label}`}
-    </span>
-  );
+  return <ElementChip element={element} label={label} kind={kind} />;
 }
 
 function shortAddr(addr: `0x${string}`): string {
   return `${addr.slice(0, 6)}…${addr.slice(-4)}`;
-}
-
-/**
- * Neutral chip for the schema-native TYPE label. Shows the preset's
- * tier-ladder string ("Stiletto", "Switchblade", "Plasma Cannon", …)
- * — the per-realm "what it's called here" alongside the asset's
- * constant atmospheric name. Colour is intentionally generic so the
- * element chip remains the eye-catching one.
- */
-function TypeChip({ label }: { label: string }) {
-  return (
-    <span
-      className="text-[10px] px-1.5 py-0.5 rounded uppercase tracking-wider font-semibold"
-      style={{
-        background: "rgba(220,220,220,0.10)",
-        color: "#dddddd",
-        border: "1px solid rgba(220,220,220,0.25)",
-      }}
-    >
-      {label}
-    </span>
-  );
 }
 
 /**
@@ -189,6 +127,7 @@ function OriginalStrip({
   isError: boolean;
 }) {
   const isWeapon = card.slot === "weapon";
+  const reduced = useReducedMotion();
   const damageElement =
     isWeapon && card.element && card.element !== "none"
       ? (card.element as Exclude<Element, "none">)
@@ -199,18 +138,20 @@ function OriginalStrip({
       : null;
 
   return (
-    <div
-      className="mt-1 rounded-sm p-2 flex flex-col gap-1"
+    <motion.div
+      initial="hidden"
+      animate="visible"
+      variants={withReducedMotion(fadeRise, reduced)}
+      className="mt-1 rounded-md p-2 flex flex-col gap-1 border border-dashed"
       style={{
-        background: "rgba(120,200,255,0.06)",
-        border: "1px dashed rgba(120,200,255,0.35)",
+        background:
+          "color-mix(in oklab, var(--color-preset-accent) 7%, transparent)",
+        borderColor:
+          "color-mix(in oklab, var(--color-preset-accent) 35%, transparent)",
       }}
     >
       <div className="flex items-baseline justify-between gap-2">
-        <span
-          className="text-[10px] uppercase tracking-wider"
-          style={{ color: "#a8dcff" }}
-        >
+        <span className="text-[10px] uppercase tracking-wider text-[var(--color-preset-accent)]">
           Translated from {sourcePreset}
         </span>
         {hasAdapter && (
@@ -224,7 +165,7 @@ function OriginalStrip({
           No adapter deployed — equipping uses native stats.
         </span>
       ) : isError ? (
-        <span className="text-[10px]" style={{ color: "#ffb38a" }}>
+        <span className="text-[10px] text-[var(--color-warn)]">
           Adapter call failed — re-run <code>pnpm seed:adapters</code> if you
           restarted Anvil. Equipping uses native stats.
         </span>
@@ -254,16 +195,18 @@ function OriginalStrip({
             }
             return (
               <div className="flex flex-wrap gap-1">
-                {srcTypeLabel !== "" && <TypeChip label={srcTypeLabel} />}
+                {srcTypeLabel !== "" && (
+                  <Chip color="var(--border-2)" label={srcTypeLabel} />
+                )}
                 {damageElement && (
-                  <ElementChip
+                  <TranslatedElementChip
                     element={damageElement}
                     kind="damage"
                     preset={sourcePreset}
                   />
                 )}
                 {resistElement && (
-                  <ElementChip
+                  <TranslatedElementChip
                     element={resistElement}
                     kind="resist"
                     preset={sourcePreset}
@@ -274,7 +217,7 @@ function OriginalStrip({
           })()}
         </>
       )}
-    </div>
+    </motion.div>
   );
 }
 
@@ -342,33 +285,23 @@ export function AssetCard({
       type="button"
       onClick={onClick}
       disabled={!onClick}
-      className="text-left rounded-md p-3 transition flex flex-col gap-2"
+      className="text-left rounded-lg p-3 pl-4 transition flex flex-col gap-2 border overflow-hidden relative bg-[var(--surface-1)]"
       style={{
-        background: selected
-          ? "rgba(255,255,255,0.06)"
-          : "rgba(255,255,255,0.02)",
-        border: selected
-          ? "1px solid var(--color-preset-accent)"
-          : "1px solid rgba(255,255,255,0.08)",
+        background: selected ? "var(--surface-2)" : undefined,
+        borderColor: selected
+          ? "var(--color-preset-accent)"
+          : "var(--border-1)",
+        borderLeft: `3px solid ${tierColor(displayCard.tier)}`,
         cursor: onClick ? "pointer" : "default",
       }}
     >
       <header className="flex items-baseline justify-between gap-2">
         <h4 className="font-semibold text-sm truncate">{displayCard.name}</h4>
-        <span
-          className="text-[10px] px-1.5 py-0.5 rounded uppercase tracking-wider"
-          style={{
-            background: "var(--color-preset-accent)",
-            color: "var(--color-preset-bg)",
-          }}
-        >
-          T{displayCard.tier}
-        </span>
+        <TierChip tier={displayCard.tier} />
       </header>
       {!compact && (
         <p className="text-xs opacity-50">
-          {TIER_LABEL[displayCard.tier]} · {displayCard.slot} ·{" "}
-          {displayCard.realmName}
+          {displayCard.slot} · {displayCard.realmName}
         </p>
       )}
       <div className="text-xs opacity-80 tabular-nums">
@@ -396,11 +329,13 @@ export function AssetCard({
         if (!showAnyChip) return null;
         return (
         <div className="flex flex-wrap gap-1">
-          {topTypeLabel !== "" && <TypeChip label={topTypeLabel} />}
+          {topTypeLabel !== "" && (
+            <Chip color="var(--border-2)" label={topTypeLabel} />
+          )}
           {isWeapon &&
             displayCard.element &&
             displayCard.element !== "none" && (
-              <ElementChip
+              <TranslatedElementChip
                 element={displayCard.element as Exclude<Element, "none">}
                 kind="damage"
                 preset={topLabelPreset}
@@ -409,7 +344,7 @@ export function AssetCard({
           {!isWeapon &&
             displayCard.resistElement &&
             displayCard.resistElement !== "none" && (
-              <ElementChip
+              <TranslatedElementChip
                 element={
                   displayCard.resistElement as Exclude<Element, "none">
                 }
@@ -418,25 +353,13 @@ export function AssetCard({
               />
             )}
           {displayCard.catalogEffects.map((e) => (
-            <span
-              key={e.name}
-              className="text-[10px] px-1.5 py-0.5 rounded uppercase tracking-wider font-semibold"
-              style={{
-                background: "rgba(45,212,191,0.10)",
-                color: "#5eead4",
-                border: "1px solid rgba(45,212,191,0.30)",
-              }}
-            >
-              {e.name.replace(/_/g, " ")} {e.value}
-            </span>
+            <EffectChip key={e.name} effect={e} />
           ))}
         </div>
         );
       })()}
       {displayCard.preseed && (
-        <span className="text-[10px] opacity-50 uppercase tracking-wider">
-          Genesis liquidity
-        </span>
+        <ProvenanceChip>Genesis liquidity</ProvenanceChip>
       )}
       {isHop && (
         <OriginalStrip

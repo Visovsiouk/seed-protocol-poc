@@ -51,6 +51,7 @@ import { evocativeName } from "@/lib/loot/names";
 import { fallbackSeed } from "@/lib/engine/runtime";
 import { queryKeys } from "@/lib/reads/cache";
 import type { LootRoll, Preset } from "@/lib/engine/types";
+import { Panel, Button, Chip, Stamp } from "@/components/ui";
 
 const DEMO_PRICE = parseEther("0.005");
 const DEMO_TIER_ONCHAIN = 0; // SeedTypes.Tier.T1 == 0
@@ -337,23 +338,16 @@ export function RoyaltyEarnedDemo({ realm, preset, realmLabel, lootSchemaId }: P
   const schemaLoading = !lootSchemaId && schemaQuery.isLoading;
 
   return (
-    <section
+    <Panel
+      as="section"
+      tone="glass-2"
+      glow="accent"
       aria-label="Royalty earned demo"
-      className="flex flex-col gap-4 rounded-md p-5"
-      style={{
-        background:
-          "linear-gradient(135deg, rgba(255,217,122,0.08), rgba(255,255,255,0.02))",
-        border: "1px solid rgba(255,217,122,0.30)",
-      }}
+      className="flex flex-col gap-4 p-5"
     >
       <header className="flex flex-wrap items-baseline justify-between gap-2">
-        <div className="flex flex-col gap-0.5">
-          <span
-            className="text-[10px] uppercase tracking-widest"
-            style={{ color: "#ffd97a" }}
-          >
-            Value-flow demo · §7.5b
-          </span>
+        <div className="flex flex-col gap-1">
+          <Stamp>Value-flow demo · §7.5b</Stamp>
           <h2 className="text-base font-semibold">
             See {realmLabel} earn its first royalty
           </h2>
@@ -377,11 +371,10 @@ export function RoyaltyEarnedDemo({ realm, preset, realmLabel, lootSchemaId }: P
 
       {!schemaLoading && !schemaReady && (
         <aside
-          className="rounded-md p-3 text-xs leading-relaxed"
+          className="rounded-md p-3 text-xs leading-relaxed text-[var(--color-warn)]"
           style={{
-            background: "rgba(255,196,0,0.08)",
-            border: "1px solid rgba(255,196,0,0.30)",
-            color: "#f0c860",
+            background: "color-mix(in oklab, var(--color-warn) 8%, transparent)",
+            border: "1px solid color-mix(in oklab, var(--color-warn) 30%, transparent)",
           }}
         >
           This realm has no registered loot schema yet. Register a schema
@@ -404,8 +397,7 @@ export function RoyaltyEarnedDemo({ realm, preset, realmLabel, lootSchemaId }: P
           return (
             <li
               key={s.key}
-              className="grid grid-cols-[1.25rem_1fr_auto] items-baseline gap-3 px-3 py-2 rounded"
-              style={{ background: "rgba(255,255,255,0.03)" }}
+              className="grid grid-cols-[1.25rem_1fr_auto] items-baseline gap-3 px-3 py-2 rounded bg-[var(--surface-2)]"
             >
               <span
                 className="text-[10px] tabular-nums opacity-60"
@@ -419,7 +411,7 @@ export function RoyaltyEarnedDemo({ realm, preset, realmLabel, lootSchemaId }: P
                   <span className="text-[11px] opacity-70">{rec.detail}</span>
                 )}
                 {rec.error && (
-                  <span className="text-[11px]" style={{ color: "#f77" }}>
+                  <span className="text-[11px] text-[var(--color-danger)]">
                     {rec.error}
                   </span>
                 )}
@@ -446,26 +438,18 @@ export function RoyaltyEarnedDemo({ realm, preset, realmLabel, lootSchemaId }: P
           </span>
           <span
             className="text-base font-semibold tabular-nums"
-            style={{ color: allDone ? "#ffd97a" : undefined }}
+            style={{ color: allDone ? "var(--color-warn)" : undefined }}
           >
             {formatEther(royaltyEarned)} ETH
           </span>
         </div>
         {allDone && (
-          <button
-            type="button"
-            onClick={resetDemo}
-            className="rounded-md px-3 py-1.5 text-xs transition"
-            style={{
-              background: "rgba(255,255,255,0.06)",
-              border: "1px solid rgba(255,255,255,0.12)",
-            }}
-          >
+          <Button intent="ghost" size="sm" onClick={resetDemo}>
             Run again
-          </button>
+          </Button>
         )}
       </footer>
-    </section>
+    </Panel>
   );
 }
 
@@ -479,18 +463,7 @@ function StatusBadge({
   disabled: boolean;
 }) {
   if (status === "done") {
-    return (
-      <span
-        className="text-[10px] uppercase tracking-widest px-2 py-0.5 rounded"
-        style={{
-          background: "rgba(80,200,120,0.12)",
-          color: "#7ed99a",
-          border: "1px solid rgba(80,200,120,0.35)",
-        }}
-      >
-        Done
-      </span>
-    );
+    return <Chip color="var(--color-ok)" label="Done" />;
   }
   if (status === "pending") {
     return (
@@ -500,17 +473,8 @@ function StatusBadge({
     );
   }
   return (
-    <button
-      type="button"
-      onClick={onRun}
-      disabled={disabled}
-      className="rounded-md px-2.5 py-1 text-[11px] transition disabled:opacity-40"
-      style={{
-        background: "rgba(255,255,255,0.08)",
-        border: "1px solid rgba(255,255,255,0.15)",
-      }}
-    >
+    <Button intent="ghost" size="sm" onClick={onRun} disabled={disabled}>
       {status === "error" ? "Retry" : "Run"}
-    </button>
+    </Button>
   );
 }

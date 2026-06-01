@@ -12,7 +12,7 @@
 import { useRealmAssets } from "@/lib/reads/hooks";
 import { AssetCard } from "@/components/inventory/AssetCard";
 import type { Preset } from "@/lib/engine/types";
-import { LedgerStamp } from "@/components/ledger/Ledger";
+import { Panel, Stamp } from "@/components/ui";
 
 export function RealmAssetsGrid({
   realm,
@@ -26,16 +26,14 @@ export function RealmAssetsGrid({
   const assets = useRealmAssets({ realm, preset, limit });
 
   return (
-    <section
+    <Panel
+      as="section"
+      tone="glass-1"
       aria-label="Realm assets"
-      className="flex flex-col gap-3 p-4 rounded-md"
-      style={{
-        background: "rgba(255,255,255,0.03)",
-        border: "1px solid rgba(255,255,255,0.08)",
-      }}
+      className="flex flex-col gap-3 p-4"
     >
       <header className="flex items-baseline justify-between gap-2">
-        <LedgerStamp>Assets minted by this realm</LedgerStamp>
+        <Stamp>Assets minted by this realm</Stamp>
         <span className="text-[10px] opacity-50">
           {assets.data?.length ?? 0} shown · newest first
         </span>
@@ -44,7 +42,7 @@ export function RealmAssetsGrid({
       {assets.isLoading ? (
         <p className="text-sm opacity-60">Hydrating asset metadata…</p>
       ) : assets.isError ? (
-        <p className="text-sm" style={{ color: "#ffb38a" }}>
+        <p className="text-sm text-[var(--color-danger)]">
           Failed to load realm assets.
         </p>
       ) : !assets.data || assets.data.length === 0 ? (
@@ -62,6 +60,6 @@ export function RealmAssetsGrid({
           ))}
         </div>
       )}
-    </section>
+    </Panel>
   );
 }

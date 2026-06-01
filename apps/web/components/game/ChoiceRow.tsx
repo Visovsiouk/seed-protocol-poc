@@ -39,7 +39,7 @@ import {
 // Set on keydown (capture), cleared on keyup. Shared so a ChoiceRow that
 // just mounted can ask "was Enter already down when I appeared?".
 let activationKeyHeld = false;
-let releaseListeners = new Set<() => void>();
+const releaseListeners = new Set<() => void>();
 let listenersInstalled = false;
 
 function ensureGlobalListeners() {
@@ -297,14 +297,14 @@ function choiceStyle(
     background: isPrimary
       ? "var(--color-preset-accent)"
       : selected
-        ? "rgba(255,255,255,0.14)"
-        : "rgba(255,255,255,0.06)",
+        ? "var(--surface-3)"
+        : "var(--surface-2)",
     color: isPrimary
       ? "var(--color-preset-bg)"
       : "var(--color-preset-fg)",
     border: isPrimary
       ? "none"
-      : `1px solid ${selected ? "var(--color-preset-fg)" : "rgba(255,255,255,0.1)"}`,
+      : `1px solid ${selected ? "var(--color-preset-fg)" : "var(--border-1)"}`,
     outline: selected ? "2px solid var(--color-preset-fg)" : "none",
     outlineOffset: selected ? "3px" : "0",
     boxShadow: selected ? "0 6px 18px -6px rgba(0,0,0,0.55)" : undefined,
@@ -442,8 +442,8 @@ function Kbd({ children }: { children: ReactNode }) {
     <kbd
       className="font-mono text-[10px] px-1 py-px rounded"
       style={{
-        border: "1px solid rgba(255,255,255,0.18)",
-        background: "rgba(255,255,255,0.04)",
+        border: "1px solid var(--border-1)",
+        background: "var(--surface-1)",
         color: "var(--color-preset-fg)",
       }}
     >

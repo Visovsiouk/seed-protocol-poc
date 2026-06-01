@@ -10,11 +10,7 @@ import { shortAddress } from "@/lib/utils";
 export function ProvenanceBadge({ realm }: { realm: `0x${string}` }) {
   return (
     <span
-      className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium"
-      style={{
-        background: "rgba(255,255,255,0.06)",
-        border: "1px solid rgba(255,255,255,0.1)",
-      }}
+      className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium bg-[var(--surface-2)] border border-[var(--border-1)]"
       title={realm}
     >
       <span className="opacity-60">minted by</span>

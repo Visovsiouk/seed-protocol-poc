@@ -19,6 +19,7 @@ import { useMemo } from "react";
 import { listStarterRealms } from "@/lib/contracts/starter-realms";
 import { useRealmStats } from "@/lib/reads/hooks";
 import type { Preset } from "@/lib/engine/types";
+import { Panel, Stamp } from "@/components/ui";
 
 function presetLabel(p: Preset): string {
   return p === "fantasy" ? "Fantasy" : p === "scifi" ? "Sci-Fi" : "Cyberpunk";
@@ -60,18 +61,14 @@ export function RealmLeaderboards() {
     .sort((a, b) => b.stats.metrics.totalMints - a.stats.metrics.totalMints);
 
   return (
-    <section
+    <Panel
+      as="section"
+      tone="glass-2"
       aria-label="Realm leaderboards"
-      className="flex flex-col gap-3 p-4 rounded-md"
-      style={{
-        background: "rgba(255,255,255,0.03)",
-        border: "1px solid rgba(255,255,255,0.08)",
-      }}
+      className="flex flex-col gap-3"
     >
       <header className="flex items-baseline justify-between gap-2">
-        <h3 className="text-xs uppercase tracking-widest opacity-60">
-          Realm leaderboards
-        </h3>
+        <Stamp>Realm leaderboards</Stamp>
         <span className="text-[10px] opacity-50">ranked by mints</span>
       </header>
 
@@ -84,8 +81,7 @@ export function RealmLeaderboards() {
           {rows.map((r, i) => (
             <li
               key={r.entry.realm}
-              className="grid grid-cols-[1.25rem_1fr_auto] items-baseline gap-3 text-xs px-2 py-1.5 rounded"
-              style={{ background: "rgba(255,255,255,0.02)" }}
+              className="grid grid-cols-[1.25rem_1fr_auto] items-baseline gap-3 text-xs px-2 py-1.5 rounded bg-[var(--surface-2)]"
             >
               <span className="text-[10px] opacity-50 font-mono">
                 #{i + 1}
@@ -107,6 +103,6 @@ export function RealmLeaderboards() {
           ))}
         </ol>
       )}
-    </section>
+    </Panel>
   );
 }

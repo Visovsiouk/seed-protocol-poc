@@ -12,12 +12,9 @@
 
 import { useCallback, useState } from "react";
 import { useRouter } from "next/navigation";
-import {
-  LedgerBody,
-  LedgerFootnote,
-  LedgerRule,
-  LedgerStamp,
-} from "@/components/ledger/Ledger";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { Panel, Button, Body, Footnote, Rule, Stamp } from "@/components/ui";
+import { warpCrossfade, withReducedMotion } from "@/lib/ui/motion";
 import {
   COLD_OPEN_BOOK,
   COLD_OPEN_STORAGE_KEY,
@@ -34,6 +31,7 @@ export function ColdOpenBook({
   wakeHref?: string;
 }) {
   const router = useRouter();
+  const reduced = useReducedMotion();
   const [pageIdx, setPageIdx] = useState(0);
   const isLast = pageIdx === COLD_OPEN_BOOK.length - 1;
   const beat = COLD_OPEN_BOOK[pageIdx]!;
@@ -52,55 +50,53 @@ export function ColdOpenBook({
   }, [isLast, router, wakeHref]);
 
   return (
-    <article
+    <Panel
+      as="article"
+      tone="parchment"
       aria-label="Cold open"
-      className="mx-auto flex w-full max-w-2xl flex-col gap-5 rounded-md p-6"
-      style={{
-        background: "rgba(255,255,255,0.03)",
-        border: "1px solid rgba(255,255,255,0.10)",
-      }}
+      className="mx-auto flex w-full max-w-2xl flex-col gap-5 p-8"
     >
       <header className="flex items-center justify-between gap-3">
-        <LedgerStamp>{beat.stamp}</LedgerStamp>
-        <span
-          className="font-mono text-[10px] uppercase opacity-45"
-          style={{ letterSpacing: "0.3em" }}
-        >
+        <Stamp>{beat.stamp}</Stamp>
+        <span className="font-mono text-[10px] uppercase tracking-[0.3em] opacity-45">
           {String(pageIdx + 1).padStart(2, "0")} / {String(COLD_OPEN_BOOK.length).padStart(2, "0")}
         </span>
       </header>
 
-      <LedgerRule />
+      <Rule />
 
-      <div className="flex flex-col gap-3">
-        {beat.body.map((line, i) => (
-          <LedgerBody key={i}>{line}</LedgerBody>
-        ))}
-      </div>
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={pageIdx}
+          variants={withReducedMotion(warpCrossfade, reduced)}
+          initial="enter"
+          animate="center"
+          exit="exit"
+          className="flex flex-col gap-3"
+        >
+          {beat.body.map((line, i) => (
+            <Body key={i}>{line}</Body>
+          ))}
 
-      {beat.footnote && (
-        <>
-          <LedgerRule tone="muted" />
-          <LedgerFootnote>{beat.footnote}</LedgerFootnote>
-        </>
-      )}
+          {beat.footnote && (
+            <>
+              <Rule tone="muted" />
+              <Footnote>{beat.footnote}</Footnote>
+            </>
+          )}
+        </motion.div>
+      </AnimatePresence>
 
       <footer className="flex items-center justify-end pt-1">
-        <button
-          type="button"
+        <Button
+          intent="primary"
+          size={isLast ? "lg" : "md"}
           onClick={advance}
-          className="rounded-md px-3 py-1.5 text-sm transition"
-          style={{
-            background: "var(--color-preset-bg, rgba(255,255,255,0.08))",
-            color: "var(--color-preset-fg, #fff)",
-            border:
-              "1px solid var(--color-preset-accent, rgba(255,255,255,0.18))",
-          }}
         >
           {beat.cta} →
-        </button>
+        </Button>
       </footer>
-    </article>
+    </Panel>
   );
 }
 
