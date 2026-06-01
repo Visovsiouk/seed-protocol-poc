@@ -66,6 +66,45 @@ describe("rollTier", () => {
     }
   });
 
+  it("deep → only T2/T3/T4/T5, never T1", () => {
+    // Delve: the pre-boss "deep" band is richer than
+    // standard — it opens T5 and never drops T1 junk.
+    const rng = createRng(SEED);
+    const seen = new Set<Tier>();
+    for (let i = 0; i < 5000; i++) {
+      const t = rollTier(rng, "deep");
+      expect(t).not.toBe(1);
+      seen.add(t);
+    }
+    expect(seen.has(5)).toBe(true);
+  });
+
+  it("deep distribution roughly matches the deep table (20/45/30/5)", () => {
+    const rng = createRng(SEED);
+    const N = 20_000;
+    const counts: Record<Tier, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+    for (let i = 0; i < N; i++) counts[rollTier(rng, "deep")]++;
+    expect(counts[1] / N).toBe(0);
+    expect(counts[2] / N).toBeGreaterThan(0.16);
+    expect(counts[2] / N).toBeLessThan(0.24);
+    expect(counts[3] / N).toBeGreaterThan(0.41);
+    expect(counts[3] / N).toBeLessThan(0.49);
+    expect(counts[4] / N).toBeGreaterThan(0.26);
+    expect(counts[4] / N).toBeLessThan(0.34);
+    expect(counts[5] / N).toBeGreaterThan(0.02);
+    expect(counts[5] / N).toBeLessThan(0.08);
+  });
+
+  it("deep collapses to all-T2 under a starter-realm maxTier=2 cap", () => {
+    // The push-deeper carrot is gated by the realm cap: starter realms
+    // (cap T2) see no benefit from the deep band, so deep loot is a
+    // reason to play *player-built* (higher-cap) realms. See tier.ts.
+    const rng = createRng(SEED);
+    for (let i = 0; i < 500; i++) {
+      expect(rollTier(rng, "deep", 2)).toBe(2);
+    }
+  });
+
   it("boss → never T1 or T2, can be T5", () => {
     // Rebalance: boss drops are guaranteed-premium — T3 floor.
     const rng = createRng(SEED);

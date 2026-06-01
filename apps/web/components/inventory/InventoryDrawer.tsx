@@ -6,14 +6,22 @@
  * local UI state — no transaction ("Equipping is a pure UI
  * action").
  *
+ * Accessibility: the open drawer is a modal dialog
+ * focus moves into it on open, Tab/Shift-Tab cycle inside it, Escape
+ * closes, and focus is restored to the trigger on close.
+ *
  *  note: the drawer takes its `inventory` prop from the page
- * during that's the engine-side `pendingLoot` accumulated across
- * runs. swaps it for the real on-chain `fetchInventory` read.
+ * during that's the local accumulator the page grows as runs
+ * bank their escrow. swaps it for the real on-chain
+ * `fetchInventory` read.
  */
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { AssetCard as AssetCardType, Preset, Slot } from "@/lib/engine/types";
 import { AssetCard } from "./AssetCard";
+
+const FOCUSABLE =
+  'a[href], button:not([disabled]), input, select, textarea, [tabindex]:not([tabindex="-1"])';
 
 type Equipped = {
   weapon?: AssetCardType;
@@ -93,6 +101,46 @@ export function InventoryDrawer({
   activePreset,
 }: Props) {
   const [tab, setTab] = useState<"weapon" | "armor">("weapon");
+  const asideRef = useRef<HTMLElement>(null);
+  const restoreFocusRef = useRef<HTMLElement | null>(null);
+
+  // Focus trap + restore. Captures the trigger on open, moves focus into
+  // the drawer, cycles Tab within it, closes on Escape, and returns focus
+  // to the trigger on close. Gated on `open` so it's inert while hidden.
+  useEffect(() => {
+    if (!open) return;
+    restoreFocusRef.current = document.activeElement as HTMLElement | null;
+    const aside = asideRef.current;
+    const first = aside?.querySelector<HTMLElement>(FOCUSABLE);
+    first?.focus();
+
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        onClose();
+        return;
+      }
+      if (e.key !== "Tab" || !aside) return;
+      const nodes = Array.from(aside.querySelectorAll<HTMLElement>(FOCUSABLE));
+      if (nodes.length === 0) return;
+      const firstEl = nodes[0]!;
+      const lastEl = nodes[nodes.length - 1]!;
+      if (e.shiftKey && document.activeElement === firstEl) {
+        e.preventDefault();
+        lastEl.focus();
+      } else if (!e.shiftKey && document.activeElement === lastEl) {
+        e.preventDefault();
+        firstEl.focus();
+      }
+    }
+
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      restoreFocusRef.current?.focus?.();
+    };
+  }, [open, onClose]);
+
   const weapons = inventory.filter((c) => c.slot === "weapon");
   const armors = inventory.filter((c) => c.slot === "armor");
 
@@ -101,20 +149,20 @@ export function InventoryDrawer({
     <div
       className="fixed inset-0 z-40 flex"
       onClick={onClose}
-      role="dialog"
-      aria-label="Inventory"
     >
-      <div className="flex-1" style={{ background: "rgba(0,0,0,0.5)" }} />
+      <div className="flex-1 bg-[color-mix(in_oklab,var(--color-preset-bg)_55%,#000_55%)]" />
       <aside
-        className="w-[360px] max-w-[90vw] h-full overflow-y-auto p-5 flex flex-col gap-4"
-        style={{
-          background: "var(--color-preset-bg)",
-          borderLeft: "1px solid rgba(255,255,255,0.1)",
-        }}
+        ref={asideRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Inventory"
+        className="w-[360px] max-w-[90vw] h-full overflow-y-auto p-5 flex flex-col gap-4 bg-[var(--color-preset-bg)] border-l border-[var(--border-1)]"
         onClick={(e) => e.stopPropagation()}
       >
         <header className="flex items-baseline justify-between">
-          <h3 className="text-lg font-semibold">Inventory</h3>
+          <h3 className="text-lg font-semibold font-[family-name:var(--font-display)]">
+            Inventory
+          </h3>
           <button
             type="button"
             onClick={onClose}
@@ -123,11 +171,17 @@ export function InventoryDrawer({
             Close
           </button>
         </header>
-        <div className="flex gap-2 border-b border-white/10 pb-2">
+        <div
+          role="tablist"
+          aria-label="Inventory slot"
+          className="flex gap-2 border-b border-[var(--border-1)] pb-2"
+        >
           {(["weapon", "armor"] as const).map((t) => (
             <button
               key={t}
               type="button"
+              role="tab"
+              aria-selected={tab === t}
               onClick={() => setTab(t)}
               className="text-xs uppercase tracking-wider px-2 py-1 rounded transition"
               style={{

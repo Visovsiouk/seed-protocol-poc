@@ -27,12 +27,13 @@ import { useQuery } from "@tanstack/react-query";
 import type {
   AssetCard as AssetCardType,
   EngineEvent,
-  LootRoll,
+  EscrowEntry,
   Preset,
   RunState,
   Tier,
 } from "@/lib/engine/types";
 import { startRun } from "@/lib/engine";
+import { useRealmTheme } from "@/lib/ui/useRealmTheme";
 import {
   CANONICAL_SCHEMAS,
   fallbackSeed,
@@ -41,7 +42,7 @@ import {
 } from "@/lib/engine/runtime";
 import { EncounterFrame } from "@/components/game/EncounterFrame";
 import { InventoryDrawer } from "@/components/inventory/InventoryDrawer";
-import { ConnectButton } from "@/components/wallet/ConnectButton";
+import { AppShell, Panel, Button } from "@/components/ui";
 import {
   useInventoryCards,
   useRealms,
@@ -59,6 +60,7 @@ type RealmMeta = {
   preset: Preset;
   bossId: string;
   name: string;
+  accent: string | null;
   maxTier: Tier;
   createdAt: number;
 };
@@ -133,15 +135,9 @@ export default function CreatorRealmPlayPage() {
 
   const [runEpoch, setRunEpoch] = useState(0);
 
-  // `data-preset` drives the per-preset palette via CSS vars.
-  useEffect(() => {
-    const prev = document.body.getAttribute("data-preset");
-    document.body.setAttribute("data-preset", preset);
-    return () => {
-      if (prev) document.body.setAttribute("data-preset", prev);
-      else document.body.removeAttribute("data-preset");
-    };
-  }, [preset]);
+  // `data-preset` drives the per-preset palette; a registered custom
+  // accent (if any) overrides `--color-preset-accent` on top of it.
+  useRealmTheme(preset, registered?.accent);
 
   const starterGear = useMemo(
     () => (address ? makeStarterGear(preset, address, realmName) : null),
@@ -203,28 +199,32 @@ export default function CreatorRealmPlayPage() {
 
   const chainMintAvailable = walletConnected && isRegistered;
 
-  const handleLootMinted = async (loot: LootRoll, ctx: { depth: number; equip: boolean }) => {
+  // Batch-bank the delve escrow at extraction or boss clear.
+  // Loot is carried unminted in `state.escrow` and only commits here; each
+  // entry mints under its own `entry.depth` so the server validator can
+  // bounds-check it against the band it rolled in. Escrow items are never
+  // auto-equipped — only owned gear was risked.
+  const handleBankEscrow = async (escrow: readonly EscrowEntry[]) => {
     if (!address) return;
-    let newCard: AssetCardType;
     if (chainMintAvailable && initial && walletAddress) {
-      const { tokenId } = await mintLoot({
-        realm: address,
-        preset,
-        runSeed: initial.state.rngSeed,
-        depth: ctx.depth,
-        loot,
-        realmLabel: realmName,
-      });
-      newCard = lootRollToMockCard(loot, preset, address, realmName, { tokenId });
+      // Loop the sponsored mint, one tx per finding (a batch path would
+      // collapse this). `useMintLoot` invalidates the
+      // inventory query on each success, so the drawer reconciles.
+      for (const entry of escrow) {
+        await mintLoot({
+          realm: address,
+          preset,
+          runSeed: initial.state.rngSeed,
+          depth: entry.depth,
+          loot: entry.loot,
+          realmLabel: realmName,
+        });
+      }
     } else {
-      newCard = lootRollToMockCard(loot, preset, address, realmName);
-      setLocalInventory((prev) => [...prev, newCard]);
-    }
-    if (ctx.equip && (newCard.slot === "weapon" || newCard.slot === "armor")) {
-      setEquipped((prev) => ({
-        ...prev,
-        [newCard.slot as "weapon" | "armor"]: newCard,
-      }));
+      const cards = escrow.map((entry) =>
+        lootRollToMockCard(entry.loot, preset, address, realmName),
+      );
+      setLocalInventory((prev) => [...prev, ...cards]);
     }
   };
 
@@ -301,96 +301,73 @@ export default function CreatorRealmPlayPage() {
 
   if (!validAddress) {
     return (
-      <main className="min-h-screen px-6 py-10">
+      <AppShell back={{ href: "/", label: "← Realms" }} title="Unknown realm">
         <div className="mx-auto max-w-2xl">
-          <Link href="/" className="text-sm opacity-70 hover:opacity-100">
-            ← Realms
-          </Link>
-          <h1 className="mt-4 text-2xl font-semibold">Unknown realm</h1>
+          <h1 className="text-2xl font-semibold">Unknown realm</h1>
           <p className="mt-2 text-sm opacity-80">
             <span className="font-mono">{raw}</span> isn&apos;t a valid
             ecosystem address.
           </p>
         </div>
-      </main>
+      </AppShell>
     );
   }
 
   if (mounted && !walletConnected) {
     return (
-      <main className="min-h-screen px-6 py-10">
-        <header className="mx-auto mb-10 flex max-w-3xl items-center justify-between">
-          <Link href="/" className="text-sm opacity-70 hover:opacity-100">
-            ← Realms
-          </Link>
-          <h1 className="text-2xl font-semibold tracking-tight font-mono">
-            {realmName}
-          </h1>
-          <ConnectButton />
-        </header>
-        <section
+      <AppShell
+        back={{ href: "/", label: "← Realms" }}
+        title={<span className="font-mono">{realmName}</span>}
+      >
+        <Panel
+          as="section"
+          tone="glass-2"
           aria-label="Wallet required"
-          className="mx-auto flex max-w-md flex-col items-center gap-4 rounded-md p-6 text-center"
-          style={{
-            background: "rgba(255,255,255,0.04)",
-            border: "1px solid rgba(255,255,255,0.10)",
-          }}
+          className="mx-auto flex max-w-md flex-col items-center gap-4 p-6 text-center"
         >
           <h2 className="text-lg font-semibold">Connect a wallet to play</h2>
           <p className="text-sm opacity-75 leading-relaxed">
             Loot and clearReceipts mint to the connected address — pick
             a wallet so drops have somewhere to land.
           </p>
-          <ConnectButton />
-        </section>
-      </main>
+        </Panel>
+      </AppShell>
     );
   }
 
   return (
-    <main className="min-h-screen px-6 py-8">
-      <header className="mx-auto mb-6 flex max-w-4xl items-center justify-between">
-        <Link href="/" className="text-sm opacity-70 hover:opacity-100">
-          ← Realms
-        </Link>
-        <div className="flex flex-col items-center gap-1">
-          <h1 className="text-2xl font-semibold tracking-tight">
-            {realmName}
-          </h1>
+    <AppShell
+      back={{ href: "/", label: "← Realms" }}
+      title={
+        <span className="flex flex-col items-center gap-0.5 leading-none">
+          {realmName}
           {address && (
             <Link
               href={`/realm/${address}`}
-              className="text-[11px] uppercase tracking-widest opacity-60 hover:opacity-100"
+              className="text-[10px] font-normal uppercase tracking-widest opacity-60 hover:opacity-100"
             >
               Realm details ↗
             </Link>
           )}
-        </div>
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={() => setDrawerOpen(true)}
-            className="rounded-md px-3 py-1.5 text-sm transition"
-            style={{
-              background: "rgba(255,255,255,0.06)",
-              border: "1px solid rgba(255,255,255,0.1)",
-            }}
-          >
-            Inventory ({inventory.length})
-          </button>
-          <ConnectButton />
-        </div>
-      </header>
-
+        </span>
+      }
+      actions={
+        <Button
+          intent="ghost"
+          size="sm"
+          onClick={() => setDrawerOpen(true)}
+        >
+          Inventory ({inventory.length})
+        </Button>
+      }
+    >
       <section className="mx-auto flex max-w-4xl flex-col gap-4">
         {metaQuery.isSuccess && !isRegistered && (
-          <aside
+          <Panel
+            as="aside"
+            tone="glass-2"
             aria-label="Trial mode"
-            className="rounded-md p-3 text-sm"
-            style={{
-              background: "rgba(255,255,255,0.05)",
-              border: "1px solid rgba(255,255,255,0.12)",
-            }}
+            className="p-3 text-sm"
           >
             <strong>Trial run.</strong> This realm has no registered
             metadata — running in fantasy/Forest Hag stand-in. Drops
@@ -401,16 +378,14 @@ export default function CreatorRealmPlayPage() {
                 <code> EcosystemRegistry</code> on this chain.
               </>
             )}
-          </aside>
+          </Panel>
         )}
         {isRegistered && (
-          <aside
+          <Panel
+            as="aside"
+            tone="glass-2"
             aria-label="Realm metadata"
-            className="rounded-md p-3 text-sm"
-            style={{
-              background: "rgba(255,255,255,0.04)",
-              border: "1px solid rgba(255,255,255,0.10)",
-            }}
+            className="p-3 text-sm"
           >
             <strong>{realmName}</strong> · {preset} · final boss{" "}
             <code>{bossId}</code> · max tier <strong>T{maxTier}</strong>
@@ -421,7 +396,7 @@ export default function CreatorRealmPlayPage() {
                 <span className="font-mono">{shortAddress(registered.owner)}</span>
               </>
             )}
-          </aside>
+          </Panel>
         )}
 
         {seedReady && initialState && initial ? (
@@ -434,21 +409,19 @@ export default function CreatorRealmPlayPage() {
             activePreset={preset}
             realmName={realmName}
             onEvent={handleEngineEvent}
-            onLootMinted={handleLootMinted}
+            onBankEscrow={handleBankEscrow}
             onRestart={handleRestart}
             clearReceipt={clearReceipt}
           />
         ) : (
-          <aside
+          <Panel
+            as="aside"
+            tone="glass-2"
             aria-label="Preparing run"
-            className="rounded-md p-4 text-sm opacity-80"
-            style={{
-              background: "rgba(255,255,255,0.04)",
-              border: "1px solid rgba(255,255,255,0.08)",
-            }}
+            className="p-4 text-sm opacity-80"
           >
             Preparing run…
-          </aside>
+          </Panel>
         )}
       </section>
 
@@ -461,6 +434,6 @@ export default function CreatorRealmPlayPage() {
         activeRealm={address ?? undefined}
         activePreset={preset}
       />
-    </main>
+    </AppShell>
   );
 }

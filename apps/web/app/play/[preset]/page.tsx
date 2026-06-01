@@ -7,13 +7,13 @@
  *
  *   **Disconnected (fallback):** everything is in-memory. The
  *     engine drives the run, the tutorial overlay uses
- *     `emptyTutorialProgress()`, and `pendingLoot` is converted to a
- *     mock `AssetCard` and stashed in local state so the drawer has
+ *     `emptyTutorialProgress()`, and the run's banked escrow is converted
+ *     to mock `AssetCard`s and stashed in local state so the drawer has
  *     something to show.
  *
  *   **Connected:** the inventory drawer reads on-chain via
- *     `useInventoryCards(player)`, and Mint dispatches a real
- *     `EcosystemTemplate.mintAsset` tx through `useMintLoot`. The query
+ *     `useInventoryCards(player)`, and extraction batch-mints the escrow
+ *     via `EcosystemTemplate.mintAsset` through `useMintLoot`. The query
  *     invalidation reconciles the drawer.
  *
  * Still TODO for full 2C (deferred to later slices):
@@ -35,11 +35,12 @@ import { useAccount, usePublicClient } from "wagmi";
 import type {
   AssetCard as AssetCardType,
   EngineEvent,
-  LootRoll,
+  EscrowEntry,
   Preset,
   RunState,
 } from "@/lib/engine/types";
 import { startRun } from "@/lib/engine";
+import { useRealmTheme } from "@/lib/ui/useRealmTheme";
 import {
   CANONICAL_SCHEMAS,
   VALID_PRESETS,
@@ -51,7 +52,7 @@ import { EncounterFrame } from "@/components/game/EncounterFrame";
 import { RealmClearedInterstitial } from "@/components/game/RealmClearedInterstitial";
 import { InventoryDrawer } from "@/components/inventory/InventoryDrawer";
 import { TutorialOverlay } from "@/components/tutorial/TutorialOverlay";
-import { ConnectButton } from "@/components/wallet/ConnectButton";
+import { AppShell, Panel, Button } from "@/components/ui";
 import { emptyTutorialProgress, type TutorialProgress } from "@/lib/tutorial/progress";
 import {
   useInventoryCards,
@@ -134,15 +135,9 @@ export default function PlayPage() {
   const rngSeed: `0x${string}` | null =
     restartSeed ?? commitment.data?.seed ?? csprngSeed ?? null;
 
-  // Effect-only body palette toggle — keeps SSR pristine.
-  useEffect(() => {
-    const prev = document.body.getAttribute("data-preset");
-    document.body.setAttribute("data-preset", preset);
-    return () => {
-      if (prev) document.body.setAttribute("data-preset", prev);
-      else document.body.removeAttribute("data-preset");
-    };
-  }, [preset]);
+  // Effect-only body palette toggle — keeps SSR pristine. Starters have
+  // no custom accent, so the genre default always wins.
+  useRealmTheme(preset);
 
   // startRun is deterministic from the seed. While connected and the
   // on-chain commitment is still resolving, we gate the EncounterFrame
@@ -407,37 +402,35 @@ export default function PlayPage() {
     starterGear,
   ]);
 
-  const handleLootMinted = async (loot: LootRoll, ctx: { depth: number; equip: boolean }) => {
-    let newCard: AssetCardType;
+  // Batch-bank the delve escrow at extraction or boss clear.
+  // Replaces the old per-room mint: loot is carried unminted in
+  // `state.escrow` and only commits here. Each entry mints under its own
+  // `entry.depth` so the server validator bounds-checks it against the
+  // difficulty band it rolled in. Escrow items are never auto-equipped —
+  // the player descended with their real gear and gambled only with
+  // findings.
+  const handleBankEscrow = async (escrow: readonly EscrowEntry[]) => {
     if (chainMintAvailable && initial) {
-      // Real path — fire the tx and let the inventory query reconcile.
-      // `useMintLoot` invalidates `inventoryCards(player)` on success.
-      // `ctx.depth` is the live engine depth (the page only sees the
-      // frozen `initial.state.depth` of 1 from `startRun`).
-      const { tokenId } = await mintLoot({
-        realm: cfg.realm,
-        preset,
-        runSeed: initial.state.rngSeed,
-        depth: ctx.depth,
-        loot,
-        realmLabel: cfg.name,
-      });
-      // Build the equipped-side card with the real on-chain tokenId so the
-      // inventory drawer's "selected" highlight matches once the chain
-      // query refetches and surfaces the canonical card.
-      newCard = lootRollToMockCard(loot, preset, cfg.realm, cfg.name, { tokenId });
+      // Real path — loop the sponsored mint, one tx per finding. A batch
+      // `mintAssetBatch` would collapse this to one tx; the
+      // looped fallback needs no contract change. `useMintLoot` invalidates
+      // `inventoryCards(player)` on each success, so the drawer reconciles.
+      for (const entry of escrow) {
+        await mintLoot({
+          realm: cfg.realm,
+          preset,
+          runSeed: initial.state.rngSeed,
+          depth: entry.depth,
+          loot: entry.loot,
+          realmLabel: cfg.name,
+        });
+      }
     } else {
-      // Disconnected OR realm-not-ready — keep the local accumulator alive.
-      newCard = lootRollToMockCard(loot, preset, cfg.realm, cfg.name);
-      setLocalInventory((prev) => [...prev, newCard]);
-    }
-    if (ctx.equip && (newCard.slot === "weapon" || newCard.slot === "armor")) {
-      // Newly-minted gear is native to `cfg.realm` (we just minted it
-      // here), so the engine-side and persisted-native shapes are the
-      // same card — no adapter hop required.
-      const slot = newCard.slot as "weapon" | "armor";
-      setEquipped((prev) => ({ ...prev, [slot]: newCard }));
-      setEquippedForEngine((prev) => ({ ...prev, [slot]: newCard }));
+      // Disconnected OR realm-not-ready — append to the local accumulator.
+      const cards = escrow.map((entry) =>
+        lootRollToMockCard(entry.loot, preset, cfg.realm, cfg.name),
+      );
+      setLocalInventory((prev) => [...prev, ...cards]);
     }
   };
 
@@ -674,21 +667,12 @@ export default function PlayPage() {
   // to keep SSR + first-paint stable while wagmi rehydrates.
   if (mounted && !walletConnected) {
     return (
-      <main className="min-h-screen px-6 py-10">
-        <header className="mx-auto mb-10 flex max-w-3xl items-center justify-between">
-          <Link href="/" className="text-sm opacity-70 hover:opacity-100">
-            ← Realms
-          </Link>
-          <h1 className="text-2xl font-semibold tracking-tight">{realmDisplayName}</h1>
-          <ConnectButton />
-        </header>
-        <section
+      <AppShell back={{ href: "/", label: "← Realms" }} title={realmDisplayName}>
+        <Panel
+          as="section"
+          tone="glass-2"
           aria-label="Wallet required"
-          className="mx-auto flex max-w-md flex-col items-center gap-4 rounded-md p-6 text-center"
-          style={{
-            background: "rgba(255,255,255,0.04)",
-            border: "1px solid rgba(255,255,255,0.1)",
-          }}
+          className="mx-auto flex max-w-md flex-col items-center gap-4 p-6 text-center"
         >
           <h2 className="text-lg font-semibold">Connect a wallet to play</h2>
           <p className="text-sm opacity-75 leading-relaxed">
@@ -696,9 +680,8 @@ export default function PlayPage() {
             your wallet, and boss clears mint a receipt under your address.
             Connect to start — testnet ETH is enough.
           </p>
-          <ConnectButton />
-        </section>
-      </main>
+        </Panel>
+      </AppShell>
     );
   }
 
@@ -716,47 +699,38 @@ export default function PlayPage() {
       queueMicrotask(() => router.replace(`/play/${firstRealm}`));
     }
     return (
-      <main className="min-h-screen px-6 py-10 text-sm opacity-60">
-        Redirecting…
-      </main>
+      <AppShell back={{ href: "/", label: "← Realms" }}>
+        <p className="text-sm opacity-60">Redirecting…</p>
+      </AppShell>
     );
   }
 
   return (
-    <main className="min-h-screen px-6 py-8">
-      <header className="mx-auto mb-6 flex max-w-4xl items-center justify-between">
-        <Link href="/" className="text-sm opacity-70 hover:opacity-100">
-          ← Realms
-        </Link>
-        <div className="flex flex-col items-center gap-1">
-          <h1 className="text-2xl font-semibold tracking-tight">
-            {realmDisplayName}
-          </h1>
+    <AppShell
+      back={{ href: "/", label: "← Realms" }}
+      title={
+        <span className="flex flex-col items-center gap-0.5 leading-none">
+          {realmDisplayName}
           {isStarterRealmDeployed(cfg.realm) && currentDepth >= 2 && (
             <Link
               href={`/realm/${cfg.realm}`}
-              className="text-[11px] uppercase tracking-widest opacity-60 hover:opacity-100"
+              className="text-[10px] font-normal uppercase tracking-widest opacity-60 hover:opacity-100"
             >
               Realm details ↗
             </Link>
           )}
-        </div>
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={() => setDrawerOpen(true)}
-            className="rounded-md px-3 py-1.5 text-sm transition"
-            style={{
-              background: "rgba(255,255,255,0.06)",
-              border: "1px solid rgba(255,255,255,0.1)",
-            }}
-          >
-            Inventory ({inventory.length})
-          </button>
-          <ConnectButton />
-        </div>
-      </header>
-
+        </span>
+      }
+      actions={
+        <Button
+          intent="ghost"
+          size="sm"
+          onClick={() => setDrawerOpen(true)}
+        >
+          Inventory ({inventory.length})
+        </Button>
+      }
+    >
       <section className="mx-auto flex max-w-4xl flex-col gap-4">
         <TutorialOverlay
           progress={tutorial}
@@ -767,10 +741,12 @@ export default function PlayPage() {
         {showRealmNotDeployedNotice && (
           <aside
             aria-label="Realm not yet deployed"
-            className="rounded-md p-3 text-sm"
+            className="rounded-lg border p-3 text-sm"
             style={{
-              background: "rgba(255,196,0,0.08)",
-              border: "1px solid rgba(255,196,0,0.35)",
+              background:
+                "color-mix(in oklab, var(--color-warn) 10%, transparent)",
+              borderColor:
+                "color-mix(in oklab, var(--color-warn) 40%, transparent)",
             }}
           >
             <strong>Heads up:</strong>{" "}
@@ -792,7 +768,7 @@ export default function PlayPage() {
               activePreset={preset}
               realmName={cfg.name}
               onEvent={handleEngineEvent}
-              onLootMinted={handleLootMinted}
+              onBankEscrow={handleBankEscrow}
               onRestart={handleRestart}
               clearReceipt={clearReceipt}
               interstitial={
@@ -819,16 +795,14 @@ export default function PlayPage() {
             )}
           </>
         ) : (
-          <aside
+          <Panel
+            as="aside"
+            tone="glass-2"
             aria-label="Pinning run to chain"
-            className="rounded-md p-4 text-sm opacity-80"
-            style={{
-              background: "rgba(255,255,255,0.04)",
-              border: "1px solid rgba(255,255,255,0.08)",
-            }}
+            className="p-4 text-sm opacity-80"
           >
             Pinning run seed to the latest block…
-          </aside>
+          </Panel>
         )}
       </section>
 
@@ -840,6 +814,6 @@ export default function PlayPage() {
         onEquip={handleEquip}
         activeRealm={cfg.realm}
       />
-    </main>
+    </AppShell>
   );
 }

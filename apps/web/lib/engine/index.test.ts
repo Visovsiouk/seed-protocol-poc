@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { advance, BOSS_DEPTH, commitLootMint, equipItem, startRun, step } from "./index";
+import {
+  advance,
+  BOSS_DEPTH,
+  commitExtraction,
+  equipItem,
+  extract,
+  startRun,
+  step,
+} from "./index";
 import type { ActionChoice, AssetCard, RunState } from "./types";
 import type { RealmSchemas } from "./loot";
 
@@ -126,9 +134,10 @@ describe("engine.step + advance", () => {
     }
     expect(s).toBeDefined();
     const r = step(s!, attack);
-    // Either the room cleared (encounter null + pendingLoot) or the turn ticked.
+    // Either the room cleared (encounter null + a drop banked into escrow)
+    // or the turn ticked.
     if (r.state.encounter === null) {
-      expect(r.state.pendingLoot).toBeDefined();
+      expect(r.state.escrow.length).toBe(1);
       expect(r.events.some((e) => e.type === "LootDropped")).toBe(true);
     } else {
       expect(r.state.encounter.kind).toBe("combat");
@@ -138,8 +147,7 @@ describe("engine.step + advance", () => {
   it("advance increments depth and produces a new encounter", () => {
     const { state } = makeRun();
     const cleared = clearRoom(state);
-    const after = cleared.pendingLoot ? commitLootMint(cleared) : cleared;
-    const adv = advance(after, "lich");
+    const adv = advance(cleared, "lich");
     expect(adv.state.depth).toBe(state.depth + 1);
     expect(adv.state.encounter).not.toBeNull();
   });
@@ -150,13 +158,127 @@ describe("engine.step + advance", () => {
   });
 });
 
-describe("engine.commitLootMint", () => {
-  it("clears pendingLoot", () => {
+describe("engine delve escrow + extract", () => {
+  function combatRun(): RunState {
+    // Pin a seed whose depth-1 encounter is combat so a clear guarantees
+    // a loot drop into the escrow.
+    for (let i = 0; i < 50; i++) {
+      const run = makeRun({ rngSeed: seedHex(i) });
+      if (run.state.encounter?.kind === "combat") return run.state;
+    }
+    throw new Error("no combat seed found");
+  }
+
+  it("startRun seeds an empty escrow and is extractable at depth 1", () => {
     const { state } = makeRun();
-    const cleared = clearRoom(state);
-    if (cleared.pendingLoot) {
-      const after = commitLootMint(cleared);
-      expect(after.pendingLoot).toBeUndefined();
+    expect(state.escrow).toEqual([]);
+    expect(state.extractable).toBe(true);
+    expect(state.extracted).toBeUndefined();
+  });
+
+  it("clearing a combat room pushes the drop into escrow, tagged with depth", () => {
+    const cleared = clearRoom(combatRun());
+    expect(cleared.encounter).toBeNull();
+    expect(cleared.escrow.length).toBe(1);
+    expect(cleared.escrow[0]!.loot.tier).toBeGreaterThanOrEqual(1);
+    expect(cleared.escrow[0]!.depth).toBe(1);
+    expect(cleared.escrow[0]!.isBoss).toBe(false);
+  });
+
+  it("escrow carries forward across a descent (advance does not clear it)", () => {
+    let s = clearRoom(combatRun());
+    expect(s.escrow.length).toBe(1);
+    // Descending does not drop loot or clear escrow — it carries forward.
+    s = advance(s, "lich").state;
+    expect(s.escrow.length).toBe(1);
+  });
+
+  it("extract flags the run extracted, leaves escrow intact, emits Extracted", () => {
+    const s = clearRoom(combatRun());
+    const banked = s.escrow.length;
+    const r = extract(s);
+    expect(r.state.extracted).toBe(true);
+    expect(r.state.extractable).toBe(false);
+    expect(r.state.escrow.length).toBe(banked);
+    expect(r.events).toContainEqual({ type: "Extracted", count: banked });
+  });
+
+  it("commitExtraction clears the escrow after the batch mint", () => {
+    const s = clearRoom(combatRun());
+    const banked = extract(s).state;
+    const after = commitExtraction(banked);
+    expect(after.escrow).toEqual([]);
+    expect(after.extracted).toBe(true);
+  });
+
+  it("extract throws while an encounter is still active", () => {
+    const { state } = makeRun();
+    expect(() => extract(state)).toThrow(/clear the current encounter/);
+  });
+
+  it("extract refuses in the boss room (non-extractable)", () => {
+    let s: RunState = makeRun({ equipped: { armor: TANK_ARMOR } }).state;
+    for (let d = 1; d < BOSS_DEPTH; d++) {
+      s = clearRoom(s);      s = advance(s, "lich").state;
+    }
+    expect(s.depth).toBe(BOSS_DEPTH);
+    expect(s.extractable).toBe(false);
+    s = { ...s, encounter: null };
+    expect(() => extract(s)).toThrow(/boss room cannot be fled/);
+  });
+
+  it("seed-mercy preserves the escrow across a respawn", () => {
+    let s: RunState = makeRun({
+      defeatMode: "seed-mercy",
+      forcedFirstWeaponElement: "fire",
+    }).state;
+    let bankedBeforeDeath = 0;
+    for (let i = 0; i < 200; i++) {
+      if (!s.encounter) {
+        bankedBeforeDeath = s.escrow.length;
+        s = advance(s, "lich").state;
+        continue;
+      }
+      let choice: ActionChoice;
+      switch (s.encounter.kind) {
+        case "trial":
+          choice = { kind: "trial" };
+          break;
+        case "ledger":
+          choice = { kind: "ledger", suppress: null };
+          break;
+        default:
+          choice = attack;
+      }
+      const r = step(s, choice);
+      s = r.state;
+      if (s.runAttempt > 1) {
+        // Escrow survives the rewind; at least what we banked pre-death.
+        expect(s.escrow.length).toBeGreaterThanOrEqual(bankedBeforeDeath);
+        expect(s.extractable).toBe(true);
+        return;
+      }
+    }
+  });
+
+  it("boss clear leaves the boss drop in escrow for a forced bank", () => {
+    let s: RunState = makeRun({ equipped: { armor: TANK_ARMOR } }).state;
+    for (let d = 1; d < BOSS_DEPTH; d++) {
+      s = clearRoom(s);      s = advance(s, "lich").state;
+    }
+    for (let i = 0; i < 200; i++) {
+      if (!s.encounter) break;
+      const r = step(s, attack);
+      s = r.state;
+      if (r.events.some((e) => e.type === "BossCleared")) {
+        expect(s.bossCleared).toBe(true);
+        // The boss drop was pushed into escrow on the killing blow.
+        expect(s.escrow.length).toBeGreaterThanOrEqual(1);
+        return;
+      }
+      if (s.encounter?.kind === "combat" && s.encounter.combat.playerHp <= 0) {
+        return; // hard-to-win path; don't fail the suite
+      }
     }
   });
 });
@@ -166,9 +288,7 @@ describe("engine boss-depth handling", () => {
     // Walk depth from 1 → BOSS_DEPTH.
     let s: RunState = makeRun({ equipped: { armor: TANK_ARMOR } }).state;
     for (let d = 1; d < BOSS_DEPTH; d++) {
-      s = clearRoom(s);
-      if (s.pendingLoot) s = commitLootMint(s);
-      s = advance(s, "lich").state;
+      s = clearRoom(s);      s = advance(s, "lich").state;
     }
     expect(s.depth).toBe(BOSS_DEPTH);
     expect(s.encounter?.kind).toBe("combat");
@@ -182,9 +302,7 @@ describe("engine boss-depth handling", () => {
     }).state;
     expect(s.bossDepth).toBe(5);
     for (let d = 1; d < 5; d++) {
-      s = clearRoom(s);
-      if (s.pendingLoot) s = commitLootMint(s);
-      s = advance(s, "lich").state;
+      s = clearRoom(s);      s = advance(s, "lich").state;
     }
     expect(s.depth).toBe(5);
     expect(s.encounter?.kind).toBe("combat");
@@ -196,9 +314,7 @@ describe("engine boss-depth handling", () => {
   it("boss clear emits BossCleared and sets bossCleared", () => {
     let s: RunState = makeRun({ equipped: { armor: TANK_ARMOR } }).state;
     for (let d = 1; d < BOSS_DEPTH; d++) {
-      s = clearRoom(s);
-      if (s.pendingLoot) s = commitLootMint(s);
-      s = advance(s, "lich").state;
+      s = clearRoom(s);      s = advance(s, "lich").state;
     }
     // Hammer the boss with attack.
     for (let i = 0; i < 200; i++) {
@@ -239,7 +355,6 @@ describe("engine seed-mercy (Genesis death rewind)", () => {
     let mercyFired = false;
     for (let i = 0; i < 100 && !mercyFired; i++) {
       if (!s.encounter) {
-        if (s.pendingLoot) s = commitLootMint(s);
         s = advance(s, "lich").state;
         continue;
       }
@@ -278,12 +393,12 @@ describe("engine seed-mercy (Genesis death rewind)", () => {
     let sawWeaponDrop = false;
     for (let d = 1; d < BOSS_DEPTH && !sawWeaponDrop; d++) {
       s = clearRoom(s);
-      if (s.pendingLoot?.slot === "weapon") {
+      const lastDrop = s.escrow[s.escrow.length - 1]?.loot;
+      if (lastDrop?.slot === "weapon") {
         sawWeaponDrop = true;
-        expect(s.pendingLoot.element).toBe("fire");
+        expect(lastDrop.element).toBe("fire");
         expect(s.firstWeaponDropped).toBe(true);
       }
-      if (s.pendingLoot) s = commitLootMint(s);
       s = advance(s, "lich").state;
     }
   });
@@ -356,12 +471,9 @@ describe("persistent HP", () => {
     // the transition (no heal applied).
     let s = makeRun({ equipped: { armor: TANK_ARMOR } }).state;
     for (let d = 1; d < BOSS_DEPTH - 1; d++) {
-      s = clearRoom(s);
-      if (s.pendingLoot) s = commitLootMint(s);
-      s = advance(s, "lich").state;
+      s = clearRoom(s);      s = advance(s, "lich").state;
     }
     s = clearRoom(s);
-    if (s.pendingLoot) s = commitLootMint(s);
     // Manually wound the player just before the boss transition so we
     // can observe whether advance() heals or not. RunState.playerHp is
     // the carrier; mutate via a typed shallow copy to keep it surgical.

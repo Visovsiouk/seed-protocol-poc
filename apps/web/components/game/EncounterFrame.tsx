@@ -1,12 +1,17 @@
 "use client";
 
 /**
- * Centerpiece of `/play/[preset]`. Holds the live `RunState`
- * and drives the engine in response to player input:
+ * Centerpiece of `/play/[preset]`.
+ * Holds the live `RunState` and drives the engine in response to player
+ * input:
  *
  *   step(state, choice)         → consume player action
- *   advance(state, bossId)      → next room after a clear
- *   commitLootMint(state)       → clear pendingLoot once the mint settles
+ *   advance(state, bossId)      → Descend: next room after a clear
+ *   extract(state)              → Extract: end the run, bank the escrow
+ *   commitExtraction(state)     → clear escrow once the batch mint settles
+ *
+ * The delve loop replaces the old per-room mint: loot found is carried in
+ * `state.escrow` (unminted) and only banks on Extract or a boss clear.
  *
  * What lives here vs the children:
  *
@@ -17,10 +22,11 @@
  *   - `<HUD/>` reads HP/AC from the live `CombatState` when one is
  *     active, otherwise from the equipped armor baseline.
  *   - `<ActionChoices/>` only renders while an encounter is active.
- *   - `<LootMintPrompt/>` takes over the bottom row when `pendingLoot`
- *     is present (will swap `onMint` for the real on-chain tx).
- *   - The "Advance" button shows once the encounter is cleared *and* any
- *     pending loot has been committed/skipped.
+ *   - `<EscrowTray/>` lists the carried (unminted) findings at the
+ *     between-rooms decision point.
+ *   - The Descend / Extract decision row shows once a room is cleared and
+ *     no encounter is active (Extract only when `extractable` and the
+ *     escrow is non-empty).
  *
  * Boss phase 1→2 transition is detected by diffing the previous and next
  * `combat.bossPhase` after each `step()`, and surfaced via
@@ -32,14 +38,15 @@ import type {
   ActionChoice,
   AssetCard,
   EngineEvent,
-  LootRoll,
+  EscrowEntry,
   NarrationLine,
   Preset,
   RunState,
 } from "@/lib/engine/types";
 import {
   advance as engineAdvance,
-  commitLootMint as engineCommitLoot,
+  commitExtraction as engineCommitExtraction,
+  extract as engineExtract,
   equipItem as engineEquipItem,
   step as engineStep,
 } from "@/lib/engine";
@@ -47,9 +54,17 @@ import { ActionChoices } from "./ActionChoices";
 import { ChoiceRow, type Choice } from "./ChoiceRow";
 import { BossPhaseBanner } from "./BossPhaseBanner";
 import { CombatLog } from "./CombatLog";
+import { EscrowTray } from "./EscrowTray";
 import { HUD } from "./HUD";
-import { LootMintPrompt } from "./LootMintPrompt";
 import { RoomNarration } from "./RoomNarration";
+import { Panel } from "@/components/ui";
+
+/** Status of the batched escrow mint at extraction / boss clear. */
+type BankStatus =
+  | { kind: "idle" }
+  | { kind: "pending" }
+  | { kind: "done"; count: number }
+  | { kind: "failed"; error: string };
 
 type Props = {
   /** Initial state from `startRun()`. */
@@ -80,18 +95,23 @@ type Props = {
     | { status: "failed"; error: string }
     | { status: "skipped"; reason: string };
   /**
-   * Fires when the player commits the pendingLoot via the Mint button (i.e.
-   * NOT on Skip). May be async — if the handler returns a rejected promise
-   * the engine-side commit is skipped, leaving the prompt up for retry.
-   *  uses this to grow the local inventory; dispatches
-   * the on-chain mint and lets the wagmi receipt reconcile.
+   * Fires once when the run banks its escrow — either the player pressed
+   * Extract or the boss fell (an implicit extraction). The
+   * handler receives every carried `EscrowEntry`; it should mint them in
+   * one batch (or a looped sponsored op) and resolve once they've settled.
+   * May be async — if it rejects, the engine-side `commitExtraction` is
+   * skipped and the bank status surfaces a retry-able failure.
    *
-   * The `ctx.depth` snapshot is the current room depth at the moment of
-   * drop — the parent's `initialState.depth` is frozen at 1 from
-   * `startRun`, so callers needing the *real* depth (e.g. for the
-   * server-side tier-vs-difficulty bounds check) must read it from here.
+   * Each entry carries its own `depth`/`isBoss` so the server validator
+   * can bounds-check each drop against the difficulty band it rolled in
+   * (the parent's `initialState.depth` is frozen at 1 from `startRun`).
+   * Escrow items are NOT auto-equipped — the player descended with their
+   * real gear and gambled only with findings.
    */
-  onLootMinted?: (loot: LootRoll, ctx: { depth: number; equip: boolean }) => Promise<void> | void;
+  onBankEscrow?: (
+    escrow: readonly EscrowEntry[],
+    ctx: { reason: "extract" | "boss" },
+  ) => Promise<void> | void;
   /**
    * Optional narrative beat rendered inside the run-over panel once the
    * boss is down. Owned by the parent so it can supply post-clear
@@ -107,8 +127,8 @@ type Props = {
   activePreset?: Preset | null;
   /**
    * Human-readable realm name (e.g. "The Hollow Reach"). Used by the
-   * loot-mint prompt to build a preview `AssetCard` so the prompt
-   * renders with the same visual language as the inventory drawer.
+   * escrow tray to build preview `AssetCard`s so carried findings render
+   * with the same visual language as the inventory drawer.
    */
   realmName: string;
   /**
@@ -149,13 +169,63 @@ function splitIntro(
   return { intro: head!.text, rest };
 }
 
+/**
+ * Renders the state of the batched escrow mint. Shared by
+ * the extraction-success panel and the boss-clear run-over panel — both
+ * bank the escrow, the only difference is the trigger.
+ */
+function BankStatusLine({
+  status,
+  onRetry,
+}: {
+  status: BankStatus;
+  onRetry: () => void;
+}) {
+  if (status.kind === "idle") return null;
+  if (status.kind === "pending") {
+    return (
+      <p className="text-sm opacity-80">Banking your findings on-chain…</p>
+    );
+  }
+  if (status.kind === "done") {
+    return (
+      <p className="text-sm opacity-90">
+        {status.count > 0
+          ? `${status.count} finding${status.count === 1 ? "" : "s"} banked to your wallet.`
+          : "Nothing carried — no findings to bank."}
+      </p>
+    );
+  }
+  return (
+    <div className="flex flex-col gap-2 text-sm">
+      <p className="text-[var(--color-danger)]">
+        Banking failed — your findings are safe.
+      </p>
+      <p className="opacity-60 text-[11px] break-all">{status.error}</p>
+      <ChoiceRow
+        ariaLabel="Retry bank"
+        choices={
+          [
+            {
+              key: "retry-bank",
+              label: "Retry bank",
+              variant: "primary",
+              onClick: onRetry,
+            },
+          ] satisfies Choice[]
+        }
+      />
+    </div>
+  );
+}
+
 export function EncounterFrame({
   initialState,
   initialLines,
   bossId,
   equipped,
   onEvent,
-  onLootMinted,
+  onBankEscrow,
   clearReceipt,
   interstitial,
   activePreset = null,
@@ -168,6 +238,7 @@ export function EncounterFrame({
   const [intro, setIntro] = useState<string>(initialSplit.intro);
   const [feed, setFeed] = useState<readonly NarrationLine[]>(initialSplit.rest);
   const [busy, setBusy] = useState(false);
+  const [bankStatus, setBankStatus] = useState<BankStatus>({ kind: "idle" });
   const [phaseBanner, setPhaseBanner] = useState(false);
 
   // Hold the bossName for the phase banner. Captured at the moment of
@@ -253,42 +324,71 @@ export function EncounterFrame({
     [appendLines, busy, combat, onEvent, state],
   );
 
-  const handleMint = useCallback(async (equip: boolean) => {
-    const loot = state.pendingLoot;
-    if (!loot) return;
-    // Run the caller's mint handler first — if it throws (tx revert,
-    // wallet rejection, network drop), leave `pendingLoot` intact so the
-    // player can retry without losing the drop.
-    if (onLootMinted) {
-      try {
-        await onLootMinted(loot, { depth: state.depth, equip });
-      } catch (err) {
-        appendLines([
-          {
-            text: `Mint failed: ${(err as Error).message ?? "unknown error"}`,
-            emphasis: "damage",
-          },
-        ]);
+  // Guards the batched escrow mint so it fires exactly once per run — both
+  // the Extract button and the boss-clear auto-bank effect funnel through
+  // `runBank`, and the effect can re-fire on every state change. Reset to
+  // false on a mint failure so the player can retry.
+  const bankRef = useRef(false);
+
+  const runBank = useCallback(
+    async (bankState: RunState, reason: "extract" | "boss") => {
+      if (bankRef.current) return;
+      bankRef.current = true;
+      const entries = bankState.escrow;
+      if (entries.length === 0) {
+        // Extracted empty-handed (or a boss room with nothing carried) —
+        // nothing to mint, but the run still resolved successfully.
+        setBankStatus({ kind: "done", count: 0 });
         return;
       }
-    }
-    const next = engineCommitLoot(state);
-    appendLines([
-      { text: equip ? "Loot equipped." : "Loot stowed in your pack.", emphasis: "heal" },
-    ]);
-    setState(next);
-  }, [appendLines, onLootMinted, state]);
+      setBankStatus({ kind: "pending" });
+      try {
+        await onBankEscrow?.(entries, { reason });
+        // Clear the escrow only after the batch mint settles.
+        setState((prev) => engineCommitExtraction(prev));
+        setBankStatus({ kind: "done", count: entries.length });
+      } catch (err) {
+        // Leave the escrow intact and re-open the gate so the player can
+        // retry the bank without losing the findings.
+        bankRef.current = false;
+        setBankStatus({
+          kind: "failed",
+          error: (err as Error).message ?? "unknown error",
+        });
+      }
+    },
+    [onBankEscrow],
+  );
 
-  const handleSkip = useCallback(() => {
-    // Same engine-side behaviour as mint for the PoC — the difference is
-    // that 's mint path will actually send a tx. Skip just drops
-    // the pendingLoot.
-    const next = engineCommitLoot(state);
-    appendLines([
-      { text: "You leave the spoils behind.", emphasis: "info" },
-    ]);
-    setState(next);
-  }, [appendLines, state]);
+  const handleExtract = useCallback(async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      // `extract` only throws with an active encounter or in the boss room;
+      // the Extract control never renders in either case, so this is safe.
+      const result = engineExtract(state);
+      appendLines(result.lines);
+      for (const ev of result.events) onEvent?.(ev);
+      setState(result.state);
+      await runBank(result.state, "extract");
+    } finally {
+      setBusy(false);
+    }
+  }, [appendLines, busy, onEvent, runBank, state]);
+
+  // Boss clear is an implicit extraction: the engine already
+  // banked the boss drop into the escrow and flagged `bossCleared`. Mint the
+  // whole escrow once, the moment the boss falls.
+  useEffect(() => {
+    if (
+      state.bossCleared &&
+      !state.encounter &&
+      bankStatus.kind === "idle" &&
+      state.escrow.length > 0
+    ) {
+      void runBank(state, "boss");
+    }
+  }, [state, bankStatus.kind, runBank]);
 
   const handleAdvance = useCallback(() => {
     if (busy) return;
@@ -307,8 +407,20 @@ export function EncounterFrame({
     }
   }, [bossId, busy, state]);
 
-  const runOver = state.bossCleared && !state.encounter && !state.pendingLoot;
+  const runOver = state.bossCleared && !state.encounter;
   const runDefeated = state.defeated;
+  // Between-rooms decision point: a room is cleared, no encounter is live,
+  // and the run hasn't terminated. Extract is offered only when the engine
+  // says the run is extractable (not the boss room) and there is something
+  // carried to bank.
+  const atDecision =
+    !runDefeated && !runOver && !state.extracted && !state.encounter;
+  const canExtract =
+    atDecision && state.extractable && state.escrow.length > 0;
+
+  const handleRetryBank = useCallback(() => {
+    void runBank(state, state.bossCleared ? "boss" : "extract");
+  }, [runBank, state]);
 
   return (
     <div className="flex flex-col gap-4">
@@ -335,14 +447,19 @@ export function EncounterFrame({
           className="flex flex-col gap-3"
         >
           <div
-            className="flex flex-col gap-3 p-5 rounded-md"
+            className="flex flex-col gap-3 p-5 rounded-lg border"
             style={{
-              background: "rgba(255,80,80,0.06)",
-              border: "1px solid rgba(255,80,80,0.30)",
+              background:
+                "color-mix(in oklab, var(--color-danger) 8%, transparent)",
+              borderColor:
+                "color-mix(in oklab, var(--color-danger) 35%, transparent)",
             }}
           >
             <header className="flex items-baseline justify-between gap-2">
-              <h2 className="text-base font-semibold" style={{ color: "#f99" }}>
+              <h2
+                className="text-base font-semibold"
+                style={{ color: "var(--color-danger)" }}
+              >
                 The realm keeps you
               </h2>
               {state.defeatedAtDepth !== undefined && (
@@ -356,8 +473,20 @@ export function EncounterFrame({
             </header>
             <p className="text-sm opacity-90 leading-relaxed">
               The run is over. No clear receipt is minted, and the realm chain
-              stays unchanged — but the gear in your pack is yours. Step back
-              in when you&apos;re ready.
+              stays unchanged — your owned, equipped gear is untouched, but
+              {state.escrow.length > 0 ? (
+                <>
+                  {" "}the{" "}
+                  <strong>
+                    {state.escrow.length} unminted finding
+                    {state.escrow.length === 1 ? "" : "s"}
+                  </strong>{" "}
+                  of this delve are gone. Bank them next time.
+                </>
+              ) : (
+                <> you carried nothing out to lose.</>
+              )}{" "}
+              Step back in when you&apos;re ready.
             </p>
             {onRestart && (
               <ChoiceRow
@@ -383,45 +512,60 @@ export function EncounterFrame({
           disabled={busy}
           onChoose={handleChoose}
         />
-      ) : state.pendingLoot ? (
-        <LootMintPrompt
-          loot={state.pendingLoot}
-          preset={activePreset ?? state.preset}
-          realm={state.realm}
-          realmName={realmName}
-          comparedTo={
-            // Rebalance A4: hand the prompt the card currently equipped in
-            // the same slot so the player can see the delta vs what they're
-            // about to replace. `pickSlot` only ever yields "weapon" or
-            // "armor"; accessory drops aren't wired yet.
-            state.pendingLoot.slot === "weapon"
-              ? state.equipped.weapon
-              : state.pendingLoot.slot === "armor"
-                ? state.equipped.armor
-                : undefined
-          }
-          onMint={handleMint}
-          onSkip={handleSkip}
-        />
+      ) : state.extracted ? (
+        <section
+          aria-label="Extracted from the delve"
+          className="flex flex-col gap-3 p-5 rounded-lg border"
+          style={{
+            background:
+              "color-mix(in oklab, var(--color-ok) 8%, transparent)",
+            borderColor:
+              "color-mix(in oklab, var(--color-ok) 35%, transparent)",
+          }}
+        >
+          <h2
+            className="text-base font-semibold"
+            style={{ color: "var(--color-ok)" }}
+          >
+            You surface, findings in hand
+          </h2>
+          <p className="text-sm opacity-90 leading-relaxed">
+            You pulled out before the realm could take you. Everything you
+            carried is banked to your wallet under{" "}
+            <span className="opacity-100 font-medium">{realmName}</span>.
+          </p>
+          <BankStatusLine status={bankStatus} onRetry={handleRetryBank} />
+          {onRestart && bankStatus.kind !== "pending" && (
+            <ChoiceRow
+              ariaLabel="Delve again"
+              choices={
+                [
+                  {
+                    key: "restart",
+                    label: "Delve again →",
+                    variant: "primary",
+                    onClick: onRestart,
+                  },
+                ] satisfies Choice[]
+              }
+            />
+          )}
+        </section>
       ) : runOver ? (
         <section
           aria-label="Run complete"
           className="flex flex-col gap-3"
         >
           {interstitial}
-          <div
-            className="flex flex-col gap-2 p-4 rounded-md"
-            style={{
-              background: "rgba(255,255,255,0.03)",
-              border: "1px solid rgba(255,255,255,0.08)",
-            }}
-          >
+          <Panel tone="glass-2" className="flex flex-col gap-2 p-4">
             {state.bossClearedTurns !== undefined && (
               <p className="text-xs opacity-60 tabular-nums uppercase tracking-widest">
                 Cleared in {state.bossClearedTurns} turn
                 {state.bossClearedTurns === 1 ? "" : "s"}
               </p>
             )}
+          {/* Boss clear is an implicit extraction — bank the full escrow. */}
+          <BankStatusLine status={bankStatus} onRetry={handleRetryBank} />
           {!clearReceipt && (
             <p className="text-sm opacity-60">
               Clear receipt: queued…
@@ -445,7 +589,7 @@ export function EncounterFrame({
           )}
           {clearReceipt?.status === "failed" && (
             <div className="flex flex-col gap-1 text-sm">
-              <p style={{ color: "#f77" }}>Mint failed.</p>
+              <p className="text-[var(--color-danger)]">Mint failed.</p>
               <p className="opacity-60 text-[11px] break-all">
                 {clearReceipt.error}
               </p>
@@ -454,23 +598,42 @@ export function EncounterFrame({
           {clearReceipt?.status === "skipped" && (
             <p className="text-sm opacity-60">{clearReceipt.reason}</p>
           )}
-          </div>
+          </Panel>
         </section>
       ) : (
-        <ChoiceRow
-          ariaLabel="Advance to next room"
-          disabled={busy}
-          choices={
-            [
-              {
-                key: "advance",
-                label: busy ? "Advancing…" : "Advance",
-                variant: "primary",
-                onClick: handleAdvance,
-              },
-            ] satisfies Choice[]
-          }
-        />
+        // Between-rooms decision: show the carried findings + Descend/Extract.
+        <div className="flex flex-col gap-4">
+          <EscrowTray
+            escrow={state.escrow}
+            preset={activePreset ?? state.preset}
+            realm={state.realm}
+            realmName={realmName}
+            atRisk={state.defeatMode === "permadeath"}
+          />
+          <ChoiceRow
+            ariaLabel="Descend or extract"
+            disabled={busy}
+            choices={
+              [
+                ...(canExtract
+                  ? [
+                      {
+                        key: "extract",
+                        label: busy ? "Extracting…" : "Extract & bank",
+                        onClick: handleExtract,
+                      } as Choice,
+                    ]
+                  : []),
+                {
+                  key: "advance",
+                  label: busy ? "Descending…" : "Descend",
+                  variant: "primary",
+                  onClick: handleAdvance,
+                } as Choice,
+              ] satisfies Choice[]
+            }
+          />
+        </div>
       )}
     </div>
   );

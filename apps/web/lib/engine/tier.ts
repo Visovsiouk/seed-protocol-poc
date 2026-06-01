@@ -59,7 +59,7 @@ export function tierStats(tier: Tier, slot: Slot): TierStats {
   }
 }
 
-export type Difficulty = "trivial" | "standard" | "boss";
+export type Difficulty = "trivial" | "standard" | "deep" | "boss";
 
 /**
  * Tier distribution per encounter difficulty. Tuple sums to 100.
@@ -83,6 +83,19 @@ const TIER_DISTRIBUTION: Record<Difficulty, ReadonlyArray<readonly [Tier, number
     [2, 60],
     [3, 30],
     [4, 10],
+  ],
+  // Delve "deep" band — the pre-boss depth (≥5, below
+  // bossDepth) under the push-your-luck loot loop. Strictly richer than
+  // `standard`: drops T3 most of the time and opens T4/T5. Under starter
+  // realms (maxTier 2) this collapses to all-T2 via `rollTier`'s cap, so
+  // the tutorial stays gentle; player-built realms (higher caps) are the
+  // place deep loot actually lives — which is the intended pull to push
+  // deeper in a realm you can't extract from for free.
+  deep: [
+    [2, 20],
+    [3, 45],
+    [4, 30],
+    [5, 5],
   ],
   boss: [
     [3, 40],

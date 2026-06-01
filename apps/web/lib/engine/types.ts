@@ -608,6 +608,17 @@ export type LootRoll = {
  */
 export type DefeatMode = "permadeath" | "seed-mercy";
 
+/**
+ * One unminted finding held in the delve escrow. Carries the depth (and
+ * boss flag) it was found at so the deferred batch mint can validate each
+ * drop against the difficulty band it rolled in. See `RunState.escrow`.
+ */
+export type EscrowEntry = {
+  loot: LootRoll;
+  depth: number;
+  isBoss: boolean;
+};
+
 export type RunState = {
   preset: Preset;
   realm: `0x${string}`;
@@ -641,7 +652,43 @@ export type RunState = {
    * seed-mercy respawn maxHp is recomputed from current equipment.
    */
   playerMaxHp: number;
-  pendingLoot?: LootRoll;
+  /**
+   * Delve/extraction escrow. Loot cleared from rooms is
+   * held here *unminted* until the player Extracts (banks the batch) or
+   * clears the boss (forced auto-bank). The owned/equipped NFTs are never
+   * at risk — only this unrealized findings list.
+   *
+   *   - Extract  → the UI batch-mints `escrow`, then calls
+   *     `commitExtraction` to clear it.
+   *   - Boss clear → the boss drop is pushed here too; the run ends a
+   *     success and the UI batch-mints the lot.
+   *   - Permadeath → escrow is forfeit; the defeat screen reads this list
+   *     to show what was lost (it is NOT cleared on death).
+   *   - Seed-mercy → escrow is PRESERVED across the respawn (the Seed
+   *     keeps what you were carrying).
+   *
+   * Each entry records the `depth` (and `isBoss`) the drop was found at,
+   * NOT the depth the player extracts from. The deferred batch mint must
+   * validate every item against the difficulty band it actually rolled in
+   * — a T1 found at depth 1 would be rejected by the server validator if
+   * presented as a depth-5 "deep" drop.
+   */
+  escrow: EscrowEntry[];
+  /**
+   * True when the player may Extract from the current position — i.e. the
+   * run is live and not standing in the boss room. Recomputed on every
+   * depth transition as `depth < bossDepth`. The boss room is
+   * non-extractable: the only way out is to win (auto-bank) or die
+   * (forfeit the escrow).
+   */
+  extractable: boolean;
+  /**
+   * Terminal success flag: the player chose to Extract and surfaced. The
+   * run is over (unlike a live state), but unlike `defeated` the escrow is
+   * banked rather than forfeit. Mutually exclusive with `defeated`. The UI
+   * batch-mints `escrow` and then calls `commitExtraction`.
+   */
+  extracted?: boolean;
   bossCleared: boolean;
   bossClearedTimestamp?: number;
   bossClearedTurns?: number;
@@ -725,7 +772,8 @@ export type EngineEvent =
   | { type: "RoomCleared"; depth: number }
   | { type: "BossCleared"; finalHp: number; turns: number }
   | { type: "LootDropped"; loot: LootRoll }
-  | { type: "PlayerDefeated"; depth: number; turn: number };
+  | { type: "PlayerDefeated"; depth: number; turn: number }
+  | { type: "Extracted"; count: number };
 
 export type StepResult = {
   state: RunState;

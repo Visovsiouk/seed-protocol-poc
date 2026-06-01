@@ -1,122 +1,40 @@
 "use client";
 
 /**
- * Player HUD. Renders HP/AC/depth + a
- * full equipment breakdown including catalog effects.
+ * Player HUD rail. The run's "stakes
+ * are visible" surface: HP/AC, the depth meter (how far toward the boss
+ * floor), the carried-escrow-at-risk readout, and a full equipment
+ * breakdown with element/effect chips.
  *
  * State source: the engine's `RunState` plus the active `CombatState`. We
  * pull HP/AC from the combat state when an encounter is live (so it
  * reflects mid-fight damage) and fall back to the realm-armor-baseline
- * between rooms.
+ * between rooms. Built entirely on the shared kit — no inline panel styling.
  */
 
 import type {
   AssetCard,
-  CatalogEffect,
-  CatalogEffectName,
   CombatState,
   RunState,
 } from "@/lib/engine/types";
 import { useTranslatedCard } from "@/lib/contracts/adapters";
-
-function clamp(n: number, lo: number, hi: number) {
-  return Math.min(hi, Math.max(lo, n));
-}
+import { elementColor } from "@/lib/ui/loot-visuals";
+import { Panel, Meter, Stat, ElementChip, EffectChip } from "@/components/ui";
 
 function signed(n: number): string {
   return n >= 0 ? `+${n}` : `${n}`;
 }
 
-// ─── element colors (all three preset vocabularies) ──────────────────────────
-
-const ELEMENT_COLORS: Record<string, string> = {
-  // fantasy
-  fire:       "#e85d04",
-  ice:        "#4cc9f0",
-  shock:      "#f8c020",
-  holy:       "#fffbcc",
-  unholy:     "#9d4edd",
-  // scifi
-  plasma:     "#c77dff",
-  cryo:       "#48cae4",
-  ion:        "#f8c020",
-  photon:     "#eeeeee",
-  void:       "#7b2fff",
-  // cyberpunk
-  incendiary: "#e85d04",
-  cryogenic:  "#4cc9f0",
-  emp:        "#f8c020",
-  laser:      "#ff6b6b",
-  nano:       "#6a994e",
-};
-
-function elementColor(el: string): string {
-  return ELEMENT_COLORS[el.toLowerCase()] ?? "rgba(255,255,255,0.5)";
-}
-
-// ─── catalog effect display config ───────────────────────────────────────────
-
-type EffectMeta = { label: string; color: string; format: (v: number) => string };
-
-const EFFECT_META: Record<CatalogEffectName, EffectMeta> = {
-  lifesteal:        { label: "Lifesteal",  color: "#e05252", format: v => `+${v} HP/hit` },
-  armor_pierce:     { label: "Pierce",     color: "#e8a020", format: ()  => "ignores AC" },
-  crit_chance:      { label: "Crit",       color: "#f8c020", format: v  => `${v}%`       },
-  multi_hit:        { label: "Multi-Hit",  color: "#c77dff", format: v  => `×${v + 1}`   },
-  bleed:            { label: "Bleed",      color: "#c1121f", format: v  => `${v}/turn`   },
-  regen:            { label: "Regen",      color: "#4cc9f0", format: v  => `+${v}/turn`  },
-  thorns:           { label: "Thorns",     color: "#6a994e", format: v  => `${v} reflect` },
-  dodge_chance:     { label: "Dodge",      color: "#9b5de5", format: v  => `${v}%`       },
-  damage_reduction: { label: "DR",         color: "#4361ee", format: v  => `-${v} dmg`   },
-};
-
-// ─── chips ───────────────────────────────────────────────────────────────────
-
-function Chip({
-  color,
-  label,
-  sub,
-}: {
-  color: string;
-  label: string;
-  sub?: string;
-}) {
-  return (
-    <span
-      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold"
-      style={{
-        background: `color-mix(in srgb, ${color} 14%, transparent)`,
-        border: `1px solid color-mix(in srgb, ${color} 28%, transparent)`,
-        color,
-      }}
-    >
-      <span className="uppercase tracking-wide leading-none">{label}</span>
-      {sub && <span style={{ opacity: 0.75 }} className="font-normal leading-none">{sub}</span>}
-    </span>
-  );
-}
-
-function EffectChip({ effect }: { effect: CatalogEffect }) {
-  const meta = EFFECT_META[effect.name];
-  if (!meta) return null;
-  return <Chip color={meta.color} label={meta.label} sub={meta.format(effect.value)} />;
-}
-
-function ElementChip({ element, prefix }: { element: string; prefix?: string }) {
-  const color = elementColor(element);
-  return <Chip color={color} label={prefix ? `${prefix} ${element}` : element} />;
-}
-
-// ─── HP bar ──────────────────────────────────────────────────────────────────
+// ─── HP meter ──────────────────────────────────────────────────────────────
 
 function HpBar({ hp, max }: { hp: number; max: number }) {
-  const pct = max <= 0 ? 0 : clamp(Math.round((hp / max) * 100), 0, 100);
-  const barColor =
+  const pct = max <= 0 ? 0 : Math.round((hp / max) * 100);
+  const color =
     pct > 60
-      ? "var(--color-preset-accent)"
+      ? "var(--color-ok)"
       : pct > 33
-      ? "#e8a020"
-      : "#d44";
+        ? "var(--color-warn)"
+        : "var(--color-danger)";
 
   return (
     <div className="flex flex-col gap-1.5">
@@ -127,36 +45,65 @@ function HpBar({ hp, max }: { hp: number; max: number }) {
           <span className="opacity-35 font-normal text-xs">/{max}</span>
         </span>
       </div>
-      <div
-        className="h-2 rounded-full overflow-hidden"
-        style={{ background: "rgba(255,255,255,0.07)" }}
-      >
-        <div
-          className="h-full transition-all duration-200 rounded-full"
-          style={{
-            width: `${pct}%`,
-            background: barColor,
-            boxShadow: `0 0 8px ${barColor}70`,
-          }}
-        />
-      </div>
+      <Meter value={hp} max={max} color={color} />
     </div>
   );
 }
 
-// ─── compact stat badge ───────────────────────────────────────────────────────
+// ─── boxed stat badge ──────────────────────────────────────────────────────
 
 function StatBadge({ label, value }: { label: string; value: string | number }) {
   return (
+    <Panel tone="glass-2" className="px-3 py-1.5">
+      <Stat label={label} value={value} />
+    </Panel>
+  );
+}
+
+// ─── depth meter ───────────────────────────────────────────────────────────
+// Segmented ticks 1 ··· bossDepth, descended nodes lit. Reads
+// how far the player has pushed and how far the boss floor still is.
+
+function DepthMeter({ depth, bossDepth }: { depth: number; bossDepth: number }) {
+  return (
+    <Panel tone="glass-2" className="flex flex-col gap-1 px-3 py-1.5">
+      <div className="flex items-baseline justify-between gap-3">
+        <span className="opacity-40 uppercase tracking-widest text-[9px]">Depth</span>
+        <span className="tabular-nums text-xs font-bold leading-none">
+          {depth}
+          <span className="opacity-35 font-normal">/{bossDepth}</span>
+        </span>
+      </div>
+      <Meter value={depth} max={bossDepth} segments={bossDepth} />
+    </Panel>
+  );
+}
+
+// ─── escrow-at-risk readout ───────────────────────────────────────────────────
+
+/**
+ * Carried-findings readout. Surfaces the count of unminted
+ * loot the player is holding this run and whether it's at risk. On
+ * permadeath realms the findings evaporate on a fall, so the badge runs
+ * hot (danger); on seed-mercy starters they survive the rewind, so it stays
+ * cool (accent).
+ */
+function EscrowBadge({ count, atRisk }: { count: number; atRisk: boolean }) {
+  const color = atRisk ? "var(--color-danger)" : "var(--color-preset-accent)";
+  return (
     <div
-      className="flex flex-col items-center gap-0.5 px-3 py-1.5 rounded"
+      className="flex flex-col gap-0.5 px-3 py-1.5 rounded-lg border"
       style={{
-        background: "rgba(255,255,255,0.05)",
-        border: "1px solid rgba(255,255,255,0.08)",
+        background: `color-mix(in oklab, ${color} 12%, transparent)`,
+        borderColor: `color-mix(in oklab, ${color} 30%, transparent)`,
       }}
     >
-      <span className="opacity-40 uppercase tracking-widest text-[9px]">{label}</span>
-      <span className="tabular-nums text-base font-bold leading-none">{value}</span>
+      <span className="opacity-50 uppercase tracking-widest text-[9px]">
+        {atRisk ? "At risk" : "Carried"}
+      </span>
+      <span className="tabular-nums text-sm font-bold leading-none" style={{ color }}>
+        {count} unminted
+      </span>
     </div>
   );
 }
@@ -175,13 +122,13 @@ function SlotCard({
   const { data: translated } = useTranslatedCard(card, currentRealm);
   const display = translated ?? card;
 
-  // Tint the card border toward the element color when equipped
+  // Tint the card border toward the element color when equipped.
   const el =
     display?.element && display.element !== "none" ? display.element : null;
   const elColor = el ? elementColor(el) : null;
   const borderColor = elColor
-    ? `color-mix(in srgb, ${elColor} 22%, rgba(255,255,255,0.08))`
-    : "rgba(255,255,255,0.08)";
+    ? `color-mix(in oklab, ${elColor} 30%, var(--border-1))`
+    : "var(--border-1)";
 
   const hasEffects =
     display &&
@@ -191,20 +138,14 @@ function SlotCard({
 
   return (
     <div
-      className="flex flex-col rounded-lg overflow-hidden flex-1"
-      style={{ background: "rgba(255,255,255,0.04)", border: `1px solid ${borderColor}`, minWidth: 174 }}
+      className="flex flex-col rounded-lg overflow-hidden flex-1 bg-[var(--surface-1)] border"
+      style={{ borderColor, minWidth: 174 }}
     >
       {/* header */}
-      <div
-        className="flex items-center justify-between px-3 py-2"
-        style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}
-      >
+      <div className="flex items-center justify-between px-3 py-2 border-b border-[var(--border-1)]">
         <span className="opacity-40 uppercase tracking-widest text-[9px]">{label}</span>
         {display && (
-          <span
-            className="px-1.5 py-px rounded text-[10px] font-bold tabular-nums"
-            style={{ background: "rgba(255,255,255,0.1)" }}
-          >
+          <span className="px-1.5 py-px rounded text-[10px] font-bold tabular-nums bg-[var(--surface-3)]">
             T{display.tier}
           </span>
         )}
@@ -257,15 +198,12 @@ function SlotCard({
 
       {/* effects — element + catalog effects */}
       {hasEffects && (
-        <div
-          className="px-3 py-2.5 flex flex-wrap gap-1 mt-auto"
-          style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}
-        >
+        <div className="px-3 py-2.5 flex flex-wrap gap-1 mt-auto border-t border-[var(--border-1)]">
           {display!.element && display!.element !== "none" && (
             <ElementChip element={display!.element} />
           )}
           {display!.resistElement && display!.resistElement !== "none" && (
-            <ElementChip element={display!.resistElement} prefix="resists" />
+            <ElementChip element={display!.resistElement} kind="resist" />
           )}
           {display!.catalogEffects.map((eff, i) => (
             <EffectChip key={i} effect={eff} />
@@ -290,27 +228,28 @@ export function HUD({
   const ac = combat?.playerAc ?? 10 + (run.equipped.armor?.acBonus ?? 0);
 
   return (
-    <section
-      className="flex gap-4 px-4 py-3 rounded-lg"
-      style={{
-        background: "rgba(0,0,0,0.30)",
-        border: "1px solid rgba(255,255,255,0.07)",
-      }}
+    <Panel
+      as="section"
+      tone="glass-1"
+      className="flex gap-4 px-4 py-3"
       aria-label="Player HUD"
     >
       {/* vitals column */}
       <div
-        className="flex flex-col justify-center gap-3 pr-4 shrink-0"
-        style={{ borderRight: "1px solid rgba(255,255,255,0.07)", minWidth: 150 }}
+        className="flex flex-col justify-center gap-3 pr-4 shrink-0 border-r border-[var(--border-1)]"
+        style={{ minWidth: 170 }}
       >
         <HpBar hp={hp} max={maxHp} />
         <div className="flex gap-2">
           <StatBadge label="AC" value={ac} />
-          <StatBadge label="Depth" value={run.depth} />
           {combat?.bossPhase && (
             <StatBadge label="Boss" value={`P${combat.bossPhase}`} />
           )}
         </div>
+        <DepthMeter depth={run.depth} bossDepth={run.bossDepth} />
+        {run.escrow.length > 0 && (
+          <EscrowBadge count={run.escrow.length} atRisk={run.defeatMode === "permadeath"} />
+        )}
       </div>
 
       {/* equipment column */}
@@ -318,6 +257,6 @@ export function HUD({
         <SlotCard label="Weapon" card={run.equipped.weapon} currentRealm={run.realm} />
         <SlotCard label="Armor"  card={run.equipped.armor}  currentRealm={run.realm} />
       </div>
-    </section>
+    </Panel>
   );
 }

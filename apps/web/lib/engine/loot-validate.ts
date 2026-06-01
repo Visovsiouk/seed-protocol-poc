@@ -42,14 +42,23 @@ const ALL_ELEMENTS: ReadonlySet<string> = new Set<string>([
 const TIERS_BY_DIFFICULTY: Record<Difficulty, ReadonlySet<Tier>> = {
   trivial: new Set([1, 2]),
   standard: new Set([2, 3, 4]),
+  deep: new Set([2, 3, 4, 5]),
   boss: new Set([3, 4, 5]),
 };
 
-/** Replica of `difficultyFor` in the engine — kept private to keep this module pure. */
+/**
+ * Replica of `difficultyFor` in the engine — kept private to keep this
+ * module pure. Must stay in lock-step with `difficultyFor` in
+ * `lib/engine/index.ts`, including the delve `deep` band:
+ * depths 1–4 unchanged, pre-boss depth(s) ≥5 roll on the richer `deep`
+ * distribution. If this drifts, the server validator will reject
+ * legitimate deep-depth loot before `mintAsset`.
+ */
 function difficultyForDepth(depth: number, isBoss: boolean): Difficulty {
   if (isBoss) return "boss";
   if (depth <= 1) return "trivial";
-  return "standard";
+  if (depth <= 4) return "standard";
+  return "deep";
 }
 
 /**

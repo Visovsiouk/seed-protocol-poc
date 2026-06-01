@@ -6,10 +6,13 @@
  *   - `step(state, choice)` — resolve one player action against the
  *     current encounter. Returns the new state, narration to render, and
  *     engine-level events (LootDropped / RoomCleared / BossCleared).
- *   - `advance(state)` — advance to the next room (or the boss) after the
- *     current encounter is cleared and any loot has been minted.
- *   - `commitLootMint(state)` — clear `pendingLoot` after the UI receipts
- *     the on-chain mint.
+ *   - `advance(state)` — Descend: advance to the next room (or the boss)
+ *     after the current encounter is cleared. Cleared-room loot lives in
+ *     `state.escrow` (unminted) until the run banks.
+ *   - `extract(state)` — Extract: end the run a banked success; the UI
+ *     batch-mints `state.escrow`.
+ *   - `commitExtraction(state)` — clear `escrow` after the UI receipts the
+ *     on-chain batch mint.
  *
  * Determinism: every randomness source is a sub-rng derived from
  * `state.rngSeed` plus the current `(depth, stepInRoom)` salt. That makes
@@ -139,9 +142,15 @@ function playerStartHp(equipped: RunState["equipped"]): {
 }
 
 function difficultyFor(depth: number, isBoss: boolean): Difficulty {
+  // Delve depth→tier escalation. Depths 1–4 are
+  // unchanged from the pre-delve curve (depth 1 trivial, 2–4 standard) so
+  // the tuned early-game balance is untouched; the pre-boss depth (5, and
+  // any depth ≥5 below a higher bossDepth) is the new "deep" band, where
+  // the loot you're risking on the way down gets meaningfully richer.
   if (isBoss) return "boss";
   if (depth <= 1) return "trivial";
-  return "standard";
+  if (depth <= 4) return "standard";
+  return "deep";
 }
 
 /**
@@ -431,6 +440,10 @@ export function startRun(args: StartRunArgs): { state: RunState; lines: Narratio
     equipped: args.equipped,
     playerHp: start.hp,
     playerMaxHp: start.maxHp,
+    escrow: [],
+    // Depth 1 is always pre-boss for any sane bossDepth, but compute it
+    // honestly so a degenerate bossDepth ≤ 1 realm starts non-extractable.
+    extractable: 1 < (args.bossDepth ?? BOSS_DEPTH),
     bossCleared: false,
     defeated: false,
     defeatMode: args.defeatMode ?? "permadeath",
@@ -533,7 +546,12 @@ export function step(state: RunState, choice: ActionChoice): StepResult {
         // Persistent HP write-back: the HP the player ended the fight on
         // carries into the next room.
         playerHp: Math.max(0, Math.min(combat.playerHp, state.playerMaxHp)),
-        pendingLoot: loot,
+        // Delve escrow: every cleared room (boss included) banks its drop
+        // into the unminted escrow, tagged with the depth it was found at
+        // so the deferred batch mint validates each item against the right
+        // difficulty band. On a non-boss clear the player will later choose
+        // Descend or Extract; a boss clear is a forced extraction.
+        escrow: [...state.escrow, { loot, depth: state.depth, isBoss }],
         bossCleared: state.bossCleared || isBoss,
         firstWeaponDropped: nextFirstWeaponDropped,
         ...(isBoss
@@ -562,6 +580,9 @@ export function step(state: RunState, choice: ActionChoice): StepResult {
           rngSeed: reseeded,
           depth: 1,
           encounter: null,
+          // Seed-mercy preserves the escrow (`...state` carries it); only
+          // re-open extraction now that we're back at depth 1 pre-boss.
+          extractable: state.bossDepth > 1,
           // Persistent HP resets to current-equipment max on respawn —
           // the Seed grows the player back whole. Gear acquired during
           // the failed attempt is retained, so the new pool reflects it.
@@ -569,7 +590,6 @@ export function step(state: RunState, choice: ActionChoice): StepResult {
           playerMaxHp: respawnStart.maxHp,
           runAttempt: nextAttempt,
           firstWeaponDropped: false,
-          pendingLoot: undefined,
           // Ledger/suppression state is per-attempt: reset on respawn so
           // the player gets a fresh ledger room and the next boss reads
           // its full bakedEffects again.
@@ -657,11 +677,13 @@ export function step(state: RunState, choice: ActionChoice): StepResult {
           rngSeed: reseeded,
           depth: 1,
           encounter: null,
+          // Seed-mercy preserves the escrow (`...state` carries it); only
+          // re-open extraction now that we're back at depth 1 pre-boss.
+          extractable: state.bossDepth > 1,
           playerHp: respawnStart.hp,
           playerMaxHp: respawnStart.maxHp,
           runAttempt: nextAttempt,
           firstWeaponDropped: false,
-          pendingLoot: undefined,
           runSuppressedBossEffects: [],
           ledgerConsumed: false,
         };
@@ -776,9 +798,11 @@ export function step(state: RunState, choice: ActionChoice): StepResult {
 }
 
 /**
- * Advance to the next room (or the boss). The caller must ensure the
- * current encounter is cleared and any `pendingLoot` is either minted
- * (call `commitLootMint` first) or explicitly skipped.
+ * Advance to the next room (or the boss) — the **Descend** half of the
+ * delve decision. The caller must ensure the current
+ * encounter is cleared; loot found this room is already carried in
+ * `state.escrow` and banks only at `extract`/boss clear, so nothing needs
+ * committing here.
  */
 export function advance(
   state: RunState,
@@ -829,6 +853,9 @@ export function advance(
     ...state,
     depth: nextDepth,
     playerHp: healedHp,
+    // The boss room is non-extractable: once you descend into it the only
+    // exits are victory (auto-bank) or death (forfeit).
+    extractable: nextDepth < state.bossDepth,
   };
   const gen = generateEncounter(next, bossId);
   lines.push(...gen.lines);
@@ -877,10 +904,52 @@ export function equipItem(
   return next;
 }
 
-/** Clear `pendingLoot` after the on-chain mint settles. */
-export function commitLootMint(state: RunState): RunState {
-  const { pendingLoot: _drop, ...rest } = state;
-  const next: RunState = { ...rest, bossCleared: state.bossCleared };
+/**
+ * Extract from the delve. Flags the run a banked
+ * success and surfaces the player. The `escrow` is left intact for the UI
+ * to batch-mint; `commitExtraction` clears it once the on-chain mint
+ * settles. Callable only between rooms (no active encounter) and only when
+ * `extractable` — the boss room cannot be fled.
+ *
+ * Returns `{ state, lines, events }` mirroring `step`, so the play page can
+ * funnel the narration + an `Extracted` event through the same feed.
+ */
+export function extract(
+  state: RunState,
+): { state: RunState; lines: NarrationLine[]; events: EngineEvent[] } {
+  if (state.defeated || state.bossCleared || state.extracted) {
+    return {
+      state,
+      lines: [{ text: "The run is over.", emphasis: "info" }],
+      events: [],
+    };
+  }
+  if (state.encounter) {
+    throw new Error("extract: clear the current encounter before extracting");
+  }
+  if (!state.extractable) {
+    throw new Error("extract: the boss room cannot be fled");
+  }
+  const count = state.escrow.length;
+  const lines: NarrationLine[] = [
+    count > 0
+      ? {
+          text: `You surface with ${count} finding${count === 1 ? "" : "s"} in hand.`,
+          emphasis: "drama",
+        }
+      : { text: "You surface empty-handed.", emphasis: "info" },
+  ];
+  const next: RunState = { ...state, extracted: true, extractable: false };
+  const schemas = SCHEMA_STORE.get(state);
+  if (schemas) SCHEMA_STORE.set(next, schemas);
+  const bossId = BOSS_STORE.get(state);
+  if (bossId) BOSS_STORE.set(next, bossId);
+  return { state: next, lines, events: [{ type: "Extracted", count }] };
+}
+
+/** Clear the delve `escrow` after the on-chain batch mint settles. */
+export function commitExtraction(state: RunState): RunState {
+  const next: RunState = { ...state, escrow: [] };
   const schemas = SCHEMA_STORE.get(state);
   if (schemas) SCHEMA_STORE.set(next, schemas);
   const bossId = BOSS_STORE.get(state);
