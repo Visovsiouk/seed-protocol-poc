@@ -112,6 +112,8 @@ export type PlayerRealmMeta = {
   preset: Preset;
   bossId: string;
   name: string;
+  /** Creator-chosen accent hex, or null to inherit the genre default. */
+  accent: string | null;
   maxTier: number;
   createdAt: number;
 };

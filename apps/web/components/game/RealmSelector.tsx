@@ -47,24 +47,14 @@ import {
   STORY_HERO_OPEN,
   type RealmLockState,
 } from "@/lib/story/progression";
-import {
-  LedgerBody,
-  LedgerRule,
-  LedgerStamp,
-} from "@/components/ledger/Ledger";
+import { Chip, Body, Rule, Stamp } from "@/components/ui";
 import { ColdOpenBook, hasConsumedColdOpen } from "@/components/story/ColdOpenBook";
 
 function PresetBadge({ preset }: { preset: Preset }) {
   const label =
     preset === "fantasy" ? "Fantasy" : preset === "scifi" ? "Sci-Fi" : "Cyberpunk";
   return (
-    <span
-      className="inline-block text-[10px] uppercase tracking-widest px-2 py-0.5 rounded"
-      style={{
-        background: "rgba(255,255,255,0.06)",
-        border: "1px solid rgba(255,255,255,0.1)",
-      }}
-    >
+    <span className="inline-block text-[10px] uppercase tracking-widest px-2 py-0.5 rounded bg-[var(--surface-2)] border border-[var(--border-1)]">
       {label}
     </span>
   );
@@ -77,20 +67,13 @@ function StatusPill({
   label: string;
   tone: "ok" | "warn" | "muted";
 }) {
-  const colors =
+  const color =
     tone === "ok"
-      ? { bg: "rgba(80,200,120,0.12)", fg: "#7ed99a", border: "rgba(80,200,120,0.35)" }
+      ? "var(--color-ok)"
       : tone === "warn"
-        ? { bg: "rgba(255,196,0,0.10)", fg: "#f0c860", border: "rgba(255,196,0,0.35)" }
-        : { bg: "rgba(255,255,255,0.06)", fg: "rgba(255,255,255,0.55)", border: "rgba(255,255,255,0.1)" };
-  return (
-    <span
-      className="inline-block text-[10px] uppercase tracking-widest px-2 py-0.5 rounded"
-      style={{ background: colors.bg, color: colors.fg, border: `1px solid ${colors.border}` }}
-    >
-      {label}
-    </span>
-  );
+        ? "var(--color-warn)"
+        : "var(--color-preset-fg)";
+  return <Chip color={color} label={label} />;
 }
 
 function shortAddress(addr: `0x${string}`): string {
@@ -129,32 +112,29 @@ function StarterCard({
   const inner = (
     <>
       <header className="flex items-baseline justify-between gap-2">
-        <h3
-          className="font-mono text-lg font-medium"
-          style={{ letterSpacing: "-0.01em" }}
-        >
+        <h3 className="font-mono text-lg font-medium tracking-[-0.01em]">
           {card.name}
         </h3>
         <PresetBadge preset={card.preset} />
       </header>
       {tease ? (
         <div className="flex flex-col gap-2">
-          <LedgerStamp>Sealed · note left on the door</LedgerStamp>
-          <LedgerRule tone="muted" />
-          <LedgerBody size="sm">{tease}</LedgerBody>
+          <Stamp>Sealed · note left on the door</Stamp>
+          <Rule tone="muted" />
+          <Body size="sm">{tease}</Body>
         </div>
       ) : (
-        <LedgerBody size="sm">{card.tagline}</LedgerBody>
+        <Body size="sm">{card.tagline}</Body>
       )}
       <footer className="mt-auto flex items-center justify-between gap-2 pt-2">
         <StatusPill label={status.label} tone={status.tone} />
         <span
-          className="font-mono text-xs uppercase"
+          className="font-mono text-xs uppercase tracking-[0.22em]"
           style={{
-            letterSpacing: "0.22em",
             color: playable
               ? "var(--color-preset-accent)"
-              : "rgba(255,255,255,0.35)",
+              : "var(--color-preset-fg)",
+            opacity: playable ? 1 : 0.35,
           }}
         >
           {cta}
@@ -178,7 +158,7 @@ function StarterCard({
         className="flex flex-col gap-3 p-5 rounded-md opacity-50"
         style={{
           ...baseStyle,
-          border: "1px dashed rgba(255,255,255,0.18)",
+          border: "1px dashed var(--border-2)",
           filter: "grayscale(0.7)",
           cursor: "not-allowed",
         }}
@@ -221,16 +201,23 @@ function CreatorCard({
   // Preset-themed palette when registered, neutral dashed border for
   // trial-mode (legacy) realms so the visual hierarchy still tells
   // them apart at a glance.
-  const style = isRegistered
-    ? ({
+  // A custom accent is scoped to this card via an inline CSS-var override;
+  // because the link carries `data-preset`, the genre block resolves the
+  // rest of the palette and the override just recolours the accent.
+  const accentOverride = meta?.accent
+    ? ({ "--color-preset-accent": meta.accent } as React.CSSProperties)
+    : undefined;
+  const style: React.CSSProperties = isRegistered
+    ? {
         background: "var(--color-preset-bg)",
         color: "var(--color-preset-fg)",
         border: "1px solid var(--color-preset-accent)",
-      } as const)
-    : ({
-        background: "rgba(255,255,255,0.03)",
-        border: "1px dashed rgba(255,255,255,0.18)",
-      } as const);
+        ...accentOverride,
+      }
+    : {
+        background: "var(--surface-1)",
+        border: "1px dashed var(--border-2)",
+      };
 
   return (
     <Link
@@ -284,7 +271,8 @@ function CreatorCard({
           style={{
             color: isRegistered
               ? "var(--color-preset-accent)"
-              : "rgba(255,255,255,0.55)",
+              : "var(--color-preset-fg)",
+            opacity: isRegistered ? 1 : 0.55,
           }}
         >
           {isRegistered ? "Enter →" : "Trial →"}
@@ -368,7 +356,7 @@ export function RealmSelector({
           <p className="text-sm opacity-60">Loading realms…</p>
         )}
         {realms.isError && (
-          <p className="text-sm" style={{ color: "#f77" }}>
+          <p className="text-sm text-[var(--color-danger)]">
             Failed to load realms from the registry. Check the dev server logs.
           </p>
         )}
@@ -434,22 +422,19 @@ function PreArcLanding({ progress }: { progress: TutorialProgress }) {
       data-preset={nextPreset ?? "fantasy"}
     >
       <header className="flex flex-col gap-4 max-w-2xl">
-        <LedgerRule />
-        <LedgerStamp>Field record · the walk continues</LedgerStamp>
-        <h2
-          className="font-mono text-xl leading-snug font-medium"
-          style={{ letterSpacing: "-0.015em" }}
-        >
+        <Rule />
+        <Stamp>Field record · the walk continues</Stamp>
+        <h2 className="font-mono text-xl leading-snug font-medium tracking-[-0.015em]">
           {progress.starterClears === 0
             ? "You wake in mud."
             : "The ground is different. The mark on your hand is the same."}
         </h2>
-        <LedgerBody size="sm">
+        <Body size="sm">
           {progress.starterClears === 0
             ? "Walk forward. The ground here remembers you."
             : "Keep walking. There are more doors. The protocol is still counting."}
-        </LedgerBody>
-        <LedgerRule tone="muted" />
+        </Body>
+        <Rule tone="muted" />
       </header>
 
       {nextPreset ? (
@@ -464,14 +449,8 @@ function PreArcLanding({ progress }: { progress: TutorialProgress }) {
           }}
         >
           <div className="flex items-baseline justify-between gap-3">
-            <LedgerStamp>{stepLabel}</LedgerStamp>
-            <span
-              className="font-mono text-xs uppercase"
-              style={{
-                letterSpacing: "0.22em",
-                color: "var(--color-preset-accent)",
-              }}
-            >
+            <Stamp>{stepLabel}</Stamp>
+            <span className="font-mono text-xs uppercase tracking-[0.22em] text-[var(--color-preset-accent)]">
               Walk in →
             </span>
           </div>
@@ -486,19 +465,16 @@ function PreArcLanding({ progress }: { progress: TutorialProgress }) {
 function OpenPickerHero({ progress }: { progress: TutorialProgress }) {
   return (
     <header className="flex flex-col gap-4 max-w-3xl">
-      <LedgerRule />
+      <Rule />
       <div className="flex items-center justify-between gap-3">
-        <LedgerStamp>{STORY_HERO_OPEN.eyebrow}</LedgerStamp>
+        <Stamp>{STORY_HERO_OPEN.eyebrow}</Stamp>
         <ShardTrack shards={progress.distinctClears} />
       </div>
-      <h2
-        className="font-mono text-xl leading-snug font-medium"
-        style={{ letterSpacing: "-0.01em" }}
-      >
+      <h2 className="font-mono text-xl leading-snug font-medium tracking-[-0.01em]">
         {STORY_HERO_OPEN.title}
       </h2>
-      <LedgerBody size="sm">{STORY_HERO_OPEN.body}</LedgerBody>
-      <LedgerRule tone="muted" />
+      <Body size="sm">{STORY_HERO_OPEN.body}</Body>
+      <Rule tone="muted" />
     </header>
   );
 }
@@ -520,7 +496,7 @@ function ShardTrack({ shards }: { shards: number }) {
               transform: "rotate(45deg)",
               background: lit ? "var(--color-preset-accent)" : "transparent",
               border: `1px solid ${
-                lit ? "var(--color-preset-accent)" : "rgba(255,255,255,0.25)"
+                lit ? "var(--color-preset-accent)" : "var(--border-2)"
               }`,
               boxShadow: lit ? "0 0 8px var(--color-preset-accent)" : "none",
             }}

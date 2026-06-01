@@ -19,7 +19,6 @@ import { useMemo } from "react";
 import { useParams } from "next/navigation";
 import { useAccount } from "wagmi";
 import { useQuery } from "@tanstack/react-query";
-import { ConnectButton } from "@/components/wallet/ConnectButton";
 import { RealmActivityFeed } from "@/components/realm/RealmActivityFeed";
 import { MetricsRow } from "@/components/realm/MetricsRow";
 import { BossLeaderboard } from "@/components/realm/BossLeaderboard";
@@ -29,11 +28,8 @@ import { useRealms } from "@/lib/reads/hooks";
 import { listStarterRealms } from "@/lib/contracts/starter-realms";
 import { resolveRealmDetail, type RealmDetail } from "@/lib/contracts/realm-detail";
 import type { Preset } from "@/lib/engine/types";
-import {
-  LedgerBody,
-  LedgerRule,
-  LedgerStamp,
-} from "@/components/ledger/Ledger";
+import { AppShell, Panel, Button, Chip, Stamp, Rule } from "@/components/ui";
+import { useRealmTheme } from "@/lib/ui/useRealmTheme";
 
 type CreatorMeta = {
   address: `0x${string}`;
@@ -41,6 +37,7 @@ type CreatorMeta = {
   preset: Preset;
   bossId: string;
   name: string;
+  accent: string | null;
   maxTier: number;
   createdAt: number;
   lootSchemaId: string;
@@ -73,20 +70,13 @@ function StatusPill({
   label: string;
   tone: "ok" | "warn" | "muted";
 }) {
-  const colors =
+  const color =
     tone === "ok"
-      ? { bg: "rgba(80,200,120,0.12)", fg: "#7ed99a", border: "rgba(80,200,120,0.35)" }
+      ? "var(--color-ok)"
       : tone === "warn"
-        ? { bg: "rgba(255,196,0,0.10)", fg: "#f0c860", border: "rgba(255,196,0,0.35)" }
-        : { bg: "rgba(255,255,255,0.06)", fg: "rgba(255,255,255,0.55)", border: "rgba(255,255,255,0.1)" };
-  return (
-    <span
-      className="inline-block text-[10px] uppercase tracking-widest px-2 py-0.5 rounded"
-      style={{ background: colors.bg, color: colors.fg, border: `1px solid ${colors.border}` }}
-    >
-      {label}
-    </span>
-  );
+        ? "var(--color-warn)"
+        : "var(--color-preset-fg)";
+  return <Chip color={color} label={label} />;
 }
 
 function KindPill({ detail, creatorMeta }: { detail: RealmDetail; creatorMeta: CreatorMeta | null }) {
@@ -112,10 +102,7 @@ function KindPill({ detail, creatorMeta }: { detail: RealmDetail; creatorMeta: C
 function Field({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="flex flex-col gap-1 min-w-0">
-      <span
-        className="font-mono text-[10px] uppercase opacity-55"
-        style={{ letterSpacing: "0.28em" }}
-      >
+      <span className="font-mono text-[10px] uppercase tracking-[0.28em] opacity-55">
         {label}
       </span>
       <span className="text-sm min-w-0">{value}</span>
@@ -130,16 +117,21 @@ function SetupStep({ done, label }: { done: boolean; label: string }) {
         className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[9px]"
         style={
           done
-            ? { background: "rgba(80,200,120,0.18)", color: "#7ed99a", border: "1px solid rgba(80,200,120,0.4)" }
-            : { background: "rgba(255,255,255,0.04)", color: "rgba(255,255,255,0.3)", border: "1px dashed rgba(255,255,255,0.2)" }
+            ? {
+                background: "color-mix(in oklab, var(--color-ok) 18%, transparent)",
+                color: "var(--color-ok)",
+                border: "1px solid color-mix(in oklab, var(--color-ok) 40%, transparent)",
+              }
+            : {
+                background: "var(--surface-2)",
+                color: "var(--color-preset-fg)",
+                border: "1px dashed var(--border-2)",
+              }
         }
       >
         {done ? "✓" : "·"}
       </span>
-      <span
-        className="text-xs"
-        style={{ color: done ? "rgba(255,255,255,0.75)" : "rgba(255,255,255,0.38)" }}
-      >
+      <span className="text-xs" style={{ opacity: done ? 0.75 : 0.38 }}>
         {label}
       </span>
     </div>
@@ -148,24 +140,26 @@ function SetupStep({ done, label }: { done: boolean; label: string }) {
 
 function SetupPending() {
   return (
-    <aside
+    <Panel
+      as="aside"
+      tone="glass-1"
       aria-label="Setup incomplete"
-      className="flex flex-col gap-4 rounded-md p-4"
+      className="flex flex-col gap-4 p-4"
       style={{
-        background: "rgba(255,196,0,0.04)",
-        border: "1px solid rgba(255,196,0,0.18)",
+        background: "color-mix(in oklab, var(--color-warn) 4%, transparent)",
+        borderColor: "color-mix(in oklab, var(--color-warn) 18%, transparent)",
       }}
     >
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <span
             className="flex h-2 w-2 rounded-full"
-            style={{ background: "#f0c860", boxShadow: "0 0 6px rgba(240,200,96,0.5)" }}
+            style={{
+              background: "var(--color-warn)",
+              boxShadow: "0 0 6px color-mix(in oklab, var(--color-warn) 50%, transparent)",
+            }}
           />
-          <span
-            className="text-[10px] uppercase tracking-widest font-medium"
-            style={{ color: "#f0c860" }}
-          >
+          <span className="text-[10px] uppercase tracking-widest font-medium text-[var(--color-warn)]">
             Setup pending
           </span>
         </div>
@@ -177,13 +171,13 @@ function SetupPending() {
         <SetupStep done={false} label="Minter delegate authorised" />
       </div>
 
-      <p className="text-xs leading-relaxed" style={{ color: "rgba(255,255,255,0.45)" }}>
+      <p className="text-xs leading-relaxed opacity-45">
         This realm was deployed directly via the factory without going through
         the creation flow. Preset, boss, and the server-held minter delegate
         are not on record — loot and clear receipts cannot mint until setup
         is complete.
       </p>
-    </aside>
+    </Panel>
   );
 }
 
@@ -217,20 +211,28 @@ export default function RealmDashboardPage() {
   });
   const creatorMeta = metaQuery.data ?? null;
 
+  // Theme the dashboard to the realm it describes: genre palette for both
+  // starter and creator realms, plus a creator's custom accent override.
+  // Nullish preset (unknown realm) leaves the root default in place.
+  const themePreset: Preset | null =
+    detail?.kind === "starter"
+      ? detail.preset
+      : detail?.kind === "creator"
+        ? creatorMeta?.preset ?? null
+        : null;
+  useRealmTheme(themePreset, creatorMeta?.accent ?? null);
+
   if (!validAddress) {
     return (
-      <main className="min-h-screen px-6 py-10">
-        <div className="mx-auto max-w-2xl">
-          <Link href="/" className="text-sm opacity-70 hover:opacity-100">
-            ← Realms
-          </Link>
-          <h1 className="mt-4 text-2xl font-semibold">Invalid address</h1>
-          <p className="mt-2 text-sm opacity-80">
+      <AppShell title="Realm" back={{ href: "/", label: "← Realms" }}>
+        <Panel tone="glass-1" className="flex flex-col gap-2 p-5">
+          <h2 className="text-2xl font-semibold">Invalid address</h2>
+          <p className="text-sm opacity-80">
             <span className="font-mono">{raw}</span> isn&apos;t a valid
             ecosystem address.
           </p>
-        </div>
-      </main>
+        </Panel>
+      </AppShell>
     );
   }
 
@@ -257,45 +259,42 @@ export default function RealmDashboardPage() {
       ? detail.preset
       : creatorPreset;
 
-  return (
-    <main className="min-h-screen px-6 py-10">
-      <header className="mx-auto mb-8 flex max-w-3xl items-center justify-between">
-        <Link href="/" className="text-sm opacity-70 hover:opacity-100">
-          ← Realms
-        </Link>
-        <h1 className="text-2xl font-semibold tracking-tight">Realm</h1>
-        <ConnectButton />
-      </header>
+  const pageTitle =
+    detail?.kind === "starter"
+      ? detail.name
+      : detail?.kind === "creator" && creatorMeta
+        ? creatorName
+        : "Realm";
 
+  return (
+    <AppShell title={pageTitle} back={{ href: "/", label: "← Realms" }}>
       <section className="mx-auto flex max-w-3xl flex-col gap-6">
         {realms.isLoading && !detail && (
           <p className="text-sm opacity-60">Loading realm…</p>
         )}
 
         {realms.isError && (
-          <p className="text-sm" style={{ color: "#f77" }}>
+          <p className="text-sm text-[var(--color-danger)]">
             Failed to load the registry. Check the dev server logs.
           </p>
         )}
 
         {detail && (
-          <article
+          <Panel
+            as="article"
+            tone="glass-1"
             aria-label="Realm summary"
-            className="flex flex-col gap-5 rounded-md p-5"
-            style={{
-              background: "rgba(255,255,255,0.03)",
-              border: "1px solid rgba(255,255,255,0.10)",
-            }}
+            className="flex flex-col gap-5 p-5"
           >
             <header className="flex flex-col gap-3">
               <div className="flex flex-wrap items-center justify-between gap-3">
-                <LedgerStamp>
+                <Stamp>
                   {detail.kind === "starter"
                     ? "Door · field record"
                     : detail.kind === "creator"
                       ? "Door · raised by another hand"
                       : "Door · unrecognized"}
-                </LedgerStamp>
+                </Stamp>
                 <div className="flex items-center gap-2">
                   <KindPill detail={detail} creatorMeta={creatorMeta} />
                   {detail.kind !== "unknown" && (
@@ -307,11 +306,8 @@ export default function RealmDashboardPage() {
                   {isOwner && <StatusPill label="You own this" tone="ok" />}
                 </div>
               </div>
-              <LedgerRule />
-              <h2
-                className="font-mono text-2xl font-medium"
-                style={{ letterSpacing: "-0.015em" }}
-              >
+              <Rule />
+              <h2 className="font-mono text-2xl font-medium tracking-[-0.015em]">
                 {detail.kind === "starter"
                   ? detail.name
                   : detail.kind === "creator"
@@ -319,9 +315,14 @@ export default function RealmDashboardPage() {
                     : "Unknown realm"}
               </h2>
               {detail.kind === "starter" && (
-                <LedgerBody>{detail.tagline}</LedgerBody>
+                <p className="max-w-[62ch] font-mono italic leading-[1.75] opacity-85">
+                  <span aria-hidden className="mr-[0.45em] opacity-50">
+                    —
+                  </span>
+                  {detail.tagline}
+                </p>
               )}
-              <LedgerRule tone="muted" />
+              <Rule tone="muted" />
             </header>
 
             {detail.kind === "unknown" ? (
@@ -387,17 +388,10 @@ export default function RealmDashboardPage() {
             {/* Footer CTA — hidden for unregistered creator realms */}
             {playHref && (detail.kind !== "creator" || !!creatorMeta) && (
               <footer className="flex flex-wrap items-center gap-3 pt-1">
-                <Link
-                  href={playHref}
-                  className="rounded-md px-3 py-1.5 text-sm transition"
-                  style={{
-                    background: "var(--color-preset-bg, rgba(255,255,255,0.08))",
-                    color: "var(--color-preset-fg, #fff)",
-                    border:
-                      "1px solid var(--color-preset-accent, rgba(255,255,255,0.18))",
-                  }}
-                >
-                  Play →
+                <Link href={playHref}>
+                  <Button intent="primary" size="sm">
+                    Play →
+                  </Button>
                 </Link>
                 <Link
                   href="/bazaar"
@@ -407,7 +401,7 @@ export default function RealmDashboardPage() {
                 </Link>
               </footer>
             )}
-          </article>
+          </Panel>
         )}
 
         {detail && detail.kind !== "unknown" && isOwner && (
@@ -448,6 +442,6 @@ export default function RealmDashboardPage() {
           </>
         )}
       </section>
-    </main>
+    </AppShell>
   );
 }

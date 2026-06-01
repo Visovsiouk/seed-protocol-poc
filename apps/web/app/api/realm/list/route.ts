@@ -29,6 +29,7 @@ export async function GET() {
       preset: r.preset,
       bossId: r.bossId,
       name: r.name,
+      accent: r.accent,
       maxTier: r.maxTier,
       createdAt: r.createdAt,
     })),

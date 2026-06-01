@@ -53,6 +53,7 @@ export async function GET(
       preset: row.preset,
       bossId: row.bossId,
       name: row.name,
+      accent: row.accent,
       maxTier: row.maxTier,
       createdAt: row.createdAt,
       // String — JSON cannot represent bigint. Consumers must BigInt() this.
