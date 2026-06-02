@@ -36,7 +36,7 @@
         }
       }
     },
-    "seededAt": "2026-05-31T17:21:12.838Z"
+    "seededAt": "2026-06-02T17:59:59.738Z"
   },
   "$schema": "Per-chainId map of deployed adapter addresses keyed by (slot, sourcePreset, targetPreset), written by `pnpm seed:adapters`."
 }
