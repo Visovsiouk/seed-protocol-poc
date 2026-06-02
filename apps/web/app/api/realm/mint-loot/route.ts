@@ -249,11 +249,11 @@ export async function POST(req: Request) {
     }
   }
 
-  // The on-chain `extensionSchemaId` is per-realm and per-flavor;
-  // starter realms have their pair recorded in `.seeded-realms.json`,
-  // while player realms inherit the starter schema for their preset
-  // (the seeder is the only `registerSchema` caller; player realms
-  // call into the same factory + share the global SchemaRegistry).
+  // The on-chain `extensionSchemaId` is per-realm. Player realms
+  // registered after per-realm schemas landed carry their OWN loot
+  // schema id (verified at register time); older rows and starter realms
+  // fall back to the seeded pair recorded in `.seeded-realms.json`,
+  // keyed off the flavor preset.
   const effectivePreset: Preset = playerRow ? playerRow.preset : body.preset;
   const realm: `0x${string}` = playerRow
     ? playerRow.address
@@ -266,11 +266,12 @@ export async function POST(req: Request) {
     });
   }
 
-  // Schema ids are keyed off the *flavor* preset (player realms
-  // mirror the starter's flavor for schema purposes — they don't
-  // register new schemas).
+  const ownLootId = playerRow?.lootSchemaId
+    ? BigInt(playerRow.lootSchemaId)
+    : null;
   const seededIds = getSeededSchemaIds(effectivePreset);
-  if (seededIds.loot === 0n) {
+  const lootSchemaId = ownLootId ?? seededIds.loot;
+  if (lootSchemaId === 0n) {
     return reply(409, {
       ok: false,
       reason: "schema_not_seeded",
@@ -381,7 +382,7 @@ export async function POST(req: Request) {
         1n,
         {
           tier: onchainTier,
-          extensionSchemaId: seededIds.loot,
+          extensionSchemaId: lootSchemaId,
           metadataURI,
         },
       ],

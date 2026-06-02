@@ -60,7 +60,17 @@ export type PlayerRealmRow = {
   preset: Preset;
   bossId: string;
   name: string;
+  /** Custom accent hex (`#rrggbb`), or null to inherit the genre default. */
+  accent: string | null;
   signerIndex: number;
+  /**
+   * The realm's own on-chain schema IDs (decimal strings, since `uint256`
+   * overflows JS `number`), registered during `/create`. `null` for realms
+   * registered before per-realm schemas existed — those fall back to the
+   * starter pair for their preset (`getSeededSchemaIds`).
+   */
+  clearReceiptSchemaId: string | null;
+  lootSchemaId: string | null;
   maxTier: Tier;
   createdAt: number;
 };
@@ -71,7 +81,10 @@ type Row = {
   preset: string;
   boss_id: string;
   name: string;
+  accent: string | null;
   signer_index: number;
+  clear_receipt_schema_id: string | null;
+  loot_schema_id: string | null;
   max_tier: number;
   created_at: number;
 };
@@ -100,13 +113,30 @@ function open(): DatabaseType {
       preset       TEXT NOT NULL CHECK (preset IN ('fantasy','scifi','cyberpunk')),
       boss_id      TEXT NOT NULL,
       name         TEXT NOT NULL,
+      accent       TEXT,
       signer_index INTEGER NOT NULL UNIQUE,
+      clear_receipt_schema_id TEXT,
+      loot_schema_id          TEXT,
       max_tier     INTEGER NOT NULL DEFAULT 2 CHECK (max_tier BETWEEN 1 AND 5),
       created_at   INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_player_realms_owner ON player_realms(owner);
     CREATE INDEX IF NOT EXISTS idx_player_realms_preset ON player_realms(preset);
   `);
+  // Idempotent migrations for DB files created before a column existed.
+  // SQLite has no "ADD COLUMN IF NOT EXISTS"; a duplicate-column error just
+  // means it's already there, so swallow only that case.
+  for (const col of [
+    "accent TEXT",
+    "clear_receipt_schema_id TEXT",
+    "loot_schema_id TEXT",
+  ]) {
+    try {
+      db.exec(`ALTER TABLE player_realms ADD COLUMN ${col}`);
+    } catch (err) {
+      if (!String(err).includes("duplicate column name")) throw err;
+    }
+  }
   cached = db;
   return db;
 }
@@ -118,7 +148,10 @@ function rowToRealm(r: Row, maxTier: Tier): PlayerRealmRow {
     preset: r.preset as Preset,
     bossId: r.boss_id,
     name: r.name,
+    accent: r.accent ?? null,
     signerIndex: r.signer_index,
+    clearReceiptSchemaId: r.clear_receipt_schema_id ?? null,
+    lootSchemaId: r.loot_schema_id ?? null,
     maxTier,
     createdAt: r.created_at,
   };
@@ -178,7 +211,13 @@ export function insertPlayerRealm(input: {
   preset: Preset;
   bossId: string;
   name: string;
+  /** Custom accent hex, or null/undefined to inherit the genre default. */
+  accent?: string | null;
   signerIndex: number;
+  /** The realm's own schema IDs (decimal strings), or null/undefined to
+   * fall back to the starter pair for the preset. */
+  clearReceiptSchemaId?: string | null;
+  lootSchemaId?: string | null;
 }): PlayerRealmRow {
   const db = open();
   const createdAt = Math.floor(Date.now() / 1000);
@@ -191,15 +230,19 @@ export function insertPlayerRealm(input: {
     const maxTier = playerRealmMaxTier(postInsertCount);
     db.prepare(`
       INSERT INTO player_realms (
-        address, owner, preset, boss_id, name, signer_index, max_tier, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        address, owner, preset, boss_id, name, accent, signer_index,
+        clear_receipt_schema_id, loot_schema_id, max_tier, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       input.address.toLowerCase(),
       input.owner.toLowerCase(),
       input.preset,
       input.bossId,
       input.name,
+      input.accent ?? null,
       input.signerIndex,
+      input.clearReceiptSchemaId ?? null,
+      input.lootSchemaId ?? null,
       maxTier,
       createdAt,
     );
@@ -212,7 +255,10 @@ export function insertPlayerRealm(input: {
     preset: input.preset,
     bossId: input.bossId,
     name: input.name,
+    accent: input.accent ?? null,
     signerIndex: input.signerIndex,
+    clearReceiptSchemaId: input.clearReceiptSchemaId ?? null,
+    lootSchemaId: input.lootSchemaId ?? null,
     maxTier,
     createdAt,
   };

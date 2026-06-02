@@ -3,17 +3,19 @@ import "server-only";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { ecosystemTemplateAbi } from "@abis/generated";
+import { ecosystemTemplateAbi, schemaRegistryAbi } from "@abis/generated";
 import {
   derivePlayerRealmSignerAddress,
   getPublicClient,
 } from "@/lib/server/realm-signer";
+import { getAddress } from "@/lib/contracts/addresses";
 import {
   getNextSignerIndex,
   getPlayerRealm,
   insertPlayerRealm,
 } from "@/lib/server/realm-db";
 import { getFlavorBank } from "@/lib/flavor";
+import { isAllowedAccent } from "@/lib/ui/accents";
 import type { Preset, Tier } from "@/lib/engine/types";
 
 /**
@@ -58,6 +60,21 @@ const bodySchema = z.object({
   preset: presetSchema,
   bossId: z.string().min(1).max(64),
   name: z.string().min(1).max(64),
+  // Optional custom accent. Constrained to the curated allow-list so a
+  // crafted POST can't inject arbitrary CSS into the accent cascade.
+  // Absent/null → inherit the genre default.
+  accent: z
+    .string()
+    .refine(isAllowedAccent, "accent must be one of the curated swatches")
+    .nullish(),
+  // The realm's own schema ids, registered client-side against the clone
+  // before this call (decimal `uint256` strings — they overflow JS
+  // `number`). Optional: realms created before per-realm schemas existed
+  // omit them and fall back to the starter pair for their preset. When
+  // present, each is verified on-chain below to actually belong to this
+  // realm before we persist it.
+  clearReceiptSchemaId: z.string().regex(/^\d+$/, "expected decimal uint256").nullish(),
+  lootSchemaId: z.string().regex(/^\d+$/, "expected decimal uint256").nullish(),
 });
 
 type Body = z.infer<typeof bodySchema>;
@@ -70,8 +87,11 @@ type ReplyOk = {
     preset: Preset;
     bossId: string;
     name: string;
+    accent: string | null;
     signerIndex: number;
     signerAddress: `0x${string}`;
+    clearReceiptSchemaId: string | null;
+    lootSchemaId: string | null;
     maxTier: Tier;
   };
 };
@@ -84,6 +104,7 @@ type ReplyErr = {
     | "boss_unknown"
     | "owner_mismatch"
     | "not_authorized"
+    | "schema_invalid"
     | "race"
     | "internal";
   message: string;
@@ -200,6 +221,62 @@ export async function POST(req: Request) {
     });
   }
 
+  // Verify the supplied schema ids actually belong to THIS realm before
+  // we persist them — otherwise a crafted POST could point a player
+  // realm's receipts at someone else's schema (or a non-existent id that
+  // would make every future mint revert). `getSchema` returns the
+  // registering ecosystem; we require `exists && createdByEcosystem ==
+  // realm`. Absent ids are allowed (back-compat fallback to starter pair).
+  if (body.clearReceiptSchemaId || body.lootSchemaId) {
+    const registry = getAddress("schemaRegistry");
+    const verifyOne = async (
+      idStr: string,
+      label: string,
+    ): Promise<string | null> => {
+      const schema = (await publicClient.readContract({
+        address: registry,
+        abi: schemaRegistryAbi,
+        functionName: "getSchema",
+        args: [BigInt(idStr)],
+      })) as readonly [
+        string,
+        string,
+        bigint,
+        `0x${string}`,
+        `0x${string}`,
+        bigint,
+        boolean,
+      ];
+      const createdByEcosystem = schema[3];
+      const exists = schema[6];
+      if (!exists) {
+        throw new Error(`${label} schema ${idStr} does not exist`);
+      }
+      if (createdByEcosystem.toLowerCase() !== realmAddress) {
+        throw new Error(
+          `${label} schema ${idStr} was registered by ${createdByEcosystem}, not realm ${realmAddress}`,
+        );
+      }
+      return idStr;
+    };
+    try {
+      await Promise.all([
+        body.clearReceiptSchemaId
+          ? verifyOne(body.clearReceiptSchemaId, "clearReceipt")
+          : Promise.resolve(null),
+        body.lootSchemaId
+          ? verifyOne(body.lootSchemaId, "loot")
+          : Promise.resolve(null),
+      ]);
+    } catch (e) {
+      return reply(422, {
+        ok: false,
+        reason: "schema_invalid",
+        message: e instanceof Error ? e.message : String(e),
+      });
+    }
+  }
+
   let row;
   try {
     row = insertPlayerRealm({
@@ -208,7 +285,10 @@ export async function POST(req: Request) {
       preset: body.preset,
       bossId: body.bossId,
       name: body.name,
+      accent: body.accent ?? null,
       signerIndex,
+      clearReceiptSchemaId: body.clearReceiptSchemaId ?? null,
+      lootSchemaId: body.lootSchemaId ?? null,
     });
   } catch (e) {
     // SQLite UNIQUE violation surfaces here as a generic Error with
@@ -237,8 +317,11 @@ export async function POST(req: Request) {
       preset: row.preset,
       bossId: row.bossId,
       name: row.name,
+      accent: row.accent,
       signerIndex: row.signerIndex,
       signerAddress,
+      clearReceiptSchemaId: row.clearReceiptSchemaId,
+      lootSchemaId: row.lootSchemaId,
       maxTier: row.maxTier,
     },
   });

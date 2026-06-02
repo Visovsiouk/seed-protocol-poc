@@ -3,7 +3,7 @@ import "server-only";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { ecosystemTemplateAbi } from "@abis/generated";
+import { ecosystemTemplateAbi, universalAssetAbi } from "@abis/generated";
 import {
   getOwnerSigner,
   getPlayerRealmSigner,
@@ -13,6 +13,7 @@ import {
   getSeededRealm,
   getSeededSchemaIds,
 } from "@/lib/contracts/seeded-realms";
+import { getAddress } from "@/lib/contracts/addresses";
 import { getPlayerRealm } from "@/lib/server/realm-db";
 import {
   buildClearReceiptMetadataURI,
@@ -142,10 +143,16 @@ export async function POST(req: Request) {
     });
   }
 
-  // Schema ids are keyed off the flavor preset (player realms reuse
-  // the starter pair for their preset — they don't register schemas).
+  // Player realms registered after per-realm schemas landed carry their
+  // OWN clearReceipt schema id (verified at register time to belong to
+  // the realm). Older rows — and starter realms — fall back to the
+  // seeded pair keyed off the flavor preset.
+  const ownClearReceiptId = playerRow?.clearReceiptSchemaId
+    ? BigInt(playerRow.clearReceiptSchemaId)
+    : null;
   const seededIds = getSeededSchemaIds(effectivePreset);
-  if (seededIds.clearReceipt === 0n) {
+  const clearReceiptSchemaId = ownClearReceiptId ?? seededIds.clearReceipt;
+  if (clearReceiptSchemaId === 0n) {
     return reply(409, {
       ok: false,
       reason: "schema_not_seeded",
@@ -196,8 +203,8 @@ export async function POST(req: Request) {
   // broken mint flow.
   try {
     const existingBalance = await publicClient.readContract({
-      address: realm,
-      abi: ecosystemTemplateAbi,
+      address: getAddress("universalAsset"),
+      abi: universalAssetAbi,
       functionName: "balanceOf",
       args: [player, tokenId],
     });
@@ -224,7 +231,7 @@ export async function POST(req: Request) {
         1n,
         {
           tier: onchainTier,
-          extensionSchemaId: seededIds.clearReceipt,
+          extensionSchemaId: clearReceiptSchemaId,
           metadataURI,
         },
       ],

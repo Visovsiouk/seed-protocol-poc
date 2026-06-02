@@ -3,32 +3,37 @@
 /**
  * `/create` — realm creation flow.
  *
- * Three-tx ceremony, all surfaced inline:
+ * Four-tx ceremony, all surfaced inline:
  *
  *   1. `EcosystemFactory.createEcosystem()` — player-signed. The
  *      caller becomes `owner()` of a fresh `EcosystemTemplate` clone
  *      (royalty + dashboard rights pinned to this address; see
  *      `UniversalAsset.mintedBy`).
  *
- *   2. `EcosystemTemplate.setMinter(derivedAddr, true)` — player-signed
- *      again, against the just-deployed clone. Authorizes a server-held
- *      HD-derived delegate to call `mintAsset(onlyOwnerOrMinter)` on
- *      this realm so the play loop can mint loot / clearReceipts while
- *      the owner is offline. The delegate has no other powers — the
- *      owner keeps royalty and dashboard control.
+ *   2. `EcosystemTemplate.registerSchema()` ×2 — player-signed, against
+ *      the new clone. Registers the realm's own `clearReceipt` + `loot`
+ *      schemas so the assets it mints carry true per-realm provenance
+ *      (`createdByEcosystem == thisRealm`) instead of borrowing the
+ *      starter's pair. The returned schema ids are persisted in step 4.
  *
- *   3. `POST /api/realm/register` — no signature, just metadata. The
- *      server verifies `owner() == player` AND `minters[derivedAddr]`
- *      on-chain before inserting the row, then returns the canonical
- *      `signerIndex` (the realm's permanent HD slot) and the row's
- *      `maxTier` cap.
+ *   3. `EcosystemTemplate.setMinter(derivedAddr, true)` — player-signed
+ *      again. Authorizes a server-held HD-derived delegate to call
+ *      `mintAsset(onlyOwnerOrMinter)` on this realm so the play loop can
+ *      mint loot / clearReceipts while the owner is offline. The delegate
+ *      has no other powers — the owner keeps royalty + dashboard control.
  *
- * Race handling: between step (1) and step (2) another `/create` may
+ *   4. `POST /api/realm/register` — no signature, just metadata + the
+ *      schema ids from step 2. The server verifies `owner() == player`,
+ *      `minters[derivedAddr]`, AND that each schema id exists and was
+ *      `createdByEcosystem == realm` before inserting the row, then
+ *      returns the canonical `signerIndex` and the row's `maxTier` cap.
+ *
+ * Race handling: between step (1) and step (3) another `/create` may
  * grab the same `signerIndex` from `getNextSignerIndex`. The server's
  * register-route catches that and replies 409 with a `retryWith`
- * payload; we replay step (2) against the corrected index.
+ * payload; we replay step (3) against the corrected index.
  *
- * On step (3) success we route to `/play/realm/[address]`, which fetches
+ * On step (4) success we route to `/play/realm/[address]`, which fetches
  * the metadata from `/api/realm/[address]/meta` and runs the engine in
  * the preset/boss the player picked.
  */
@@ -37,18 +42,23 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useAccount, usePublicClient, useWriteContract } from "wagmi";
 import { ecosystemTemplateAbi } from "@abis/generated";
-import { ConnectButton } from "@/components/wallet/ConnectButton";
 import { useCreateEcosystem } from "@/lib/contracts/factory";
+import { useRegisterRealmSchemas } from "@/lib/contracts/register-schemas";
 import { useTutorialProgress } from "@/lib/reads/hooks";
 import { ProtocolSurfaceGate } from "@/components/guards/ProtocolSurfaceGate";
+import { RealmSpawnFeed, type SpawnPhase } from "@/components/create/RealmSpawnFeed";
+import { AppShell, Panel, Button, Stamp, Rule, Chip } from "@/components/ui";
+import { effectMeta } from "@/lib/ui/loot-visuals";
+import { REALM_ACCENTS } from "@/lib/ui/accents";
 import { getFlavorBank } from "@/lib/flavor";
-import type { Preset } from "@/lib/engine/types";
+import type { BossDef, Preset } from "@/lib/engine/types";
 
 const PRESETS: readonly Preset[] = ["fantasy", "scifi", "cyberpunk"] as const;
 
 type Step =
   | { kind: "form" }
   | { kind: "signing_create" }
+  | { kind: "signing_schema"; ecosystem: `0x${string}` }
   | { kind: "signing_minter"; ecosystem: `0x${string}`; signerAddress: `0x${string}`; signerIndex: number }
   | { kind: "registering"; ecosystem: `0x${string}`; signerAddress: `0x${string}`; signerIndex: number }
   | { kind: "done"; ecosystem: `0x${string}`; txHash: `0x${string}`; signerAddress: `0x${string}`; signerIndex: number; maxTier: number }
@@ -92,6 +102,7 @@ export default function CreatePage() {
   const { address } = useAccount();
   const publicClient = usePublicClient();
   const { createEcosystem } = useCreateEcosystem();
+  const { registerRealmSchemas } = useRegisterRealmSchemas();
   const { writeContractAsync } = useWriteContract();
 
   const tutorialQuery = useTutorialProgress(address);
@@ -102,6 +113,8 @@ export default function CreatePage() {
   const [preset, setPreset] = useState<Preset>("fantasy");
   const [bossId, setBossId] = useState<string>("forest_hag");
   const [realmName, setRealmName] = useState<string>("");
+  // null → inherit the genre default accent; otherwise a curated hex.
+  const [accent, setAccent] = useState<string | null>(null);
   const [step, setStep] = useState<Step>({ kind: "form" });
 
   // Boss options pull from the chosen preset's flavor bank — same
@@ -110,7 +123,7 @@ export default function CreatePage() {
   // the bossId back to the first key in the new bank.
   const bossOptions = useMemo(() => {
     const bank = getFlavorBank(preset);
-    return Object.entries(bank.bosses).map(([id, b]) => ({ id, name: b.name }));
+    return Object.entries(bank.bosses).map(([id, def]) => ({ id, def }));
   }, [preset]);
 
   const onChangePreset = (p: Preset) => {
@@ -121,6 +134,7 @@ export default function CreatePage() {
 
   const busy =
     step.kind === "signing_create" ||
+    step.kind === "signing_schema" ||
     step.kind === "signing_minter" ||
     step.kind === "registering";
 
@@ -135,6 +149,7 @@ export default function CreatePage() {
   const authorizeAndRegister = async (
     ecosystem: `0x${string}`,
     initial: { signerIndex: number; signerAddress: `0x${string}` },
+    schemaIds: { clearReceipt: string; loot: string },
   ) => {
     let signerIndex = initial.signerIndex;
     let signerAddress = initial.signerAddress;
@@ -162,6 +177,9 @@ export default function CreatePage() {
           preset,
           bossId,
           name: realmName.trim(),
+          accent,
+          clearReceiptSchemaId: schemaIds.clearReceipt,
+          lootSchemaId: schemaIds.loot,
         }),
       });
       const body = (await res.json()) as RegisterReply;
@@ -192,16 +210,29 @@ export default function CreatePage() {
       setStep({ kind: "signing_create" });
       const create = await createEcosystem();
 
-      // Step 1.5: pull the proposed signer slot. Advisory — claimed
+      // Step 2: register the realm's own clearReceipt + loot schemas on
+      // its fresh clone. Owner-signed; the returned ids are bound to this
+      // ecosystem so its future mints carry true per-realm provenance.
+      setStep({ kind: "signing_schema", ecosystem: create.ecosystem });
+      const schemaIds = await registerRealmSchemas(create.ecosystem);
+
+      // Step 2.5: pull the proposed signer slot. Advisory — claimed
       // by the register route when the row is inserted.
       const next = await fetchNextSigner();
       if (!next.ok) throw new Error(`next-signer[${next.reason}]: ${next.message}`);
 
-      // Steps 2 + 3 with retry.
-      const result = await authorizeAndRegister(create.ecosystem, {
-        signerIndex: next.signerIndex,
-        signerAddress: next.signerAddress,
-      });
+      // Steps 3 + 4 with retry.
+      const result = await authorizeAndRegister(
+        create.ecosystem,
+        {
+          signerIndex: next.signerIndex,
+          signerAddress: next.signerAddress,
+        },
+        {
+          clearReceipt: schemaIds.clearReceipt.toString(),
+          loot: schemaIds.loot.toString(),
+        },
+      );
 
       setStep({
         kind: "done",
@@ -219,314 +250,391 @@ export default function CreatePage() {
 
   const onReset = () => setStep({ kind: "form" });
 
+  // Map the on-chain step machine onto the spawn-feed's beat phases.
+  const spawnPhase: SpawnPhase | null =
+    step.kind === "signing_create"
+      ? "create"
+      : step.kind === "signing_schema"
+        ? "schema"
+        : step.kind === "signing_minter"
+          ? "minter"
+          : step.kind === "registering"
+            ? "register"
+            : null;
+  const spawning =
+    step.kind === "signing_create" ||
+    step.kind === "signing_schema" ||
+    step.kind === "signing_minter" ||
+    step.kind === "registering";
+  const spawnEcosystem =
+    "ecosystem" in step ? (step.ecosystem as `0x${string}`) : undefined;
+  const spawnSignerIndex =
+    "signerIndex" in step ? (step.signerIndex as number) : undefined;
+  const spawnSignerAddress =
+    "signerAddress" in step
+      ? (step.signerAddress as `0x${string}`)
+      : undefined;
+
   return (
     <ProtocolSurfaceGate>
-    <main className="min-h-screen px-6 py-10">
-      <header className="mx-auto mb-8 flex max-w-3xl items-center justify-between">
-        <Link href="/" className="text-sm opacity-70 hover:opacity-100">
-          ← Realms
-        </Link>
-        <h1 className="text-2xl font-semibold tracking-tight">Create a realm</h1>
-        <ConnectButton />
-      </header>
-
-      <section className="mx-auto flex max-w-3xl flex-col gap-6">
-        <aside
-          aria-label="Flow explainer"
-          className="rounded-md p-4 text-sm leading-relaxed"
-          style={{
-            background: "rgba(255,255,255,0.04)",
-            border: "1px solid rgba(255,255,255,0.10)",
-          }}
+      <AppShell title="Create a realm" back={{ href: "/", label: "← Realms" }}>
+        <section
+          className="mx-auto flex max-w-3xl flex-col gap-6"
+          data-preset={preset}
+          style={
+            accent
+              ? ({ "--color-preset-accent": accent } as React.CSSProperties)
+              : undefined
+          }
         >
-          <p>
-            Three signatures: deploy the ecosystem clone, authorize a
-            server-held mint delegate, register the realm&apos;s
-            cosmetic metadata. You stay the on-chain owner — royalties
-            on every asset sold from your realm flow to your wallet.
-          </p>
-        </aside>
-
-        {!address && (
-          <aside
-            className="rounded-md p-4 text-sm"
-            style={{
-              background: "rgba(255,196,0,0.10)",
-              border: "1px solid rgba(255,196,0,0.35)",
-            }}
-          >
-            Connect a wallet to deploy a realm. The connected account
-            pays gas and becomes the realm owner.
-          </aside>
-        )}
-
-        {seedGate && (
-          <aside
-            aria-label="Seed required"
-            className="rounded-md p-4 text-sm leading-relaxed"
-            style={{
-              background: "rgba(255,196,0,0.10)",
-              border: "1px solid rgba(255,196,0,0.35)",
-            }}
-          >
-            <p>
-              <strong>Seed required.</strong> Realm authorship is
-              reserved for holders of the Genesis Seed SBT — clear all
-              three starter realms first.
+          <Panel as="aside" tone="glass-1" aria-label="Flow explainer" className="p-4">
+            <Stamp tone="accent">The founding rite</Stamp>
+            <p className="mt-2 text-sm leading-relaxed opacity-80">
+              Four signatures: deploy the ecosystem clone, register your
+              realm&apos;s own asset schemas, authorize a server-held mint
+              delegate, then register the realm&apos;s cosmetic charter. You
+              stay the on-chain owner — royalties on every asset sold from
+              your realm flow to your wallet, forever.
             </p>
-            <div className="mt-3 flex gap-3">
-              <Link
-                href="/"
-                className="rounded-md px-3 py-1.5 text-sm"
-                style={{
-                  background: "rgba(255,255,255,0.06)",
-                  border: "1px solid rgba(255,255,255,0.15)",
-                }}
-              >
-                Back to realms →
-              </Link>
-            </div>
-          </aside>
-        )}
+          </Panel>
 
-        {step.kind === "form" && (
-          <>
-            <fieldset className="flex flex-col gap-3">
-              <legend className="text-xs uppercase tracking-widest opacity-70">
-                Flavor preset
-              </legend>
-              <div className="grid grid-cols-3 gap-2">
-                {PRESETS.map((p) => (
+          {!address && (
+            <Panel
+              as="aside"
+              tone="glass-2"
+              className="p-4 text-sm"
+              style={{
+                background:
+                  "color-mix(in oklab, var(--color-warn) 9%, transparent)",
+                borderColor:
+                  "color-mix(in oklab, var(--color-warn) 35%, transparent)",
+              }}
+            >
+              Connect a wallet to deploy a realm. The connected account pays
+              gas and becomes the realm owner.
+            </Panel>
+          )}
+
+          {seedGate && (
+            <Panel
+              as="aside"
+              tone="glass-2"
+              aria-label="Seed required"
+              className="flex flex-col items-center gap-3 p-6 text-center"
+            >
+              <Stamp tone="muted">Sealed · Seed required</Stamp>
+              <h2 className="font-[family-name:var(--font-display)] text-lg font-semibold">
+                Authorship is earned
+              </h2>
+              <p className="max-w-md text-sm leading-relaxed opacity-75">
+                Realm authorship is reserved for holders of the Genesis Seed
+                SBT. Clear all three starter realms to earn the right to found
+                your own.
+              </p>
+              <Rule tone="muted" />
+              <Link href="/">
+                <Button intent="ghost" size="sm">
+                  Back to realms →
+                </Button>
+              </Link>
+            </Panel>
+          )}
+
+          {step.kind === "form" && (
+            <>
+              <fieldset className="flex flex-col gap-3">
+                <legend className="mb-1">
+                  <Stamp tone="accent">1 · Choose a genre</Stamp>
+                </legend>
+                <div className="grid grid-cols-3 gap-2">
+                  {PRESETS.map((p) => {
+                    const active = preset === p;
+                    return (
+                      <button
+                        key={p}
+                        type="button"
+                        data-preset={p}
+                        onClick={() => onChangePreset(p)}
+                        disabled={!address || seedGate}
+                        aria-pressed={active}
+                        className="rounded-lg px-3 py-3 text-sm font-medium transition disabled:opacity-50 bg-[var(--surface-1)]"
+                        style={{
+                          borderWidth: 1,
+                          borderStyle: "solid",
+                          borderColor: active
+                            ? "var(--color-preset-accent)"
+                            : "var(--border-1)",
+                          background: active
+                            ? "color-mix(in oklab, var(--color-preset-accent) 12%, var(--surface-1))"
+                            : undefined,
+                          boxShadow: active
+                            ? "0 0 20px -8px var(--glow)"
+                            : undefined,
+                        }}
+                      >
+                        {getFlavorBank(p).presetDisplayName}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="text-[11px] opacity-60">
+                  Drives narration, monster pool, and loot vocabulary. The
+                  schema pair the realm uses on-chain comes from the
+                  preset&apos;s starter realm.
+                </p>
+              </fieldset>
+
+              <fieldset className="flex flex-col gap-3">
+                <legend className="mb-1">
+                  <Stamp tone="accent">2 · Set the final boss</Stamp>
+                </legend>
+                <div className="grid gap-2" role="radiogroup" aria-label="Final boss">
+                  {bossOptions.map(({ id, def }) => (
+                    <BossOption
+                      key={id}
+                      def={def}
+                      selected={bossId === id}
+                      disabled={!address || seedGate}
+                      onSelect={() => setBossId(id)}
+                    />
+                  ))}
+                </div>
+                <p className="text-[11px] opacity-60">
+                  Shown at BOSS_DEPTH with two baked-in effects. Stats are
+                  tuned for T2 gear — a cleared boss mints a clearReceipt on
+                  your realm.
+                </p>
+              </fieldset>
+
+              <fieldset className="flex flex-col gap-2">
+                <legend className="mb-1">
+                  <Stamp tone="accent">3 · Name your realm</Stamp>
+                </legend>
+                <input
+                  id="realm-name"
+                  value={realmName}
+                  onChange={(e) => setRealmName(e.target.value)}
+                  maxLength={64}
+                  placeholder="e.g. The Hollow Sanctum"
+                  disabled={!address || seedGate}
+                  className="rounded-md px-3 py-2 text-sm disabled:opacity-50 bg-[var(--surface-2)] border border-[var(--border-1)] text-[var(--color-preset-fg)]"
+                />
+                <p className="text-[11px] opacity-60">
+                  Shown in the realm selector and on the play page. Up to 64
+                  characters.
+                </p>
+              </fieldset>
+
+              <fieldset className="flex flex-col gap-3">
+                <legend className="mb-1">
+                  <Stamp tone="accent">4 · Accent · optional</Stamp>
+                </legend>
+                <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Realm accent">
                   <button
-                    key={p}
                     type="button"
-                    onClick={() => onChangePreset(p)}
+                    onClick={() => setAccent(null)}
                     disabled={!address || seedGate}
-                    className="rounded-md px-3 py-2 text-sm transition disabled:opacity-50"
+                    aria-pressed={accent === null}
+                    aria-label="Genre default accent"
+                    title="Genre default"
+                    className="grid h-9 w-9 place-items-center rounded-full text-[10px] uppercase transition disabled:opacity-50 bg-[var(--surface-2)]"
                     style={{
-                      background:
-                        preset === p
-                          ? "rgba(255,255,255,0.10)"
-                          : "rgba(255,255,255,0.04)",
-                      border:
-                        preset === p
-                          ? "1px solid rgba(255,255,255,0.30)"
-                          : "1px solid rgba(255,255,255,0.10)",
+                      borderWidth: 1,
+                      borderStyle: "solid",
+                      borderColor:
+                        accent === null
+                          ? "var(--color-preset-fg)"
+                          : "var(--border-1)",
+                      outline:
+                        accent === null
+                          ? "2px solid var(--color-preset-fg)"
+                          : "none",
+                      outlineOffset: 2,
                     }}
                   >
-                    {getFlavorBank(p).presetDisplayName}
+                    A
                   </button>
-                ))}
+                  {REALM_ACCENTS.map((sw) => {
+                    const active = accent === sw.hex;
+                    return (
+                      <button
+                        key={sw.hex}
+                        type="button"
+                        onClick={() => setAccent(sw.hex)}
+                        disabled={!address || seedGate}
+                        aria-pressed={active}
+                        aria-label={`${sw.label} accent`}
+                        title={sw.label}
+                        className="h-9 w-9 rounded-full transition disabled:opacity-50"
+                        style={{
+                          background: sw.hex,
+                          borderWidth: 1,
+                          borderStyle: "solid",
+                          borderColor: active
+                            ? "var(--color-preset-fg)"
+                            : "transparent",
+                          outline: active
+                            ? "2px solid var(--color-preset-fg)"
+                            : "none",
+                          outlineOffset: 2,
+                          boxShadow: active ? `0 0 16px -4px ${sw.hex}` : undefined,
+                        }}
+                      />
+                    );
+                  })}
+                </div>
+                <p className="text-[11px] opacity-60">
+                  Recolours your realm&apos;s glow, borders, and buttons.
+                  Leave on <strong>A</strong> to inherit the genre&apos;s
+                  signature colour. The form above previews your choice.
+                </p>
+              </fieldset>
+
+              <div className="flex flex-col gap-3">
+                <Button
+                  intent="primary"
+                  onClick={onDeploy}
+                  disabled={!canSubmit}
+                  className="self-start"
+                >
+                  Deploy realm
+                </Button>
               </div>
-              <p className="text-[11px] opacity-60">
-                Drives narration, monster pool, and loot vocabulary. The
-                schema pair the realm uses on-chain comes from the
-                preset&apos;s starter realm.
+            </>
+          )}
+
+          {spawning && spawnPhase && (
+            <RealmSpawnFeed
+              phase={spawnPhase}
+              ecosystem={spawnEcosystem}
+              signerIndex={spawnSignerIndex}
+              signerAddress={spawnSignerAddress}
+            />
+          )}
+
+          {step.kind === "error" && (
+            <Panel
+              as="aside"
+              role="alert"
+              tone="glass-2"
+              className="flex flex-col gap-3 p-4 text-sm"
+              style={{
+                background:
+                  "color-mix(in oklab, var(--color-danger) 9%, transparent)",
+                borderColor:
+                  "color-mix(in oklab, var(--color-danger) 35%, transparent)",
+              }}
+            >
+              <p>
+                <strong className="text-[var(--color-danger)]">
+                  Deploy failed.
+                </strong>{" "}
+                {step.message}
               </p>
-            </fieldset>
-
-            <fieldset className="flex flex-col gap-2">
-              <label
-                htmlFor="boss-select"
-                className="text-xs uppercase tracking-widest opacity-70"
-              >
-                Final boss
-              </label>
-              <select
-                id="boss-select"
-                value={bossId}
-                onChange={(e) => setBossId(e.target.value)}
-                disabled={!address || seedGate}
-                className="rounded-md px-3 py-2 text-sm disabled:opacity-50"
-                style={{
-                  background: "rgba(255,255,255,0.06)",
-                  border: "1px solid rgba(255,255,255,0.15)",
-                  color: "#fff",
-                }}
-              >
-                {bossOptions.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.name}
-                  </option>
-                ))}
-              </select>
-              <p className="text-[11px] opacity-60">
-                Shown at BOSS_DEPTH. Stats are tuned for T2 gear — a
-                cleared boss mints a clearReceipt on your realm.
-              </p>
-            </fieldset>
-
-            <fieldset className="flex flex-col gap-2">
-              <label
-                htmlFor="realm-name"
-                className="text-xs uppercase tracking-widest opacity-70"
-              >
-                Realm name
-              </label>
-              <input
-                id="realm-name"
-                value={realmName}
-                onChange={(e) => setRealmName(e.target.value)}
-                maxLength={64}
-                placeholder="e.g. The Hollow Sanctum"
-                disabled={!address || seedGate}
-                className="rounded-md px-3 py-2 text-sm disabled:opacity-50"
-                style={{
-                  background: "rgba(255,255,255,0.06)",
-                  border: "1px solid rgba(255,255,255,0.15)",
-                  color: "#fff",
-                }}
-              />
-              <p className="text-[11px] opacity-60">
-                Shown in the realm selector and on the play page. Up to
-                64 characters.
-              </p>
-            </fieldset>
-
-            <div className="flex flex-col gap-3">
-              <button
-                type="button"
-                onClick={onDeploy}
-                disabled={!canSubmit}
-                className="self-start rounded-md px-4 py-2 text-sm font-medium transition disabled:opacity-50"
-                style={{
-                  background: "var(--color-preset-bg, rgba(255,255,255,0.08))",
-                  color: "var(--color-preset-fg, #fff)",
-                  border:
-                    "1px solid var(--color-preset-accent, rgba(255,255,255,0.18))",
-                }}
-              >
-                Deploy realm
-              </button>
-            </div>
-          </>
-        )}
-
-        {step.kind === "signing_create" && (
-          <ProgressPanel
-            title="Signing createEcosystem…"
-            detail="Confirm the factory call in your wallet."
-          />
-        )}
-        {step.kind === "signing_minter" && (
-          <ProgressPanel
-            title="Authorizing mint delegate…"
-            detail={
-              <>
-                Sign <code>setMinter</code> against your new realm{" "}
-                <span className="font-mono">{shortAddress(step.ecosystem)}</span>
-                . Authorizing slot #{step.signerIndex} ·{" "}
-                <span className="font-mono">{shortAddress(step.signerAddress)}</span>.
-              </>
-            }
-          />
-        )}
-        {step.kind === "registering" && (
-          <ProgressPanel
-            title="Registering realm metadata…"
-            detail="Server is verifying on-chain ownership + minter authorization."
-          />
-        )}
-
-        {step.kind === "error" && (
-          <aside
-            role="alert"
-            className="rounded-md p-4 text-sm"
-            style={{
-              background: "rgba(255,80,80,0.10)",
-              border: "1px solid rgba(255,80,80,0.35)",
-              color: "#f99",
-            }}
-          >
-            <strong>Deploy failed.</strong> {step.message}
-            <div className="mt-3">
-              <button
-                type="button"
-                onClick={onReset}
-                className="rounded-md px-3 py-1.5 text-sm"
-                style={{
-                  background: "rgba(255,255,255,0.06)",
-                  border: "1px solid rgba(255,255,255,0.15)",
-                  color: "#fff",
-                }}
-              >
+              <Button intent="ghost" size="sm" onClick={onReset} className="self-start">
                 Back to form
-              </button>
-            </div>
-          </aside>
-        )}
+              </Button>
+            </Panel>
+          )}
 
-        {step.kind === "done" && (
-          <section
-            aria-label="Deployment receipt"
-            className="flex flex-col gap-3 rounded-md p-5 text-sm"
-            style={{
-              background: "rgba(80,200,120,0.06)",
-              border: "1px solid rgba(80,200,120,0.30)",
-            }}
-          >
-            <header className="flex items-baseline justify-between gap-2">
-              <h2 className="text-base font-semibold">Realm deployed</h2>
-              <span className="text-[11px] uppercase tracking-widest opacity-70">
-                Owner {address ? shortAddress(address) : ""}
-              </span>
-            </header>
-            <p>
-              Address: <span className="font-mono">{step.ecosystem}</span>
-            </p>
-            <p>
-              Delegate: slot #{step.signerIndex} ·{" "}
-              <span className="font-mono">{shortAddress(step.signerAddress)}</span>
-            </p>
-            <p>
-              Max tier: T{step.maxTier}
-            </p>
-            <p className="opacity-70 break-all font-mono text-[11px]">
-              tx {step.txHash}
-            </p>
-            <div className="mt-2 flex flex-wrap items-center gap-3">
-              <Link
-                href={`/play/realm/${step.ecosystem}`}
-                className="rounded-md px-3 py-1.5 text-sm transition"
-                style={{
-                  background: "var(--color-preset-bg, rgba(255,255,255,0.08))",
-                  color: "var(--color-preset-fg, #fff)",
-                  border:
-                    "1px solid var(--color-preset-accent, rgba(255,255,255,0.18))",
-                }}
-              >
-                Play your realm →
-              </Link>
-              <Link href="/" className="text-sm opacity-80 hover:opacity-100">
-                Back to selector
-              </Link>
-            </div>
-          </section>
-        )}
-      </section>
-    </main>
+          {step.kind === "done" && (
+            <Panel
+              as="section"
+              tone="glass-2"
+              glow="accent"
+              aria-label="Deployment receipt"
+              className="flex flex-col gap-3 p-5 text-sm"
+            >
+              <header className="flex items-baseline justify-between gap-2">
+                <Stamp tone="accent">Realm spawned</Stamp>
+                <span className="font-mono text-[10px] uppercase tracking-widest opacity-60">
+                  Owner {address ? shortAddress(address) : ""}
+                </span>
+              </header>
+              <h2 className="font-[family-name:var(--font-display)] text-lg font-semibold">
+                {realmName.trim() || "Your realm"}
+              </h2>
+              <Rule tone="accent" />
+              <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-[13px]">
+                <dt className="opacity-50">Address</dt>
+                <dd className="font-mono break-all">{step.ecosystem}</dd>
+                <dt className="opacity-50">Delegate</dt>
+                <dd>
+                  slot #{step.signerIndex} ·{" "}
+                  <span className="font-mono">
+                    {shortAddress(step.signerAddress)}
+                  </span>
+                </dd>
+                <dt className="opacity-50">Max tier</dt>
+                <dd>T{step.maxTier}</dd>
+              </dl>
+              <p className="break-all font-mono text-[11px] opacity-50">
+                tx {step.txHash}
+              </p>
+              <div className="mt-2 flex flex-wrap items-center gap-3">
+                <Link href={`/play/realm/${step.ecosystem}`}>
+                  <Button intent="primary" size="sm">
+                    Play your realm →
+                  </Button>
+                </Link>
+                <Link href="/" className="text-sm opacity-80 hover:opacity-100">
+                  Back to selector
+                </Link>
+              </div>
+            </Panel>
+          )}
+        </section>
+      </AppShell>
     </ProtocolSurfaceGate>
   );
 }
 
-function ProgressPanel({
-  title,
-  detail,
+/**
+ * Selectable boss row showing the boss's "feel": its two baked-in catalog
+ * effects plus headline stats, so the choice reads as a
+ * playstyle pick rather than a name in a dropdown.
+ */
+function BossOption({
+  def,
+  selected,
+  disabled,
+  onSelect,
 }: {
-  title: string;
-  detail: React.ReactNode;
+  def: BossDef;
+  selected: boolean;
+  disabled: boolean;
+  onSelect: () => void;
 }) {
   return (
-    <aside
-      aria-label={title}
-      className="rounded-md p-4 text-sm"
+    <button
+      type="button"
+      role="radio"
+      aria-checked={selected}
+      onClick={onSelect}
+      disabled={disabled}
+      className="flex flex-col gap-2 rounded-lg p-3 text-left transition disabled:opacity-50 bg-[var(--surface-1)]"
       style={{
-        background: "rgba(255,255,255,0.04)",
-        border: "1px solid rgba(255,255,255,0.10)",
+        borderWidth: 1,
+        borderStyle: "solid",
+        borderColor: selected ? "var(--color-preset-accent)" : "var(--border-1)",
+        background: selected
+          ? "color-mix(in oklab, var(--color-preset-accent) 10%, var(--surface-1))"
+          : undefined,
       }}
     >
-      <p className="font-semibold">{title}</p>
-      <p className="mt-1 opacity-80 leading-relaxed">{detail}</p>
-    </aside>
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="text-sm font-medium">{def.name}</span>
+        <span className="font-mono text-[10px] tabular-nums opacity-60">
+          {def.baseHp} HP · d{def.attackDie} · AC {def.ac}
+        </span>
+      </div>
+      <div className="flex flex-wrap gap-1">
+        {def.bakedEffects.map((name) => {
+          const meta = effectMeta(name);
+          if (!meta) return null;
+          return <Chip key={name} color={meta.color} label={meta.label} />;
+        })}
+      </div>
+    </button>
   );
 }
