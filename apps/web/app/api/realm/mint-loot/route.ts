@@ -9,6 +9,7 @@ import {
   getPlayerRealmSigner,
   getPublicClient,
 } from "@/lib/server/realm-signer";
+import { withSignerLock } from "@/lib/server/signer-nonce-lock";
 import {
   getSeededRealm,
   getSeededSchemaIds,
@@ -151,6 +152,14 @@ const lootRollSchema = z.object({
   hpBonus: z.number().optional(),
   element: elementSchema.optional(),
   resistElement: elementSchema.optional(),
+  // Archetype lane. Weapon-slot rolls carry a `weaponType`, armor-slot an
+  // `armorType` (loose preset-vocab strings; see `WeaponType`/`ArmorType`).
+  // These must survive the wire round-trip so `buildLootMetadataURI` can
+  // stamp the `weapon_type`/`armor_type` attribute — otherwise minted loot
+  // reads back without an archetype and the card falls back to "weapon"/
+  // "armor" in the inventory (only un-minted in-memory rolls show it).
+  weaponType: z.string().optional(),
+  armorType: z.string().optional(),
   catalogEffects: z.array(catalogEffectSchema),
   /** Wire form: decimal string (uint256). */
   nameSeed: bigintString,
@@ -360,35 +369,37 @@ export async function POST(req: Request) {
     : getOwnerSigner(body.preset);
   const publicClient = getPublicClient();
 
-  // Fetch the pending nonce (confirmed + in-mempool) so concurrent mint
-  // requests from the same signer key don't collide. The default viem
-  // auto-nonce reads `eth_getTransactionCount` against the latest
-  // *confirmed* block, which is stale whenever a prior tx is still
-  // pending — causing "nonce too low" on the second request.
-  const nonce = await publicClient.getTransactionCount({
-    address: signer.account.address,
-    blockTag: "pending",
-  });
-
+  // Serialize the nonce read + broadcast against every other mint signed
+  // by this same key (sibling loot mints in the batch loop, and the boss
+  // clear-receipt mint that fires alongside it). The lock keeps
+  // `getTransactionCount(pending)` and `writeContract` atomic per signer
+  // so two concurrent routes can't both grab the same nonce and revert
+  // "nonce too low". Receipt waiting stays outside the lock.
   let hash: `0x${string}`;
   try {
-    hash = await signer.wallet.writeContract({
-      address: realm,
-      abi: ecosystemTemplateAbi,
-      functionName: "mintAsset",
-      args: [
-        body.recipient as `0x${string}`,
-        tokenId,
-        1n,
-        {
-          tier: onchainTier,
-          extensionSchemaId: lootSchemaId,
-          metadataURI,
-        },
-      ],
-      account: signer.account,
-      chain: signer.wallet.chain,
-      nonce,
+    hash = await withSignerLock(signer.account.address, async () => {
+      const nonce = await publicClient.getTransactionCount({
+        address: signer.account.address,
+        blockTag: "pending",
+      });
+      return signer.wallet.writeContract({
+        address: realm,
+        abi: ecosystemTemplateAbi,
+        functionName: "mintAsset",
+        args: [
+          body.recipient as `0x${string}`,
+          tokenId,
+          1n,
+          {
+            tier: onchainTier,
+            extensionSchemaId: lootSchemaId,
+            metadataURI,
+          },
+        ],
+        account: signer.account,
+        chain: signer.wallet.chain,
+        nonce,
+      });
     });
   } catch (e) {
     return reply(500, {

@@ -43,7 +43,14 @@ export async function GET(
       { status: 404 },
     );
   }
-  const { loot: lootSchemaId } = getSeededSchemaIds(row.preset);
+  // Player realms register their OWN clearReceipt+loot schema pair on their
+  // clone (commit c90af90), so prefer the row's ids; the seeded pair is only
+  // a fallback for realms created before per-realm registration landed.
+  const seeded = getSeededSchemaIds(row.preset);
+  const lootSchemaId = row.lootSchemaId ? BigInt(row.lootSchemaId) : seeded.loot;
+  const clearReceiptSchemaId = row.clearReceiptSchemaId
+    ? BigInt(row.clearReceiptSchemaId)
+    : seeded.clearReceipt;
 
   return NextResponse.json({
     ok: true as const,
@@ -56,8 +63,9 @@ export async function GET(
       accent: row.accent,
       maxTier: row.maxTier,
       createdAt: row.createdAt,
-      // String — JSON cannot represent bigint. Consumers must BigInt() this.
+      // Strings — JSON cannot represent bigint. Consumers must BigInt() these.
       lootSchemaId: lootSchemaId.toString(),
+      clearReceiptSchemaId: clearReceiptSchemaId.toString(),
     },
   });
 }

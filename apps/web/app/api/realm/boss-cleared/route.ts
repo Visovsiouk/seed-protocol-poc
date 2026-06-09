@@ -9,6 +9,7 @@ import {
   getPlayerRealmSigner,
   getPublicClient,
 } from "@/lib/server/realm-signer";
+import { withSignerLock } from "@/lib/server/signer-nonce-lock";
 import {
   getSeededRealm,
   getSeededSchemaIds,
@@ -219,24 +220,36 @@ export async function POST(req: Request) {
     // RPC read failed — proceed to mint attempt.
   }
 
+  // Serialize the nonce read + broadcast against every other mint signed
+  // by this same key (the end-of-descent loot batch in particular). The
+  // lock keeps `getTransactionCount(pending)` and `writeContract` atomic
+  // per signer so two concurrent routes can't both grab the same nonce
+  // and revert "nonce too low". Receipt waiting stays outside the lock.
   let hash: `0x${string}`;
   try {
-    hash = await signer.wallet.writeContract({
-      address: realm,
-      abi: ecosystemTemplateAbi,
-      functionName: "mintAsset",
-      args: [
-        player,
-        tokenId,
-        1n,
-        {
-          tier: onchainTier,
-          extensionSchemaId: clearReceiptSchemaId,
-          metadataURI,
-        },
-      ],
-      account: signer.account,
-      chain: signer.wallet.chain,
+    hash = await withSignerLock(signer.account.address, async () => {
+      const nonce = await publicClient.getTransactionCount({
+        address: signer.account.address,
+        blockTag: "pending",
+      });
+      return signer.wallet.writeContract({
+        address: realm,
+        abi: ecosystemTemplateAbi,
+        functionName: "mintAsset",
+        args: [
+          player,
+          tokenId,
+          1n,
+          {
+            tier: onchainTier,
+            extensionSchemaId: clearReceiptSchemaId,
+            metadataURI,
+          },
+        ],
+        account: signer.account,
+        chain: signer.wallet.chain,
+        nonce,
+      });
     });
   } catch (e) {
     return reply(500, {
