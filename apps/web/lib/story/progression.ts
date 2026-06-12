@@ -2,11 +2,11 @@
  * Realm-by-realm story progression.
  *
  * The PoC's first-time experience is a forced linear walk through three
- * doors: fantasy → cyberpunk → sci-fi. There is no picker pre-3-clear
- * and no protocol vocabulary on screen until the third boss falls. Each
- * realm-clear hands off to a warp interstitial (see `WarpInterstitial`)
- * that dramatizes the equipped gear translating into the next realm's
- * preset — same on-chain token, re-rendered against the new adapter.
+ * realms: fantasy → cyberpunk → sci-fi. The player picks each from the
+ * base, clears its boss, and is returned to the base with the next realm
+ * unsealed. The cross-genre gear translation now plays on *entry* into a
+ * realm (see `GearTranslationScreen`); the per-clear copy below is purely
+ * narrative.
  *
  * Pure: takes a `TutorialProgress` snapshot and returns per-preset lock
  * state plus narrative copy. No hooks, no chain reads.
@@ -64,9 +64,8 @@ export function nextStarterFor(starterClears: number): Preset | null {
 /**
  * Short lock-tease shown on a card the player can't yet enter, used
  * only on the post-arc picker (pre-arc the picker is hidden entirely).
- * Diegetic; no "complete X to unlock Y" UI language. All three realms
- * are seed-mercy now, so the tease just gestures at the order, not at
- * stakes.
+ * Diegetic; no "complete X to unlock Y" UI language. The tease just
+ * gestures at the order, not at stakes.
  */
 export function lockTeaseFor(preset: Preset): string {
   if (preset === "cyberpunk") {
@@ -80,19 +79,19 @@ export function lockTeaseFor(preset: Preset): string {
 
 /**
  * One-line stakes copy shown beneath a realm card on the picker. All
- * three starters are seed-mercy — death rewinds the run to depth 1 and
- * the protocol re-grows the player from the same ground. Community
- * realms can still opt in to permadeath, so the copy stays per-preset.
+ * three starters are permadeath — a fall ends the run and forfeits every
+ * unbanked finding. The copy stays per-preset so each realm names the
+ * cost in its own voice.
  */
 export function stakesNoteFor(preset: Preset): string {
   if (preset === "fantasy") {
-    return "Death here is a long walk back through wet earth. The ground grows you again.";
+    return "Death here is final. The wet earth keeps what you hadn't carried out.";
   }
   if (preset === "cyberpunk") {
-    return "Death here resolves to a respawn token. You wake on the same wet curb.";
+    return "Death here is final. The district logs your kill and keeps your unbanked haul.";
   }
   if (preset === "scifi") {
-    return "Death here trips a quiet reboot. The corridor remembers nothing.";
+    return "Death here is final. The station vents the run and everything still in hand.";
   }
   return "";
 }

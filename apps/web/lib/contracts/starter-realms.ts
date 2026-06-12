@@ -1,4 +1,4 @@
-import type { DefeatMode, Element, Preset } from "@/lib/engine/types";
+import type { Element, Preset } from "@/lib/engine/types";
 import { isStarterRealmDeployed } from "./realm-picker";
 import { getSeededRealm } from "./seeded-realms";
 
@@ -33,14 +33,6 @@ export type StarterRealm = {
    */
   bossDepth: number;
   /**
-   * Per-realm death handling. All three starters are seed-mercy: the
-   * PoC has no permadeath anywhere. Death rewinds the run to depth 1,
-   * reseeds, and bumps `runAttempt` so the narration can comment on
-   * the loop. Community realms can still opt in to
-   * `permadeath` if their creator wants higher stakes.
-   */
-  defeatMode: DefeatMode;
-  /**
    * First-weapon override. Genesis forces `"fire"` so the player
    * stumbles onto the Pilgrim's Brand — the canonical fire blade that
    * justifies the Hag's `weakTo: fire` as a narrative beat rather
@@ -61,30 +53,25 @@ const BOSS_ID_BY_PRESET: Record<Preset, string> = {
  */
 const STARTER_MECHANICS_BY_PRESET: Record<
   Preset,
-  Pick<StarterRealm, "bossDepth" | "defeatMode" | "forcedFirstWeaponElement">
+  Pick<StarterRealm, "bossDepth" | "forcedFirstWeaponElement">
 > = {
-  // The Hollow Reach — first door. Five rooms, seed-mercy, and a
-  // forced fire first weapon so the player stumbles onto the Pilgrim's
-  // Brand and the Hag's fire-weakness reads as a story beat, not a
-  // coincidence.
+  // The Hollow Reach — first door. Five rooms and a forced fire first
+  // weapon so the player stumbles onto the Pilgrim's Brand and the Hag's
+  // fire-weakness reads as a story beat, not a coincidence.
   fantasy: {
     bossDepth: 5,
-    defeatMode: "seed-mercy",
     forcedFirstWeaponElement: "fire",
   },
-  // Black Ice District — second door. Same five-room cadence; the
-  // protocol still holds the player, just in wetter neon. No forced
-  // first weapon — the warp brought the Brand across, translated.
+  // Black Ice District — second door. Same five-room cadence, in wetter
+  // neon. No forced first weapon — the warp brought the Brand across,
+  // translated.
   cyberpunk: {
     bossDepth: 5,
-    defeatMode: "seed-mercy",
   },
   // Drift Station Ker-7 — third door. Last starter; the corridor is
-  // longer but the cadence stays even. The protocol respawns the
-  // player here too.
+  // longer but the cadence stays even.
   scifi: {
     bossDepth: 5,
-    defeatMode: "seed-mercy",
   },
 };
 

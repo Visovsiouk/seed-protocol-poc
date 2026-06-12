@@ -593,22 +593,6 @@ export type LootRoll = {
 };
 
 /**
- * Per-realm death handling.
- *
- *   "permadeath" — default. A monster swing that drops the player to
- *     ≤ 0 HP ends the run; `defeated` is set and the UI shows the
- *     defeat panel + restart CTA.
- *
- *   "seed-mercy" — Genesis-only. The Seed itself grows the player back
- *     from its own ground. Death rewinds the run to depth 1 with a
- *     re-seeded encounter chain, the `runAttempt` counter bumps, and
- *     the engine emits narrative lines (see `lib/story/genesis.ts`)
- *     into the feed. `defeated` is NEVER set; the UI keeps playing.
- *     Equipped gear persists across attempts.
- */
-export type DefeatMode = "permadeath" | "seed-mercy";
-
-/**
  * One unminted finding held in the delve escrow. Carries the depth (and
  * boss flag) it was found at so the deferred batch mint can validate each
  * drop against the difficulty band it rolled in. See `RunState.escrow`.
@@ -636,20 +620,18 @@ export type RunState = {
   encounter: EncounterState | null;
   equipped: { weapon?: AssetCard; armor?: AssetCard; accessory?: AssetCard };
   /**
-   * Persistent player HP across encounters. Seeded at run start (and on
-   * seed-mercy respawn) from `playerStartHp(equipped).hp`, then carried
-   * room-to-room: combat write-back copies `CombatState.playerHp` onto
-   * this field when a fight resolves; trial resolution applies heal/damage
-   * against it directly. Encounter generation reads from here instead of
-   * resetting to max. Clamped `[0, playerMaxHp]`; zero terminates the run
-   * via the standard defeat fork (seed-mercy or permadeath).
+   * Persistent player HP across encounters. Seeded at run start from
+   * `playerStartHp(equipped).hp`, then carried room-to-room: combat
+   * write-back copies `CombatState.playerHp` onto this field when a fight
+   * resolves; trial resolution applies heal/damage against it directly.
+   * Encounter generation reads from here instead of resetting to max.
+   * Clamped `[0, playerMaxHp]`; zero terminates the run via permadeath.
    */
   playerHp: number;
   /**
    * Player HP cap, pinned at run start from equipped armor. Re-pinned on
    * `equipItem` so armor with a larger `hpBonus` raises the cap (the
-   * extension does NOT refill — gear upgrade is not a free heal). On
-   * seed-mercy respawn maxHp is recomputed from current equipment.
+   * extension does NOT refill — gear upgrade is not a free heal).
    */
   playerMaxHp: number;
   /**
@@ -664,8 +646,6 @@ export type RunState = {
    *     success and the UI batch-mints the lot.
    *   - Permadeath → escrow is forfeit; the defeat screen reads this list
    *     to show what was lost (it is NOT cleared on death).
-   *   - Seed-mercy → escrow is PRESERVED across the respawn (the Seed
-   *     keeps what you were carrying).
    *
    * Each entry records the `depth` (and `isBoss`) the drop was found at,
    * NOT the depth the player extracts from. The deferred batch mint must
@@ -694,38 +674,25 @@ export type RunState = {
   bossClearedTurns?: number;
   /**
    * Roguelike permadeath terminator. When true, the run is over —
-   * `step` and `advance` reject further input and the UI surfaces a
-   * defeat panel with a restart CTA. Gear in `equipped` is retained
-   * (a death surrenders progress, not inventory). No clearReceipt is
-   * minted, so the realm-progression chain stays put.
-   *
-   * Only set under `defeatMode === "permadeath"`. Under "seed-mercy"
-   * the engine rewinds and emits narration instead.
+   * `step` and `advance` reject further input and the UI surfaces the
+   * defeat overlay with a restart CTA. Gear in `equipped` is retained
+   * (a death surrenders progress, not inventory), but the unbanked
+   * `escrow` is forfeit. No clearReceipt is minted, so the
+   * realm-progression chain stays put.
    */
   defeated: boolean;
   defeatedAtDepth?: number;
   defeatedTurn?: number;
-  /** Per-realm death handling. See `DefeatMode`. */
-  defeatMode: DefeatMode;
   /**
-   * 1-based attempt counter. Bumps on every seed-mercy respawn so the
-   * narrative voice can escalate (see `genesisRespawnVoice`) and so
-   * the post-reset encounter chain doesn't deterministically replay
-   * the death (the seed gets attempt-salted).
-   */
-  runAttempt: number;
-  /**
-   * When set, the FIRST weapon-slot loot drop of every run-attempt is
-   * coerced to this element regardless of the rolled value. Genesis
-   * uses "fire" so the Hag (`weakTo: fire`) is winnable as a story
-   * beat — the player finds a pilgrim's blade. Cleared on respawn so
-   * each attempt gets its own brand.
+   * When set, the FIRST weapon-slot loot drop of the run is coerced to
+   * this element regardless of the rolled value. Genesis uses "fire" so
+   * the Hag (`weakTo: fire`) is winnable as a story beat — the player
+   * finds a pilgrim's blade.
    */
   forcedFirstWeaponElement?: Exclude<Element, "none">;
   /**
-   * True once any weapon-slot loot has dropped on this attempt. Gates
-   * `forcedFirstWeaponElement` so the override fires exactly once per
-   * attempt. Reset to false on seed-mercy respawn.
+   * True once any weapon-slot loot has dropped this run. Gates
+   * `forcedFirstWeaponElement` so the override fires exactly once.
    */
   firstWeaponDropped: boolean;
   /**
@@ -733,12 +700,12 @@ export type RunState = {
    * boss via the Ledger room (depth 3). Applied at boss creation time —
    * the boss's `bakedEffects` array is filtered against this list. At
    * most one entry today; the list shape leaves room for stacked
-   * suppression from future ledger beats. Reset on seed-mercy respawn.
+   * suppression from future ledger beats.
    */
   runSuppressedBossEffects: CatalogEffectName[];
   /**
-   * True once this attempt has visited a Ledger room. Gates the depth-3
-   * override so the room only fires once per attempt. Reset on respawn.
+   * True once this run has visited a Ledger room. Gates the depth-3
+   * override so the room only fires once.
    */
   ledgerConsumed: boolean;
 };

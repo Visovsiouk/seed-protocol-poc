@@ -32,9 +32,16 @@ export type RealmActivityEntry = {
 export async function fetchRealmActivity(args: {
   realm: `0x${string}`;
   preset: Preset | null;
+  /**
+   * The realm's own schema ids. Player realms register their own pair on
+   * their clone, so the caller passes them through; when omitted we fall
+   * back to the seeded per-preset pair (starter realms / legacy rows).
+   */
+  lootSchemaId?: bigint;
+  clearReceiptSchemaId?: bigint;
   limit?: number;
 }): Promise<RealmActivityEntry[]> {
-  const { realm, preset, limit = 12 } = args;
+  const { realm, preset, lootSchemaId, clearReceiptSchemaId, limit = 12 } = args;
   const client = getReadClient();
 
   const events = await client.getContractEvents({
@@ -58,9 +65,9 @@ export async function fetchRealmActivity(args: {
   );
   const window = sorted.slice(0, limit);
 
-  const schemaIds = preset ? getSeededSchemaIds(preset) : null;
-  const lootId = schemaIds ? Number(schemaIds.loot) : -1;
-  const clearId = schemaIds ? Number(schemaIds.clearReceipt) : -1;
+  const seeded = preset ? getSeededSchemaIds(preset) : null;
+  const lootId = Number(lootSchemaId ?? seeded?.loot ?? -1n);
+  const clearId = Number(clearReceiptSchemaId ?? seeded?.clearReceipt ?? -1n);
 
   const hydrated = await Promise.all(
     window.map(async (ev): Promise<RealmActivityEntry | null> => {

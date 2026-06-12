@@ -236,17 +236,32 @@ export function useTutorialProgress(player: `0x${string}` | undefined) {
 export function useRealmActivity(args: {
   realm: `0x${string}` | null;
   preset: Preset | null;
+  lootSchemaId?: bigint;
+  clearReceiptSchemaId?: bigint;
   limit?: number;
 }) {
-  const { realm, preset, limit } = args;
+  const { realm, preset, lootSchemaId, clearReceiptSchemaId, limit } = args;
   return useQuery<RealmActivityEntry[]>({
-    queryKey: queryKeys.activity(
-      realm ?? ("0x0000000000000000000000000000000000000000" as const),
-    ),
+    // Schema ids are part of the key: a creator realm's ids arrive async
+    // (after the meta fetch), so without them the first fetch with
+    // `undefined` ids would cache and never reclassify against the real pair.
+    queryKey: [
+      ...queryKeys.activity(
+        realm ?? ("0x0000000000000000000000000000000000000000" as const),
+      ),
+      lootSchemaId?.toString() ?? null,
+      clearReceiptSchemaId?.toString() ?? null,
+    ],
     enabled: !!realm,
     queryFn: () =>
       realm
-        ? fetchRealmActivity({ realm, preset, limit })
+        ? fetchRealmActivity({
+            realm,
+            preset,
+            lootSchemaId,
+            clearReceiptSchemaId,
+            limit,
+          })
         : Promise.resolve([]),
     ...defaultReadQueryOptions,
   });
@@ -260,16 +275,22 @@ export function useRealmActivity(args: {
 export function useRealmStats(args: {
   realm: `0x${string}` | null;
   preset: Preset | null;
+  lootSchemaId?: bigint;
+  clearReceiptSchemaId?: bigint;
 }) {
-  const { realm, preset } = args;
+  const { realm, preset, lootSchemaId, clearReceiptSchemaId } = args;
   return useQuery<RealmStats>({
-    queryKey: queryKeys.realmStats(
-      realm ?? ("0x0000000000000000000000000000000000000000" as const),
-    ),
+    queryKey: [
+      ...queryKeys.realmStats(
+        realm ?? ("0x0000000000000000000000000000000000000000" as const),
+      ),
+      lootSchemaId?.toString() ?? null,
+      clearReceiptSchemaId?.toString() ?? null,
+    ],
     enabled: !!realm,
     queryFn: () =>
       realm
-        ? fetchRealmStats({ realm, preset })
+        ? fetchRealmStats({ realm, preset, lootSchemaId, clearReceiptSchemaId })
         : Promise.resolve({
             metrics: {
               totalMints: 0,
@@ -292,17 +313,21 @@ export function useRealmStats(args: {
 export function useRealmAssets(args: {
   realm: `0x${string}` | null;
   preset: Preset | null;
+  clearReceiptSchemaId?: bigint;
   limit?: number;
 }) {
-  const { realm, preset, limit } = args;
+  const { realm, preset, clearReceiptSchemaId, limit } = args;
   return useQuery<AssetCard[]>({
-    queryKey: queryKeys.realmAssets(
-      realm ?? ("0x0000000000000000000000000000000000000000" as const),
-    ),
+    queryKey: [
+      ...queryKeys.realmAssets(
+        realm ?? ("0x0000000000000000000000000000000000000000" as const),
+      ),
+      clearReceiptSchemaId?.toString() ?? null,
+    ],
     enabled: !!realm,
     queryFn: () =>
       realm
-        ? fetchRealmAssets({ realm, preset, cardLimit: limit })
+        ? fetchRealmAssets({ realm, preset, clearReceiptSchemaId, cardLimit: limit })
         : Promise.resolve([]),
     ...defaultReadQueryOptions,
   });

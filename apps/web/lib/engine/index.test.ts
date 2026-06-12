@@ -227,40 +227,6 @@ describe("engine delve escrow + extract", () => {
     expect(() => extract(s)).toThrow(/boss room cannot be fled/);
   });
 
-  it("seed-mercy preserves the escrow across a respawn", () => {
-    let s: RunState = makeRun({
-      defeatMode: "seed-mercy",
-      forcedFirstWeaponElement: "fire",
-    }).state;
-    let bankedBeforeDeath = 0;
-    for (let i = 0; i < 200; i++) {
-      if (!s.encounter) {
-        bankedBeforeDeath = s.escrow.length;
-        s = advance(s, "lich").state;
-        continue;
-      }
-      let choice: ActionChoice;
-      switch (s.encounter.kind) {
-        case "trial":
-          choice = { kind: "trial" };
-          break;
-        case "ledger":
-          choice = { kind: "ledger", suppress: null };
-          break;
-        default:
-          choice = attack;
-      }
-      const r = step(s, choice);
-      s = r.state;
-      if (s.runAttempt > 1) {
-        // Escrow survives the rewind; at least what we banked pre-death.
-        expect(s.escrow.length).toBeGreaterThanOrEqual(bankedBeforeDeath);
-        expect(s.extractable).toBe(true);
-        return;
-      }
-    }
-  });
-
   it("boss clear leaves the boss drop in escrow for a forced bank", () => {
     let s: RunState = makeRun({ equipped: { armor: TANK_ARMOR } }).state;
     for (let d = 1; d < BOSS_DEPTH; d++) {
@@ -335,25 +301,22 @@ describe("engine boss-depth handling", () => {
   });
 });
 
-describe("engine seed-mercy (Genesis death rewind)", () => {
-  it("startRun threads defeatMode + runAttempt defaults", () => {
+describe("engine permadeath + forced first weapon", () => {
+  it("startRun seeds permadeath defaults", () => {
     const { state } = makeRun();
-    expect(state.defeatMode).toBe("permadeath");
-    expect(state.runAttempt).toBe(1);
     expect(state.firstWeaponDropped).toBe(false);
     expect(state.bossDepth).toBe(BOSS_DEPTH);
   });
 
-  it("seed-mercy never sets `defeated` even when the player dies", () => {
+  it("a killing blow ends the run: sets `defeated` and emits PlayerDefeated", () => {
     // No equipped armor → player takes full hits and dies in a few rounds.
-    // Seed-mercy should rewind to depth 1, bump runAttempt, and leave the
-    // run live (no `defeated` flag, no PlayerDefeated event).
+    // Permadeath should end the run: `defeated` flips true and a
+    // PlayerDefeated event fires. The escrow is forfeit (never minted).
     let s: RunState = makeRun({
-      defeatMode: "seed-mercy",
       forcedFirstWeaponElement: "fire",
     }).state;
-    let mercyFired = false;
-    for (let i = 0; i < 100 && !mercyFired; i++) {
+    let deathFired = false;
+    for (let i = 0; i < 100 && !deathFired; i++) {
       if (!s.encounter) {
         s = advance(s, "lich").state;
         continue;
@@ -371,16 +334,13 @@ describe("engine seed-mercy (Genesis death rewind)", () => {
       }
       const r = step(s, choice);
       s = r.state;
-      if (s.runAttempt > 1) {
-        mercyFired = true;
-        expect(s.defeated).toBe(false);
-        expect(s.depth).toBe(1);
-        expect(s.firstWeaponDropped).toBe(false);
-        expect(r.events.some((e) => e.type === "PlayerDefeated")).toBe(false);
+      if (s.defeated) {
+        deathFired = true;
+        expect(r.events.some((e) => e.type === "PlayerDefeated")).toBe(true);
       }
     }
     // It's possible the player never dies in the test seed; if so we
-    // don't fail (the assertion above only fires when mercy actually
+    // don't fail (the assertion above only fires when death actually
     // resolves). But typically with no armor, death lands fast.
   });
 

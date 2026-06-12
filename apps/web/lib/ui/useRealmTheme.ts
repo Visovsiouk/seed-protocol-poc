@@ -26,11 +26,18 @@ import type { Preset } from "@/lib/engine/types";
 export function useRealmTheme(
   preset: Preset | null | undefined,
   accent?: string | null,
+  /**
+   * Optional skin layered on top of the genre palette via `data-theme` on
+   * <body> (e.g. `"crt"` for the amber terminal play screens). Reverted on
+   * cleanup like the other mutations so it never leaks across route changes.
+   */
+  theme?: string | null,
 ): void {
   useEffect(() => {
     const body = document.body;
     const prevPreset = body.getAttribute("data-preset");
     const prevAccent = body.style.getPropertyValue("--color-preset-accent");
+    const prevTheme = body.getAttribute("data-theme");
 
     if (preset) body.setAttribute("data-preset", preset);
     else body.removeAttribute("data-preset");
@@ -44,12 +51,18 @@ export function useRealmTheme(
       body.style.removeProperty("--color-preset-accent");
     }
 
+    if (theme) body.setAttribute("data-theme", theme);
+    else body.removeAttribute("data-theme");
+
     return () => {
       if (prevPreset) body.setAttribute("data-preset", prevPreset);
       else body.removeAttribute("data-preset");
 
       if (prevAccent) body.style.setProperty("--color-preset-accent", prevAccent);
       else body.style.removeProperty("--color-preset-accent");
+
+      if (prevTheme) body.setAttribute("data-theme", prevTheme);
+      else body.removeAttribute("data-theme");
     };
-  }, [preset, accent]);
+  }, [preset, accent, theme]);
 }

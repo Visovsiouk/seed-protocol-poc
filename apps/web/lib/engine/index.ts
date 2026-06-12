@@ -28,7 +28,6 @@ import type {
   AssetCard,
   CatalogEffectName,
   CombatState,
-  DefeatMode,
   Element,
   EncounterState,
   EngineEvent,
@@ -53,7 +52,6 @@ import type { Difficulty } from "./tier";
 import { getFlavorBank } from "../flavor";
 import { monsterTitle, pickVariant } from "./narration";
 import type { FlavorBank } from "../flavor/types";
-import { respawnVoiceFor } from "../story/genesis";
 
 /**
  * Default depth at which the per-realm boss arrives. Realm-specific
@@ -64,7 +62,7 @@ import { respawnVoiceFor } from "../story/genesis";
 export const BOSS_DEPTH = 6;
 
 /**
- * Depth at which a Ledger room may appear (once per attempt). When the
+ * Depth at which a Ledger room may appear (once per run). When the
  * player has not yet consumed a ledger and an upcoming boss with baked
  * effects is known, this depth's regular encounter is replaced with the
  * Ledger room. Set to 3 — early enough to inform the player, late enough
@@ -74,25 +72,6 @@ export const BOSS_DEPTH = 6;
  * boss arrives too soon to bother).
  */
 export const LEDGER_DEPTH = 3;
-
-/**
- * XOR the attempt counter into the run seed so a seed-mercy respawn
- * doesn't deterministically replay the same encounter chain that just
- * killed the player. Only the tail 12 bytes are touched, matching the
- * mask `subSeed` uses for (depth, step) — the cascade-mix loader fans
- * single-byte changes back across every lane.
- */
-function reseedForAttempt(
-  seed: `0x${string}`,
-  attempt: number,
-): `0x${string}` {
-  if (attempt <= 1) return seed;
-  const hex = seed.slice(2);
-  const head = hex.slice(0, 40);
-  const tail = BigInt("0x" + hex.slice(40, 64)) ^ BigInt(attempt);
-  const tailHex = tail.toString(16).padStart(24, "0");
-  return ("0x" + head + tailHex) as `0x${string}`;
-}
 
 /**
  * Derive a sub-seed from (rngSeed, depth, stepInRoom). XOR-in the salts
@@ -121,7 +100,7 @@ function equippedFor(state: RunState): { weapon?: AssetCard; armor?: AssetCard }
   return { weapon: state.equipped.weapon, armor: state.equipped.armor };
 }
 
-function playerStartHp(equipped: RunState["equipped"]): {
+export function playerStartHp(equipped: RunState["equipped"]): {
   hp: number;
   maxHp: number;
   ac: number;
@@ -280,7 +259,7 @@ function generateEncounter(
     };
   }
 
-  // Ledger override at the configured depth, once per attempt. Requires
+  // Ledger override at the configured depth, once per run. Requires
   // an upcoming boss with both baked effects still in play.
   const boss = bank.bosses[bossId];
   if (
@@ -410,14 +389,9 @@ export type StartRunArgs = {
    */
   bossDepth?: number;
   /**
-   * Per-realm death handling. Defaults to `"permadeath"`. Genesis
-   * passes `"seed-mercy"`; see `DefeatMode` for the contract.
-   */
-  defeatMode?: DefeatMode;
-  /**
-   * If set, the first weapon-slot loot drop of each run-attempt is
-   * coerced to this element. Genesis uses `"fire"` (the Hag is weakTo
-   * fire; the player finds a pilgrim's blade).
+   * If set, the first weapon-slot loot drop of the run is coerced to
+   * this element. Genesis uses `"fire"` (the Hag is weakTo fire; the
+   * player finds a pilgrim's blade).
    */
   forcedFirstWeaponElement?: Exclude<Element, "none">;
 };
@@ -446,8 +420,6 @@ export function startRun(args: StartRunArgs): { state: RunState; lines: Narratio
     extractable: 1 < (args.bossDepth ?? BOSS_DEPTH),
     bossCleared: false,
     defeated: false,
-    defeatMode: args.defeatMode ?? "permadeath",
-    runAttempt: 1,
     forcedFirstWeaponElement: args.forcedFirstWeaponElement,
     firstWeaponDropped: false,
     runSuppressedBossEffects: [],
@@ -565,49 +537,9 @@ export function step(state: RunState, choice: ActionChoice): StepResult {
     }
 
     if (playerDefeated) {
-      // Seed mercy: rewind to depth 1, bump attempt, reseed.
-      if (state.defeatMode === "seed-mercy") {
-        const nextAttempt = state.runAttempt + 1;
-        const voice = respawnVoiceFor(state.preset, nextAttempt);
-        lines.push({ text: voice.death, emphasis: "drama" });
-        for (const r of voice.respawn) {
-          lines.push({ text: r, emphasis: "info" });
-        }
-        const reseeded = reseedForAttempt(state.rngSeed, nextAttempt);
-        const respawnStart = playerStartHp(state.equipped);
-        const seededBase: RunState = {
-          ...state,
-          rngSeed: reseeded,
-          depth: 1,
-          encounter: null,
-          // Seed-mercy preserves the escrow (`...state` carries it); only
-          // re-open extraction now that we're back at depth 1 pre-boss.
-          extractable: state.bossDepth > 1,
-          // Persistent HP resets to current-equipment max on respawn —
-          // the Seed grows the player back whole. Gear acquired during
-          // the failed attempt is retained, so the new pool reflects it.
-          playerHp: respawnStart.hp,
-          playerMaxHp: respawnStart.maxHp,
-          runAttempt: nextAttempt,
-          firstWeaponDropped: false,
-          // Ledger/suppression state is per-attempt: reset on respawn so
-          // the player gets a fresh ledger room and the next boss reads
-          // its full bakedEffects again.
-          runSuppressedBossEffects: [],
-          ledgerConsumed: false,
-        };
-        SCHEMA_STORE.set(seededBase, schemas);
-        const bossId = BOSS_STORE.get(state);
-        if (bossId) BOSS_STORE.set(seededBase, bossId);
-        const gen = generateEncounter(seededBase, bossId ?? "");
-        lines.push(...gen.lines);
-        const nextState: RunState = { ...seededBase, encounter: gen.encounter };
-        SCHEMA_STORE.set(nextState, schemas);
-        if (bossId) BOSS_STORE.set(nextState, bossId);
-        return { state: nextState, outcome: lines, events };
-      }
-
-      // Permadeath.
+      // Permadeath: a killing blow ends the run. The unbanked escrow is
+      // forfeit (it lives on `state` but is never minted), and the UI
+      // surfaces the defeat overlay off `defeated`.
       lines.push({
         text: `You fall. ${monsterTitle(combat.monster)} stands over you.`,
         emphasis: "drama",
@@ -661,43 +593,8 @@ export function step(state: RunState, choice: ActionChoice): StepResult {
       });
     }
 
-    // Trial damage can kill — run the same defeat fork combat uses.
+    // Trial damage can kill — permadeath ends the run here too.
     if (nextHp <= 0) {
-      if (state.defeatMode === "seed-mercy") {
-        const nextAttempt = state.runAttempt + 1;
-        const voice = respawnVoiceFor(state.preset, nextAttempt);
-        lines.push({ text: voice.death, emphasis: "drama" });
-        for (const v of voice.respawn) {
-          lines.push({ text: v, emphasis: "info" });
-        }
-        const reseeded = reseedForAttempt(state.rngSeed, nextAttempt);
-        const respawnStart = playerStartHp(state.equipped);
-        const seededBase: RunState = {
-          ...state,
-          rngSeed: reseeded,
-          depth: 1,
-          encounter: null,
-          // Seed-mercy preserves the escrow (`...state` carries it); only
-          // re-open extraction now that we're back at depth 1 pre-boss.
-          extractable: state.bossDepth > 1,
-          playerHp: respawnStart.hp,
-          playerMaxHp: respawnStart.maxHp,
-          runAttempt: nextAttempt,
-          firstWeaponDropped: false,
-          runSuppressedBossEffects: [],
-          ledgerConsumed: false,
-        };
-        SCHEMA_STORE.set(seededBase, schemas);
-        const bossId = BOSS_STORE.get(state);
-        if (bossId) BOSS_STORE.set(seededBase, bossId);
-        const gen = generateEncounter(seededBase, bossId ?? "");
-        lines.push(...gen.lines);
-        const nextState: RunState = { ...seededBase, encounter: gen.encounter };
-        SCHEMA_STORE.set(nextState, schemas);
-        if (bossId) BOSS_STORE.set(nextState, bossId);
-        return { state: nextState, outcome: lines, events };
-      }
-      // Permadeath via trial failure.
       lines.push({ text: "The toll is too steep. You fall.", emphasis: "drama" });
       events.push({ type: "PlayerDefeated", depth: state.depth, turn: 0 });
       const nextState: RunState = {
@@ -906,16 +803,22 @@ export function equipItem(
 
 /**
  * Extract from the delve. Flags the run a banked
- * success and surfaces the player. The `escrow` is left intact for the UI
- * to batch-mint; `commitExtraction` clears it once the on-chain mint
+ * success and surfaces the player. The (kept) `escrow` is left intact for
+ * the UI to batch-mint; `commitExtraction` clears it once the on-chain mint
  * settles. Callable only between rooms (no active encounter) and only when
  * `extractable` — the boss room cannot be fled.
+ *
+ * `opts.keep` selects which carried findings to bank, by index into the
+ * current `escrow`. Items not listed are *discarded* — dropped from escrow
+ * and never minted (the player chose them gone). Omit `keep` to bank
+ * everything (the default, all-in extraction). Order is preserved.
  *
  * Returns `{ state, lines, events }` mirroring `step`, so the play page can
  * funnel the narration + an `Extracted` event through the same feed.
  */
 export function extract(
   state: RunState,
+  opts?: { keep?: readonly number[] },
 ): { state: RunState; lines: NarrationLine[]; events: EngineEvent[] } {
   if (state.defeated || state.bossCleared || state.extracted) {
     return {
@@ -930,16 +833,30 @@ export function extract(
   if (!state.extractable) {
     throw new Error("extract: the boss room cannot be fled");
   }
-  const count = state.escrow.length;
+  // Filter to the kept findings (preserving order, ignoring stray indices).
+  const keep = opts?.keep ? new Set(opts.keep) : null;
+  const keptEscrow = keep
+    ? state.escrow.filter((_, i) => keep.has(i))
+    : state.escrow;
+  const discarded = state.escrow.length - keptEscrow.length;
+  const count = keptEscrow.length;
   const lines: NarrationLine[] = [
     count > 0
       ? {
-          text: `You surface with ${count} finding${count === 1 ? "" : "s"} in hand.`,
+          text:
+            discarded > 0
+              ? `You surface with ${count} finding${count === 1 ? "" : "s"} in hand, leaving ${discarded} behind.`
+              : `You surface with ${count} finding${count === 1 ? "" : "s"} in hand.`,
           emphasis: "drama",
         }
       : { text: "You surface empty-handed.", emphasis: "info" },
   ];
-  const next: RunState = { ...state, extracted: true, extractable: false };
+  const next: RunState = {
+    ...state,
+    escrow: keptEscrow,
+    extracted: true,
+    extractable: false,
+  };
   const schemas = SCHEMA_STORE.get(state);
   if (schemas) SCHEMA_STORE.set(next, schemas);
   const bossId = BOSS_STORE.get(state);

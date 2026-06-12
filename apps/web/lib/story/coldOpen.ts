@@ -4,8 +4,9 @@
  * The first thing a new player sees is a five-page diegetic vignette —
  * not a tutorial, not a welcome screen. They're reading a book they
  * weren't supposed to find, the ink misbehaves, the room goes
- * elsewhere, and they wake in mud. The room they wake in is the first
- * realm (fantasy), unnamed until depth 2.
+ * elsewhere, and they wake in the base: a still room between the
+ * realms. Only the nearest realm is open; the rest stay sealed and
+ * unnamed until the ones before them are cleared.
  *
  * Pure data so the component (`ColdOpenBook`) stays presentational and
  * the beats can be snapshot-tested.
@@ -74,13 +75,16 @@ export const COLD_OPEN_BOOK: readonly ColdOpenBeat[] = [
     cta: "Open your eyes",
   },
   {
-    stamp: "Field record · the ground",
+    stamp: "Field record · the waking room",
     body: [
-      "You wake in mud. The mark on your hand is still there. You don't " +
-        "know where you are. You started a task you cannot finish, and the " +
-        "ground beneath you has begun to count.",
+      "You wake somewhere dry. A small room with the patience of a place " +
+        "that was kept for you — a low cot, a colder lamp, and the realms " +
+        "waiting below it like water under thin ice.",
+      "The mark on your hand is still there, and it is warm. Only the " +
+        "nearest way down is open to you. Beyond each one the ground has " +
+        "already begun to count.",
     ],
-    footnote: "walk forward",
+    footnote: "you are in the base",
     cta: "Wake",
   },
 ] as const;

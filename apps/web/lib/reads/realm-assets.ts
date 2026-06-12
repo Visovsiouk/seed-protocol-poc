@@ -23,10 +23,22 @@ import type { AssetCard, Preset } from "@/lib/engine/types";
 export async function fetchRealmAssets(args: {
   realm: `0x${string}`;
   preset: Preset | null;
+  /**
+   * The realm's own clearReceipt schema id, used to drop receipts from the
+   * issued-asset grid. Player realms register their own id; when omitted we
+   * fall back to the seeded per-preset id (starter realms / legacy rows).
+   */
+  clearReceiptSchemaId?: bigint;
   scanLimit?: number;
   cardLimit?: number;
 }): Promise<AssetCard[]> {
-  const { realm, preset, scanLimit = 200, cardLimit = 24 } = args;
+  const {
+    realm,
+    preset,
+    clearReceiptSchemaId,
+    scanLimit = 200,
+    cardLimit = 24,
+  } = args;
   const client = getReadClient();
 
   const events = await client.getContractEvents({
@@ -61,15 +73,16 @@ export async function fetchRealmAssets(args: {
     if (uniqueTokenIds.length >= cardLimit) break;
   }
 
-  const clearReceiptSchemaId = preset
-    ? Number(getSeededSchemaIds(preset).clearReceipt)
-    : -1;
+  const clearId = Number(
+    clearReceiptSchemaId ??
+      (preset ? getSeededSchemaIds(preset).clearReceipt : -1n),
+  );
 
   const cards = await Promise.all(
     uniqueTokenIds.map(async (tokenId): Promise<AssetCard | null> => {
       try {
         const summary = await fetchAssetSummary(tokenId);
-        if (summary.schemaId === clearReceiptSchemaId) return null;
+        if (summary.schemaId === clearId) return null;
         const card = buildAssetCardFromMetadata({
           tokenId: summary.tokenId,
           tier: summary.tier,

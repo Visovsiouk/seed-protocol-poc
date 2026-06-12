@@ -1,9 +1,9 @@
 /**
  * Single source of truth for loot presentation tokens — element hues,
  * catalog-effect metadata, and tier labels/colours. Previously these dicts
- * were copy-pasted across `components/game/HUD.tsx` and
+ * were copy-pasted across the game HUD and
  * `components/inventory/AssetCard.tsx`; consolidating them here keeps the
- * HUD chip, the inventory card, and the kit `Chip` family in visual lockstep.
+ * player bar, the inventory card, and the kit `Chip` family in visual lockstep.
  *
  * The engine never imports this — presentation is strictly a UI concern.
  */
