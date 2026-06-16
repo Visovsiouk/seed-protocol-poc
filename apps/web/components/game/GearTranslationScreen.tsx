@@ -1,34 +1,27 @@
 "use client";
 
 /**
- * `<WarpInterstitial/>` — bridges two starter realms after a boss
- * clear. Replaces the bare "open the picker" CTA for the forced
- * linear arc: the player isn't picking a next realm, they're being
- * funneled toward one, and the moment is supposed to *feel like*
- * a translation rather than a teleport.
+ * `<GearTranslationScreen/>` — the "your gear changes shape" beat, now
+ * played at realm *entry* instead of after a boss clear. When the player
+ * descends into a realm whose genre differs from the gear they carried in,
+ * this is the moment the translation actually happens: the same on-chain
+ * token, re-rendered against the destination realm's adapter, with the
+ * deterministic stat rebalance the contract applies surfaced as a diff.
  *
- * Three beats:
- *   1. Shard pickup — diegetic ledger note announcing what just came
- *      out of the boss room.
- *   2. Gear translation — each equipped item rendered twice: once
- *      native to the realm just left, once translated against the
- *      destination realm via the adapter (`AssetCard`'s `targetRealm`
- *      prop). Same on-chain token, same stats, different vocabulary.
- *      This is the dramatized "translation" surface.
- *   3. Arrival — short voice + a single "Walk forward" CTA that
- *      routes to `/play/${toPreset}`.
+ * Each equipped slot is rendered twice — native (the realm it came from)
+ * and translated (this realm) — via `AssetCard`'s `targetRealm` prop, with
+ * an `AdapterStrip` underneath showing the `via adapter` address and the
+ * before→after stat deltas. A single "Descend →" button calls `onDescend`,
+ * which the play page uses to drop into the run proper.
  *
- * Equipped gear comes in via props (the parent reads it from the
- * RunState). If the player has nothing equipped, the gear beat is
- * skipped — no translation to dramatize.
+ * The translation visual (`TranslationPair`/`AdapterStrip`/`WeaponDiff`/
+ * `ArmorDiff`) was lifted verbatim from the now-deleted `WarpInterstitial`,
+ * which used to play this beat at the exit hand-off between starter realms.
  */
 
-import { useState } from "react";
-import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { motion, useReducedMotion } from "framer-motion";
 import type { AssetCard as AssetCardType, Preset } from "@/lib/engine/types";
 import { AssetCard } from "@/components/inventory/AssetCard";
-import { ChoiceRow, type Choice } from "@/components/game/ChoiceRow";
-import { getStarterRealm } from "@/lib/contracts/starter-realms";
 import {
   presetForRealm,
   useElementLabel,
@@ -36,92 +29,42 @@ import {
 } from "@/lib/contracts/adapters";
 import { getAdapterAddress } from "@/lib/contracts/seeded-adapters";
 import { shortAddress } from "@/lib/utils";
-import { Body, Rule, Stamp } from "@/components/ui";
+import { Body, Button, Rule, Stamp } from "@/components/ui";
 import { warpCrossfade, withReducedMotion } from "@/lib/ui/motion";
 
-type Beat = "shard" | "gear" | "arrival";
-
-const ARRIVAL_BY_PRESET: Record<Preset, { stamp: string; title: string; body: string; arrival: string }> = {
-  fantasy: {
-    stamp: "Field record · the Reach falls",
-    title: "Wet wood, then rain on stone.",
-    body:
-      "Her laughter splinters into static. The forest thins. The ground beneath " +
-      "the moss is concrete now, and the concrete is wet.",
-    arrival: "You wake on a curb. The mark on your hand is still there.",
-  },
-  cyberpunk: {
-    stamp: "Field record · the ICE shatters",
-    title: "Blue smoke and a longer corridor.",
-    body:
-      "The contract burns in your hand. The rain becomes condensation, the " +
-      "neon becomes panel-light. Something quieter than an engine is waiting.",
-    arrival: "You wake in a corridor. The mark on your hand is still there.",
-  },
-  scifi: {
-    stamp: "Field record · the Core goes quiet",
-    title: "Three doors closed behind you.",
-    body:
-      "The reactor's whisper drops below hearing. You step through and the " +
-      "ground steadies. The walk is finished, or the next part begins.",
-    arrival: "You step out onto open ground.",
-  },
-};
-
-export function WarpInterstitial({
-  fromPreset,
-  toPreset,
+export function GearTranslationScreen({
+  realm,
+  preset,
   equipped,
+  onDescend,
 }: {
-  fromPreset: Preset;
-  toPreset: Preset;
+  realm: `0x${string}`;
+  preset: Preset;
   equipped: { weapon?: AssetCardType; armor?: AssetCardType };
+  onDescend: () => void;
 }) {
   const reduced = useReducedMotion();
-  const [beat, setBeat] = useState<Beat>("shard");
-  const toRealm = getStarterRealm(toPreset).realm;
-  const arrival = ARRIVAL_BY_PRESET[toPreset];
-  const fromArrival = ARRIVAL_BY_PRESET[fromPreset];
-  const hasGear = !!(equipped.weapon || equipped.armor);
 
-  let content: React.ReactNode;
-  if (beat === "shard") {
-    content = (
-      <Frame stamp={fromArrival.stamp}>
-        <h3 className="font-mono text-lg leading-snug font-medium text-[var(--color-preset-accent)]">
-          {fromArrival.title}
-        </h3>
-        <Body size="sm">{fromArrival.body}</Body>
-        <Body size="sm">
-          A shard catches the light in your hand. It is warm. It is yours.
-        </Body>
-        <Footer>
-          <ChoiceRow
-            ariaLabel="Continue"
-            align="end"
-            choices={
-              [
-                {
-                  key: hasGear ? "carry" : "walk-forward",
-                  label: `${hasGear ? "Carry what's yours" : "Walk forward"} →`,
-                  variant: "primary",
-                  onClick: () => setBeat(hasGear ? "gear" : "arrival"),
-                },
-              ] satisfies Choice[]
-            }
-          />
-        </Footer>
-      </Frame>
-    );
-  } else if (beat === "gear") {
-    content = (
-      <Frame stamp="Field record · the things you carried">
+  return (
+    <motion.section
+      aria-label="Your gear changes shape"
+      data-preset={preset}
+      variants={withReducedMotion(warpCrossfade, reduced)}
+      initial="enter"
+      animate="center"
+      className="mx-auto w-full max-w-2xl"
+    >
+      <div className="flex flex-col gap-4 p-5 rounded-md relative overflow-hidden bg-[linear-gradient(135deg,var(--surface-2),var(--surface-1))] border border-dashed border-[var(--color-preset-accent)]">
+        <header className="flex items-baseline justify-between gap-3">
+          <Stamp>Field record · the things you carried</Stamp>
+        </header>
+        <Rule />
         <h3 className="font-mono text-lg leading-snug font-medium text-[var(--color-preset-accent)]">
           What you carried changes shape.
         </h3>
         <Body size="sm">
           The same blade, the same coat, the same token in the same wallet —
-          but the ground beneath them speaks a different language now. The
+          but the ground beneath them speaks a different language here. The
           protocol translates. Watch.
         </Body>
 
@@ -130,105 +73,26 @@ export function WarpInterstitial({
             <TranslationPair
               label="Weapon"
               card={equipped.weapon}
-              toRealm={toRealm}
+              toRealm={realm}
             />
           )}
           {equipped.armor && (
             <TranslationPair
               label="Armor"
               card={equipped.armor}
-              toRealm={toRealm}
+              toRealm={realm}
             />
           )}
         </div>
 
-        <Footer>
-          <ChoiceRow
-            ariaLabel="Continue"
-            align="end"
-            choices={
-              [
-                {
-                  key: "walk-forward",
-                  label: "Walk forward →",
-                  variant: "primary",
-                  onClick: () => setBeat("arrival"),
-                },
-              ] satisfies Choice[]
-            }
-          />
-        </Footer>
-      </Frame>
-    );
-  } else {
-    // arrival
-    content = (
-      <Frame stamp={arrival.stamp}>
-      <h3 className="font-mono text-lg leading-snug font-medium text-[var(--color-preset-accent)]">
-        {arrival.title}
-      </h3>
-      <Body size="sm">{arrival.body}</Body>
-      <Body size="sm">{arrival.arrival}</Body>
-      <Footer>
-        <ChoiceRow
-          ariaLabel="Walk in"
-          align="end"
-          choices={
-            [
-              {
-                key: `walk-in-${toPreset}`,
-                label: "Walk in →",
-                variant: "primary",
-                href: `/play/${toPreset}`,
-              },
-            ] satisfies Choice[]
-          }
-        />
-      </Footer>
-    </Frame>
-    );
-  }
-
-  return (
-    <AnimatePresence mode="wait">
-      <motion.div
-        key={beat}
-        variants={withReducedMotion(warpCrossfade, reduced)}
-        initial="enter"
-        animate="center"
-        exit="exit"
-      >
-        {content}
-      </motion.div>
-    </AnimatePresence>
-  );
-}
-
-function Frame({
-  stamp,
-  children,
-}: {
-  stamp: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <section
-      aria-label="Warp"
-      className="flex flex-col gap-4 p-5 rounded-md relative overflow-hidden bg-[linear-gradient(135deg,var(--surface-2),var(--surface-1))] border border-dashed border-[var(--color-preset-accent)]"
-    >
-      <header className="flex items-baseline justify-between gap-3">
-        <Stamp>{stamp}</Stamp>
-      </header>
-      <Rule />
-      {children}
-      <Rule tone="muted" />
-    </section>
-  );
-}
-
-function Footer({ children }: { children: React.ReactNode }) {
-  return (
-    <footer className="flex items-center justify-end pt-1">{children}</footer>
+        <Rule tone="muted" />
+        <footer className="flex items-center justify-end pt-1">
+          <Button intent="primary" size="md" onClick={onDescend}>
+            Descend →
+          </Button>
+        </footer>
+      </div>
+    </motion.section>
   );
 }
 
@@ -262,7 +126,7 @@ function TranslationPair({
 
   return (
     <div className="flex flex-col gap-2">
-      <span className="font-mono text-[10px] uppercase opacity-55 tracking-[0.28em]">
+      <span className="font-mono text-[10px] uppercase opacity-65 tracking-[0.28em]">
         {label}
       </span>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_auto_1fr] sm:items-center">
@@ -314,13 +178,10 @@ function AdapterStrip({
   return (
     <div className="flex flex-col gap-1 rounded-md px-3 py-2 text-[11px] bg-[var(--surface-1)] border border-dashed border-[var(--border-2)]">
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-        <span className="font-mono uppercase opacity-55 tracking-[0.22em]">
+        <span className="font-mono uppercase opacity-65 tracking-[0.22em]">
           via adapter
         </span>
-        <code
-          className="font-mono opacity-80"
-          title={adapter}
-        >
+        <code className="font-mono opacity-80" title={adapter}>
           {shortAddress(adapter)}
         </code>
       </div>
@@ -408,9 +269,7 @@ function WeaponDiff({
           <Delta before={fromElement} after={toElement} />
         </>
       )}
-      {translating && (
-        <span className="opacity-50 italic">resolving…</span>
-      )}
+      {translating && <span className="opacity-65 italic">resolving…</span>}
     </div>
   );
 }
@@ -429,10 +288,7 @@ function ArmorDiff({
   translating: boolean;
 }) {
   const fromElement = useElementLabel(card.resistElement ?? "none", fromPreset);
-  const toElement = useElementLabel(
-    translated.resistElement ?? "none",
-    toPreset,
-  );
+  const toElement = useElementLabel(translated.resistElement ?? "none", toPreset);
   return (
     <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 opacity-90">
       <Delta
@@ -452,9 +308,7 @@ function ArmorDiff({
           <Delta before={fromElement} after={toElement} />
         </>
       )}
-      {translating && (
-        <span className="opacity-50 italic">resolving…</span>
-      )}
+      {translating && <span className="opacity-65 italic">resolving…</span>}
     </div>
   );
 }

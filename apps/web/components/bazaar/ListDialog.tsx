@@ -97,13 +97,13 @@ export function ListDialog({
       <header className="flex items-start justify-between gap-4">
           <div className="flex flex-col gap-0.5">
             <h2 className="text-lg font-semibold">List an asset</h2>
-            <p className="text-xs opacity-60">
+            <p className="text-xs opacity-70">
               Pick a piece from your inventory, set a price.
             </p>
           </div>
           <button
             onClick={onClose}
-            className="text-sm opacity-60 hover:opacity-100"
+            className="text-sm opacity-70 hover:opacity-100"
             aria-label="Close"
           >
             ✕
@@ -142,7 +142,7 @@ export function ListDialog({
             />
 
             <div>
-              <label className="block text-xs uppercase tracking-wide opacity-60">
+              <label className="block text-xs uppercase tracking-wide opacity-70">
                 Total price (ETH)
               </label>
               <input
@@ -203,7 +203,7 @@ function InventorySection({
   if (cards.length === 0) return null;
   return (
     <div className="flex flex-col gap-2">
-      <h4 className="text-xs uppercase tracking-wider opacity-50">{label}</h4>
+      <h4 className="text-xs uppercase tracking-wider opacity-65">{label}</h4>
       <div className="grid gap-2">
         {cards.map((c) => (
           <AssetCard

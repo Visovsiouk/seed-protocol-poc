@@ -31,8 +31,8 @@ import { getAdapterAddress } from "@/lib/contracts/seeded-adapters";
 import { armorName, weaponName } from "@/lib/loot/names";
 import { tierColor } from "@/lib/ui/loot-visuals";
 import { fadeRise, withReducedMotion } from "@/lib/ui/motion";
-import { Chip, TierChip, ElementChip, EffectChip, ProvenanceChip } from "@/components/ui";
-import { motion, useReducedMotion } from "framer-motion";
+import { TierChip, ElementChip, EffectChip, ProvenanceChip } from "@/components/ui";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 
 const ZERO_ADDR = "0x0000000000000000000000000000000000000000" as const;
 
@@ -155,13 +155,13 @@ function OriginalStrip({
           Translated from {sourcePreset}
         </span>
         {hasAdapter && (
-          <span className="text-[10px] opacity-50 font-mono">
+          <span className="text-[10px] opacity-65 font-mono">
             via {shortAddr(adapter)}
           </span>
         )}
       </div>
       {!hasAdapter ? (
-        <span className="text-[10px] opacity-60">
+        <span className="text-[10px] opacity-70">
           No adapter deployed — equipping uses native stats.
         </span>
       ) : isError ? (
@@ -170,12 +170,14 @@ function OriginalStrip({
           restarted Anvil. Equipping uses native stats.
         </span>
       ) : !hasTranslation ? (
-        <span className="text-[10px] opacity-60">
+        <span className="text-[10px] opacity-70">
           {isFetching ? "Translating…" : "Awaiting adapter read."}
         </span>
       ) : (
         <>
           <div className="text-xs tabular-nums opacity-90">
+            {typeLabelFor(card, sourcePreset) !== "" &&
+              `${typeLabelFor(card, sourcePreset)} · `}
             {isWeapon ? (
               <>
                 d{card.damageDie}
@@ -189,15 +191,11 @@ function OriginalStrip({
             )}
           </div>
           {(() => {
-            const srcTypeLabel = typeLabelFor(card, sourcePreset);
-            if (!damageElement && !resistElement && srcTypeLabel === "") {
+            if (!damageElement && !resistElement) {
               return null;
             }
             return (
               <div className="flex flex-wrap gap-1">
-                {srcTypeLabel !== "" && (
-                  <Chip color="var(--border-2)" label={srcTypeLabel} />
-                )}
                 {damageElement && (
                   <TranslatedElementChip
                     element={damageElement}
@@ -230,6 +228,7 @@ export function AssetCard({
   targetPreset: targetPresetProp,
 }: Props) {
   const isWeapon = card.slot === "weapon";
+  const reduced = useReducedMotion();
 
   // Decide whether a real preset hop applies. The hook itself short-
   // circuits non-hop cases and returns the input card unchanged, but
@@ -285,23 +284,84 @@ export function AssetCard({
       type="button"
       onClick={onClick}
       disabled={!onClick}
-      className="text-left rounded-lg p-3 pl-4 transition flex flex-col gap-2 border overflow-hidden relative bg-[var(--surface-1)]"
+      className="text-left w-full rounded-lg p-3 pl-6 transition flex flex-col gap-2 border overflow-hidden relative"
       style={{
-        background: selected ? "var(--surface-2)" : undefined,
-        borderColor: selected
-          ? "var(--color-preset-accent)"
-          : "var(--border-1)",
-        borderLeft: `3px solid ${tierColor(displayCard.tier)}`,
+        // Tier-tinted glass surface so the card reads its rarity at a glance.
+        // The tint stays low (8% base) so the dark glass dominates and body
+        // text on `--color-preset-fg` keeps its contrast. When equipped, the
+        // tier tint deepens and a solid tier-coloured spine band (with vertical
+        // "Equipped" text) carries the state — no outline ring.
+        background: selected
+          ? `color-mix(in oklab, ${tierColor(
+              displayCard.tier,
+            )} 14%, var(--surface-2))`
+          : `color-mix(in oklab, ${tierColor(
+              displayCard.tier,
+            )} 8%, var(--surface-1))`,
+        // Inset glow off the left edge so the tier spine reads as rarity
+        // rather than a plain divider. When equipped, lift the card with a
+        // soft outer shadow instead of an outline so it floats above its peers
+        // without a competing ring.
+        boxShadow: selected
+          ? `inset 3px 0 12px -4px ${tierColor(
+              displayCard.tier,
+            )}, 0 8px 24px -14px var(--glow)`
+          : `inset 3px 0 12px -4px ${tierColor(displayCard.tier)}`,
+        zIndex: selected ? 1 : undefined,
+        // Per-side longhands only — mixing the `borderColor` shorthand with
+        // the `borderLeft` shorthand (the tier spine) makes React warn about
+        // conflicting border declarations on rerender. All non-left sides keep
+        // the neutral border; the left edge is the tier-coloured spine. When
+        // equipped the prominent spine band (below) sits over this edge.
+        borderTopColor: "var(--border-1)",
+        borderRightColor: "var(--border-1)",
+        borderBottomColor: "var(--border-1)",
+        borderLeftColor: tierColor(displayCard.tier),
+        borderLeftWidth: "4px",
         cursor: onClick ? "pointer" : "default",
       }}
     >
+      <AnimatePresence>
+        {selected && (
+          <motion.span
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-y-0 left-0 pl-0.5 pr-1 flex items-center justify-center origin-left"
+            style={{
+              background: `color-mix(in oklab, ${tierColor(
+                displayCard.tier,
+              )} 82%, transparent)`,
+            }}
+            initial={reduced ? false : { scaleX: 0, opacity: 0 }}
+            animate={{ scaleX: 1, opacity: 1 }}
+            exit={reduced ? { opacity: 0 } : { scaleX: 0, opacity: 0 }}
+            transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+          >
+            <motion.span
+              className="text-[9px] font-bold uppercase leading-none tracking-[0.2em]"
+              style={{
+                writingMode: "vertical-rl",
+                color: "#13110d",
+                textShadow:
+                  "0 0 1px rgba(245,243,238,0.9), 0 0 2px rgba(245,243,238,0.5)",
+              }}
+              initial={reduced ? false : { opacity: 0, rotate: 180, y: 6 }}
+              animate={{ opacity: 1, rotate: 180, y: 0 }}
+              exit={{ opacity: 0, rotate: 180 }}
+              transition={{ duration: 0.2, delay: reduced ? 0 : 0.06 }}
+            >
+              Equipped
+            </motion.span>
+          </motion.span>
+        )}
+      </AnimatePresence>
       <header className="flex items-baseline justify-between gap-2">
         <h4 className="font-semibold text-sm truncate">{displayCard.name}</h4>
         <TierChip tier={displayCard.tier} />
       </header>
       {!compact && (
-        <p className="text-xs opacity-50">
-          {displayCard.slot} · {displayCard.realmName}
+        <p className="text-xs opacity-75 truncate">
+          {typeLabelFor(displayCard, topLabelPreset) || displayCard.slot} ·{" "}
+          {displayCard.realmName}
         </p>
       )}
       <div className="text-xs opacity-80 tabular-nums">
@@ -318,20 +378,15 @@ export function AssetCard({
         )}
       </div>
       {(() => {
-        const topTypeLabel = typeLabelFor(displayCard, topLabelPreset);
         const showAnyChip =
           (isWeapon && displayCard.element && displayCard.element !== "none") ||
           (!isWeapon &&
             displayCard.resistElement &&
             displayCard.resistElement !== "none") ||
-          topTypeLabel !== "" ||
           displayCard.catalogEffects.length > 0;
         if (!showAnyChip) return null;
         return (
         <div className="flex flex-wrap gap-1">
-          {topTypeLabel !== "" && (
-            <Chip color="var(--border-2)" label={topTypeLabel} />
-          )}
           {isWeapon &&
             displayCard.element &&
             displayCard.element !== "none" && (

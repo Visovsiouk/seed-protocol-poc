@@ -352,7 +352,7 @@ export function RoyaltyEarnedDemo({ realm, preset, realmLabel, lootSchemaId }: P
             See {realmLabel} earn its first royalty
           </h2>
         </div>
-        <span className="text-[11px] opacity-60 tabular-nums">
+        <span className="text-[11px] opacity-70 tabular-nums">
           Cycle price · {formatEther(DEMO_PRICE)} ETH
         </span>
       </header>
@@ -366,7 +366,7 @@ export function RoyaltyEarnedDemo({ realm, preset, realmLabel, lootSchemaId }: P
       </p>
 
       {schemaLoading && (
-        <p className="text-xs opacity-60">Checking realm schemas…</p>
+        <p className="text-xs opacity-70">Checking realm schemas…</p>
       )}
 
       {!schemaLoading && !schemaReady && (
@@ -400,7 +400,7 @@ export function RoyaltyEarnedDemo({ realm, preset, realmLabel, lootSchemaId }: P
               className="grid grid-cols-[1.25rem_1fr_auto] items-baseline gap-3 px-3 py-2 rounded bg-[var(--surface-2)]"
             >
               <span
-                className="text-[10px] tabular-nums opacity-60"
+                className="text-[10px] tabular-nums opacity-70"
                 aria-hidden
               >
                 {idx + 1}.
@@ -416,7 +416,7 @@ export function RoyaltyEarnedDemo({ realm, preset, realmLabel, lootSchemaId }: P
                   </span>
                 )}
                 {rec.txHash && (
-                  <span className="text-[10px] opacity-50 font-mono">
+                  <span className="text-[10px] opacity-65 font-mono">
                     tx {rec.txHash.slice(0, 10)}…{rec.txHash.slice(-6)}
                   </span>
                 )}
@@ -433,7 +433,7 @@ export function RoyaltyEarnedDemo({ realm, preset, realmLabel, lootSchemaId }: P
 
       <footer className="flex flex-wrap items-center justify-between gap-3 pt-1">
         <div className="flex flex-col gap-0.5">
-          <span className="text-[10px] uppercase tracking-widest opacity-50">
+          <span className="text-[10px] uppercase tracking-widest opacity-65">
             Royalty earned
           </span>
           <span

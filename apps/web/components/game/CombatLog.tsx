@@ -1,91 +1,70 @@
 "use client";
 
 /**
- * Rolling narration feed. Holds the last N lines emitted by the engine
- * across every step in the current encounter. New lines append at the
- * bottom; auto-scroll keeps them in view.
+ * Combat ticker — the rolling blow-by-blow feed.
  *
- * Visually distinct from `<RoomNarration/>` (which is the static intro for
- * the current room) — this log accumulates as the player acts.
+ * Used to be a 256px parchment box that sat mostly empty; now it's a slim
+ * band that shows only the most recent beats, newest at the bottom, older
+ * lines fading out above. Damage reads rose, heals green, drama gold — the
+ * emphasis the engine already tags on each line.
+ *
+ * Trial/room setup no longer lives here (it moved onto `<EncounterStage/>`),
+ * so this is purely the action feed: what just happened, in the player's
+ * own monospace field-record voice.
  */
 
-import { useEffect, useRef } from "react";
-import type { EncounterState, NarrationLine } from "@/lib/engine/types";
+import type { NarrationLine } from "@/lib/engine/types";
+import { motion } from "framer-motion";
 
-const MAX_LINES = 60;
+const VISIBLE = 3;
 
 const EMPHASIS_STYLES: Record<NonNullable<NarrationLine["emphasis"]>, string> = {
-  info: "opacity-70",
+  info: "opacity-80",
   damage: "text-[var(--color-danger)]",
   heal: "text-[var(--color-ok)]",
   drama: "text-[var(--color-warn)] font-medium",
 };
 
-export function CombatLog({
-  lines,
-  encounter,
-}: {
-  lines: readonly NarrationLine[];
-  encounter?: EncounterState | null;
-}) {
-  const tail = lines.slice(-MAX_LINES);
-  const scrollerRef = useRef<HTMLDivElement>(null);
+export function CombatLog({ lines }: { lines: readonly NarrationLine[] }) {
+  // Stable identity per line so React keeps existing rows mounted (they hold
+  // their place) and only the newest row enters — keeps the band from
+  // re-animating wholesale on every step.
+  const tail = lines.slice(-VISIBLE).map((line, i) => ({
+    line,
+    key: lines.length - Math.min(lines.length, VISIBLE) + i,
+  }));
 
-  useEffect(() => {
-    const el = scrollerRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [tail.length]);
-
-  const isTrial = encounter?.kind === "trial";
-
+  // Fixed-height, bottom-anchored band: the box never grows or shrinks as
+  // lines come and go (overflow clips the oldest), so the layout below it
+  // stays rock-steady. Newest sits at the bottom; older rows quiet down.
   return (
-    <section
-      ref={scrollerRef}
+    <div
+      aria-live="polite"
       aria-label="Combat log"
-      className="h-64 overflow-y-auto px-4 py-3 rounded-lg border text-sm leading-relaxed flex flex-col gap-1 font-[family-name:var(--font-mono)] bg-[var(--surface-2)] border-[var(--border-1)]"
+      className="flex h-[4.5rem] flex-col justify-end gap-0.5 overflow-hidden px-1 font-[family-name:var(--font-mono)] text-sm leading-relaxed"
     >
-      {isTrial && <TrialPreview encounter={encounter} hasLog={tail.length > 0} />}
-      {tail.length === 0
-        ? !isTrial && (
-            <p className="opacity-50">The room is silent. Your move.</p>
-          )
-        : tail.map((l, i) => (
-            <p
-              key={i}
-              className={l.emphasis ? EMPHASIS_STYLES[l.emphasis] : "opacity-90"}
+      {tail.length === 0 ? (
+        <p className="opacity-70">The room is silent. Your move.</p>
+      ) : (
+        tail.map(({ line, key }, i) => {
+          // Older lines (higher up) sit quieter so the eye lands on the newest.
+          const depth = tail.length - 1 - i;
+          const fade = depth === 0 ? 1 : depth === 1 ? 0.65 : 0.4;
+          const isNewest = depth === 0;
+          return (
+            <motion.p
+              key={key}
+              initial={isNewest ? { opacity: 0 } : false}
+              animate={{ opacity: fade }}
+              transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+              className={line.emphasis ? EMPHASIS_STYLES[line.emphasis] : undefined}
+              style={line.emphasis ? undefined : { opacity: fade }}
             >
-              {l.text}
-            </p>
-          ))}
-    </section>
-  );
-}
-
-/**
- * Sticky trial setup at the top of the log. Shown for the whole trial
- * encounter (not just the empty state) so the player keeps seeing the
- * prompt, intent, and stakes even when prior beats — e.g. the death +
- * respawn narration from a seed-mercy bounce — still sit in the log.
- */
-function TrialPreview({
-  encounter,
-  hasLog,
-}: {
-  encounter: Extract<EncounterState, { kind: "trial" }>;
-  hasLog: boolean;
-}) {
-  return (
-    <>
-      <p className="opacity-90">{encounter.prompt}</p>
-      <p className="opacity-90">
-        <span className="font-medium">You attempt:</span> {encounter.intent}
-      </p>
-      <p className="opacity-70">{encounter.stakes}</p>
-      <p className="opacity-90">
-        {encounter.ability === "agility" ? "Agility" : "Endurance"} check —
-        roll d20+{encounter.bonus} vs DC {encounter.dc}
-      </p>
-      {hasLog && <hr className="my-1 border-0 h-px bg-[var(--border-1)]" />}
-    </>
+              {line.text}
+            </motion.p>
+          );
+        })
+      )}
+    </div>
   );
 }

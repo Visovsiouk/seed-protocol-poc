@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { PreseedBadge } from "./PreseedBadge";
 import { AssetCard } from "@/components/inventory/AssetCard";
-import { Button } from "@/components/ui";
+import { Button, Panel } from "@/components/ui";
 import { formatEth, shortAddress } from "@/lib/utils";
 import {
   usePurchase,
@@ -101,32 +101,36 @@ export function ListingCard({
   };
 
   return (
-    <article className="flex flex-col gap-3 rounded-xl p-4 transition hover:translate-y-[-2px] bg-[var(--surface-1)] border border-[var(--border-1)]">
+    <Panel
+      as="article"
+      tone="glass-1"
+      className="flex flex-col gap-3 rounded-xl p-4 transition hover:translate-y-[-2px]"
+    >
       {card ? (
         <AssetCard card={card} />
       ) : (
-        <div className="rounded-md p-3 text-xs opacity-60 bg-[var(--surface-2)] border border-[var(--border-1)]">
+        <Panel tone="glass-2" className="rounded-md p-3 text-xs opacity-70">
           Loading asset…
-        </div>
+        </Panel>
       )}
 
       <div className="flex items-end justify-between gap-3 px-1">
         <div className="flex flex-col">
-          <span className="text-[10px] uppercase tracking-widest opacity-50">
+          <span className="text-[10px] uppercase tracking-widest opacity-65">
             Price
           </span>
           <span className="text-lg font-semibold tabular-nums leading-tight">
             {formatEth(listing.price)} ETH
           </span>
           {listing.amount > 1n && (
-            <span className="text-[10px] opacity-60">
+            <span className="text-[10px] opacity-70">
               × {listing.amount.toString()}
             </span>
           )}
         </div>
         <div className="flex flex-col items-end gap-1">
           <PreseedBadge preseed={listing.preseed} />
-          <span className="text-[10px] opacity-50 font-mono">
+          <span className="text-[10px] opacity-65 font-mono">
             seller {shortAddress(listing.seller)}
           </span>
         </div>
@@ -157,6 +161,6 @@ export function ListingCard({
           </p>
         )}
       </footer>
-    </article>
+    </Panel>
   );
 }

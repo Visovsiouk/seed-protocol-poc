@@ -68,9 +68,9 @@ export function ActionChoices({
   }
 
   if (encounter.kind === "trial") {
-    // Trial setup (prompt + intent + stakes + check line) is rendered in
-    // the empty CombatLog above this row, so the player sees one coherent
-    // beat. This row only needs the action button.
+    // Trial setup (prompt + intent + stakes + check line) is rendered on
+    // the `<EncounterStage/>` above, so the player sees one coherent beat.
+    // This row only needs the action button.
     const choices: Choice[] = [
       {
         key: "attempt",

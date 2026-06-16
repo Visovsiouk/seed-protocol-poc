@@ -18,12 +18,8 @@
  */
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { useAccount } from "wagmi";
 import type { ReactNode } from "react";
 import { ConnectButton } from "@/components/wallet/ConnectButton";
-import { useTutorialProgress } from "@/lib/reads/hooks";
-import { emptyTutorialProgress } from "@/lib/tutorial/progress";
 import { AmbientOrbs } from "./AmbientOrbs";
 
 type Props = {
@@ -44,18 +40,7 @@ const WIDTH: Record<NonNullable<Props["width"]>, string> = {
   full: "max-w-none",
 };
 
-const NAV = [
-  { href: "/genesis", label: "Genesis" },
-  { href: "/bazaar", label: "Bazaar" },
-  { href: "/create", label: "Create" },
-] as const;
-
 export function AppShell({ children, title, back, actions, width = "default" }: Props) {
-  const pathname = usePathname();
-  const { address } = useAccount();
-  const progress = useTutorialProgress(address).data ?? emptyTutorialProgress();
-  const arcCompleted = progress.starterClears >= 3 || progress.hasSeed;
-
   const backLink = back === undefined ? { href: "/", label: "← Home" } : back;
   const widthClass = WIDTH[width];
 
@@ -63,7 +48,7 @@ export function AppShell({ children, title, back, actions, width = "default" }: 
     <>
       <a
         href="#main"
-        className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded focus:bg-[var(--color-preset-accent)] focus:px-3 focus:py-2 focus:text-[var(--color-preset-bg)]"
+        className="sr-only focus-visible:not-sr-only focus-visible:fixed focus-visible:left-4 focus-visible:top-4 focus-visible:z-50 focus-visible:rounded focus-visible:bg-[var(--color-preset-accent)] focus-visible:px-3 focus-visible:py-2 focus-visible:text-[var(--color-preset-bg)]"
       >
         Skip to content
       </a>
@@ -80,27 +65,6 @@ export function AppShell({ children, title, back, actions, width = "default" }: 
               >
                 {backLink.label}
               </Link>
-            )}
-            {arcCompleted && (
-              <nav className="flex items-center gap-3" aria-label="Protocol surfaces">
-                {NAV.map((n) => {
-                  const active = pathname.startsWith(n.href);
-                  return (
-                    <Link
-                      key={n.href}
-                      href={n.href}
-                      aria-current={active ? "page" : undefined}
-                      className="text-sm transition-opacity"
-                      style={{
-                        opacity: active ? 1 : 0.6,
-                        color: active ? "var(--color-preset-accent)" : undefined,
-                      }}
-                    >
-                      {n.label}
-                    </Link>
-                  );
-                })}
-              </nav>
             )}
           </div>
 

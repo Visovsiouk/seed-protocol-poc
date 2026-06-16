@@ -41,7 +41,7 @@ const stamp = tv({
   variants: {
     tone: {
       accent: "text-[var(--color-preset-accent)]",
-      muted: "text-[var(--color-preset-fg)]/60",
+      muted: "text-[var(--color-preset-text)]/60",
     },
   },
   defaultVariants: { tone: "accent" },
@@ -95,7 +95,7 @@ export function Body({
 
 export function Footnote({ children }: { children: ReactNode }) {
   return (
-    <p className="self-end font-mono text-[10px] uppercase tracking-[0.25em] opacity-50">
+    <p className="self-end font-mono text-[10px] uppercase tracking-[0.25em] opacity-65">
       {children}
     </p>
   );

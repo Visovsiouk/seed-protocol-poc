@@ -132,7 +132,7 @@ export function TutorialOverlay({
       <button
         type="button"
         onClick={onDismiss}
-        className="text-xs uppercase tracking-widest opacity-60 hover:opacity-100 transition self-start"
+        className="text-xs uppercase tracking-widest opacity-70 hover:opacity-100 transition self-start"
       >
         {copy.eyebrow} — show
       </button>
@@ -152,14 +152,14 @@ export function TutorialOverlay({
       }}
     >
       <header className="flex items-baseline justify-between gap-3">
-        <span className="text-[11px] uppercase tracking-widest opacity-60">
+        <span className="text-[11px] uppercase tracking-widest opacity-70">
           {copy.eyebrow}
         </span>
         {onDismiss && (
           <button
             type="button"
             onClick={onDismiss}
-            className="text-[11px] opacity-50 hover:opacity-100 transition"
+            className="text-[11px] opacity-65 hover:opacity-100 transition"
           >
             Hide
           </button>
@@ -171,7 +171,7 @@ export function TutorialOverlay({
         <p className="text-sm opacity-70 leading-relaxed">{copy.guidance}</p>
       )}
       {showCtaCount && (
-        <p className="text-xs opacity-50">
+        <p className="text-xs opacity-65">
           Doors closed behind you: {progress.starterClears} / 3
         </p>
       )}

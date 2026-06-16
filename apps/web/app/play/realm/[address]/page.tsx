@@ -37,19 +37,19 @@ import { useRealmTheme } from "@/lib/ui/useRealmTheme";
 import {
   CANONICAL_SCHEMAS,
   fallbackSeed,
-  lootRollToMockCard,
   makeStarterGear,
 } from "@/lib/engine/runtime";
 import { EncounterFrame } from "@/components/game/EncounterFrame";
-import { InventoryDrawer } from "@/components/inventory/InventoryDrawer";
-import { AppShell, Panel, Button } from "@/components/ui";
-import {
-  useInventoryCards,
-  useRealms,
-} from "@/lib/reads/hooks";
+import { GearTranslationScreen } from "@/components/game/GearTranslationScreen";
+import { AppShell, Panel } from "@/components/ui";
+import { useRealms } from "@/lib/reads/hooks";
 import { useMintLoot } from "@/lib/contracts/loot";
 import { useMintClearReceipt } from "@/lib/contracts/boss-cleared";
-import { translateCardForRealm } from "@/lib/contracts/adapters";
+import { presetForRealm, translateCardForRealm } from "@/lib/contracts/adapters";
+import {
+  type EquippedSnapshot,
+  loadEquipped,
+} from "@/lib/persistence/equipped";
 
 const TRIAL_PRESET: Preset = "fantasy";
 const TRIAL_BOSS_ID = "forest_hag";
@@ -97,7 +97,6 @@ export default function CreatorRealmPlayPage() {
   const { address: walletAddress, isConnected: walletConnected } = useAccount();
   const publicClient = usePublicClient();
   const realms = useRealms();
-  const onchain = useInventoryCards(walletAddress);
   const { mintLoot } = useMintLoot();
   const { mintClearReceipt } = useMintClearReceipt();
 
@@ -133,58 +132,129 @@ export default function CreatorRealmPlayPage() {
     setMounted(true);
   }, [csprngSeed]);
 
-  const [runEpoch, setRunEpoch] = useState(0);
-
   // `data-preset` drives the per-preset palette; a registered custom
-  // accent (if any) overrides `--color-preset-accent` on top of it.
-  useRealmTheme(preset, registered?.accent);
+  // accent (if any) tints `--color-preset-accent` on top of it. The "crt"
+  // skin flips the play screen to the amber terminal look (the realm's
+  // accent still tints buttons/glow within the terminal).
+  useRealmTheme(preset, registered?.accent, "crt");
 
   const starterGear = useMemo(
     () => (address ? makeStarterGear(preset, address, realmName) : null),
     [address, preset, realmName],
   );
 
+  // The loadout the player staged in the hub, captured once at hydration
+  // and frozen for the whole delve — gear is locked once you descend (there
+  // is no in-run equip path). Holds *translated* cards so the engine boots
+  // against this realm's numbers. Null until hydration resolves.
+  const [runStartEquipped, setRunStartEquipped] = useState<{
+    weapon?: AssetCardType;
+    armor?: AssetCardType;
+  } | null>(null);
+
+  // The *native* staged gear (pre-translation), captured at hydration. Drives
+  // the cross-genre entry beat below — we compare each card's origin preset to
+  // this realm's preset, so gear carried from another genre plays the "your
+  // gear changes shape" screen once before the run.
+  const [equippedNative, setEquippedNative] = useState<{
+    weapon?: AssetCardType;
+    armor?: AssetCardType;
+  } | null>(null);
+  const [entryAck, setEntryAck] = useState(false);
+
   const initial = useMemo(() => {
-    if (!address || !csprngSeed || !starterGear) return null;
+    if (!address || !csprngSeed || !starterGear || !runStartEquipped) {
+      return null;
+    }
     return startRun({
       preset,
       realm: address,
       rngSeed: csprngSeed,
-      equipped: { weapon: starterGear.weapon, armor: starterGear.armor },
+      equipped: {
+        weapon: runStartEquipped.weapon,
+        armor: runStartEquipped.armor,
+      },
       bossId,
       // Player realms scale their cap via the sqlite row; trial mode
       // pins to T2.
       schemas: { ...CANONICAL_SCHEMAS[preset], maxTier },
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [address, csprngSeed, runEpoch, preset, bossId, maxTier]);
+  }, [address, csprngSeed, preset, bossId, maxTier, runStartEquipped]);
 
-  const handleRestart = () => {
-    setCsprngSeed(fallbackSeed());
-    setRunEpoch((e) => e + 1);
-  };
+  // One-shot hydration: read the persisted loadout (native cards staged in
+  // the hub), translate each slot against this realm's adapter, then pin the
+  // frozen run-start snapshot. A *starter* card (tokenId === 0n) is realm-
+  // local, so a starter persisted from a different realm is discarded in
+  // favour of this realm's `starterGear`; real on-chain cards travel.
+  useEffect(() => {
+    if (!address || !starterGear) return;
+    if (runStartEquipped !== null) return;
+    let cancelled = false;
+    const stored = loadEquipped();
+    const keepIfNative = (
+      card: AssetCardType | undefined,
+      fallback: AssetCardType,
+    ): AssetCardType => {
+      if (!card) return fallback;
+      if (
+        card.tokenId === 0n &&
+        card.realm?.toLowerCase() !== address.toLowerCase()
+      ) {
+        return fallback;
+      }
+      return card;
+    };
+    const nativeBaseline: EquippedSnapshot = stored
+      ? {
+          weapon: keepIfNative(stored.weapon, starterGear.weapon),
+          armor: keepIfNative(stored.armor, starterGear.armor),
+        }
+      : { weapon: starterGear.weapon, armor: starterGear.armor };
+    setEquippedNative(nativeBaseline);
+
+    const translateOne = async (
+      card: AssetCardType | undefined,
+    ): Promise<AssetCardType | undefined> => {
+      if (!card || !publicClient) return card;
+      try {
+        return await translateCardForRealm({
+          card,
+          targetRealm: address,
+          publicClient,
+        });
+      } catch {
+        return card;
+      }
+    };
+
+    void Promise.all([
+      translateOne(nativeBaseline.weapon),
+      translateOne(nativeBaseline.armor),
+    ]).then(([w, a]) => {
+      if (cancelled) return;
+      setRunStartEquipped({ weapon: w, armor: a });
+    });
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [address, starterGear]);
 
   const seedReady = mounted && !!initial && !!address && metaQuery.isFetched;
 
-  const [localInventory, setLocalInventory] = useState<AssetCardType[]>([]);
-  const [equipped, setEquipped] = useState<{
-    weapon?: AssetCardType;
-    armor?: AssetCardType;
-  }>(() =>
-    starterGear
-      ? { weapon: starterGear.weapon, armor: starterGear.armor }
-      : {},
-  );
-  useEffect(() => {
-    if (!starterGear) return;
-    setEquipped((prev) =>
-      prev.weapon || prev.armor
-        ? prev
-        : { weapon: starterGear.weapon, armor: starterGear.armor },
-    );
-  }, [starterGear]);
-
-  const [drawerOpen, setDrawerOpen] = useState(false);
+  // Cross-genre entry beat: true iff staged gear came from a different genre
+  // than this realm. Trial mode realms aren't in the starter set, so a card's
+  // origin preset still resolves via `realmPreset`/`presetForRealm`.
+  const crossGenre = useMemo(() => {
+    if (!equippedNative) return false;
+    return [equippedNative.weapon, equippedNative.armor].some((c) => {
+      if (!c) return false;
+      const origin = c.realmPreset ?? presetForRealm(c.realm);
+      return !!origin && origin !== preset;
+    });
+  }, [equippedNative, preset]);
 
   // clearReceipt mint state — pending/minted/failed/skipped, mirrors
   // the starter /play/[preset] page so the run-over panel can render
@@ -209,7 +279,8 @@ export default function CreatorRealmPlayPage() {
     if (chainMintAvailable && initial && walletAddress) {
       // Loop the sponsored mint, one tx per finding (a batch path would
       // collapse this). `useMintLoot` invalidates the
-      // inventory query on each success, so the drawer reconciles.
+      // inventory query on each success, so the hub's loadout picker
+      // reconciles on the next visit.
       for (const entry of escrow) {
         await mintLoot({
           realm: address,
@@ -220,12 +291,9 @@ export default function CreatorRealmPlayPage() {
           realmLabel: realmName,
         });
       }
-    } else {
-      const cards = escrow.map((entry) =>
-        lootRollToMockCard(entry.loot, preset, address, realmName),
-      );
-      setLocalInventory((prev) => [...prev, ...cards]);
     }
+    // Trial mode (unregistered realm): findings don't mint and there's no
+    // inventory surface on the play page, so banking is a session no-op.
   };
 
   const handleEngineEvent = (event: EngineEvent) => {
@@ -259,42 +327,6 @@ export default function CreatorRealmPlayPage() {
         // eslint-disable-next-line no-console
         console.error("mintClearReceipt failed", err);
       });
-  };
-
-  // Drawer inventory: on-chain holdings + trial-only accumulator when
-  // running off-chain. Foreign cards translate via the per-realm
-  // adapter, matching the /play/[preset] behavior.
-  const inventory: readonly AssetCardType[] = chainMintAvailable
-    ? (onchain.data ?? [])
-    : walletConnected
-      ? [...(onchain.data ?? []), ...localInventory]
-      : localInventory;
-
-  const [translationCache] = useState<Map<string, AssetCardType>>(() => new Map());
-  const handleEquip = (slot: "weapon" | "armor", card: AssetCardType) => {
-    setEquipped((prev) => ({ ...prev, [slot]: card }));
-    if (!publicClient || !address) return;
-    const key = `${card.tokenId.toString()}::${address.toLowerCase()}`;
-    const cached = translationCache.get(key);
-    if (cached) {
-      setEquipped((prev) => ({ ...prev, [slot]: cached }));
-      return;
-    }
-    void translateCardForRealm({
-      card,
-      targetRealm: address,
-      publicClient,
-    })
-      .then((translated) => {
-        if (translated === card) return;
-        translationCache.set(key, translated);
-        setEquipped((prev) =>
-          prev[slot]?.tokenId === card.tokenId
-            ? { ...prev, [slot]: translated }
-            : prev,
-        );
-      })
-      .catch(() => {});
   };
 
   const initialState: RunState | null = initial?.state ?? null;
@@ -344,21 +376,12 @@ export default function CreatorRealmPlayPage() {
           {address && (
             <Link
               href={`/realm/${address}`}
-              className="text-[10px] font-normal uppercase tracking-widest opacity-60 hover:opacity-100"
+              className="text-[10px] font-normal uppercase tracking-widest opacity-70 hover:opacity-100"
             >
               Realm details ↗
             </Link>
           )}
         </span>
-      }
-      actions={
-        <Button
-          intent="ghost"
-          size="sm"
-          onClick={() => setDrawerOpen(true)}
-        >
-          Inventory ({inventory.length})
-        </Button>
       }
     >
       <section className="mx-auto flex max-w-4xl flex-col gap-4">
@@ -400,19 +423,34 @@ export default function CreatorRealmPlayPage() {
         )}
 
         {seedReady && initialState && initial ? (
-          <EncounterFrame
-            key={runEpoch}
-            initialState={initialState}
-            initialLines={initial.lines}
-            bossId={bossId}
-            equipped={equipped}
-            activePreset={preset}
-            realmName={realmName}
-            onEvent={handleEngineEvent}
-            onBankEscrow={handleBankEscrow}
-            onRestart={handleRestart}
-            clearReceipt={clearReceipt}
-          />
+          crossGenre && !entryAck && address ? (
+            <GearTranslationScreen
+              realm={address}
+              preset={preset}
+              equipped={equippedNative ?? {}}
+              onDescend={() => setEntryAck(true)}
+            />
+          ) : (
+            <EncounterFrame
+              initialState={initialState}
+              initialLines={initial.lines}
+              bossId={bossId}
+              activePreset={preset}
+              realmName={realmName}
+              // Player realms surface their name in the page title and the
+              // metadata panel from the start, so there's no mystery to gate —
+              // reveal it in the escrow tray too (the "???" beat is only for
+              // the starter arc's depth-2 reveal).
+              realmNameRevealed
+              chainReady={chainMintAvailable}
+              onEvent={handleEngineEvent}
+              onBankEscrow={handleBankEscrow}
+              clearReceipt={clearReceipt}
+              // Creator realms always return to the base picker on clear
+              // (default href); only the starter arc lands on the chest.
+              bossReturnHref="/"
+            />
+          )
         ) : (
           <Panel
             as="aside"
@@ -425,15 +463,6 @@ export default function CreatorRealmPlayPage() {
         )}
       </section>
 
-      <InventoryDrawer
-        open={drawerOpen}
-        onClose={() => setDrawerOpen(false)}
-        inventory={inventory}
-        equipped={equipped}
-        onEquip={handleEquip}
-        activeRealm={address ?? undefined}
-        activePreset={preset}
-      />
     </AppShell>
   );
 }

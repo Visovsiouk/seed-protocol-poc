@@ -22,13 +22,22 @@ import {
 
 export function ColdOpenBook({
   /**
-   * Where the final "Wake" button routes. Defaults to the first realm
-   * in the canonical order; passed in by the landing page so tests can
-   * override without stubbing the router.
+   * Where the final "Wake" button routes when no `onWake` is given. Defaults
+   * to the pocket-realm hub at `/`. Note `router.push("/")` is a no-op when
+   * the book is already rendered at `/`, so the hub passes `onWake` instead
+   * to flip its own cold-open gate in place — `wakeHref` is the fallback for
+   * mounts on a different route (e.g. tests).
    */
-  wakeHref = "/play/fantasy",
+  wakeHref = "/",
+  /**
+   * Called once the player walks the final page, in lieu of navigating. The
+   * hub uses this to reveal the base without a route change (the book lives
+   * on `/`, so a push there wouldn't remount anything).
+   */
+  onWake,
 }: {
   wakeHref?: string;
+  onWake?: () => void;
 }) {
   const router = useRouter();
   const reduced = useReducedMotion();
@@ -43,11 +52,12 @@ export function ColdOpenBook({
       } catch {
         // localStorage unavailable (private mode / SSR) — proceed anyway.
       }
-      router.push(wakeHref);
+      if (onWake) onWake();
+      else router.push(wakeHref);
       return;
     }
     setPageIdx((i) => i + 1);
-  }, [isLast, router, wakeHref]);
+  }, [isLast, onWake, router, wakeHref]);
 
   return (
     <Panel
@@ -58,7 +68,7 @@ export function ColdOpenBook({
     >
       <header className="flex items-center justify-between gap-3">
         <Stamp>{beat.stamp}</Stamp>
-        <span className="font-mono text-[10px] uppercase tracking-[0.3em] opacity-45">
+        <span className="font-mono text-[10px] uppercase tracking-[0.3em] opacity-60">
           {String(pageIdx + 1).padStart(2, "0")} / {String(COLD_OPEN_BOOK.length).padStart(2, "0")}
         </span>
       </header>

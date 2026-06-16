@@ -48,11 +48,21 @@ function KindBadge({ kind }: { kind: RealmActivityEntry["kind"] }) {
 export function RealmActivityFeed({
   realm,
   preset,
+  lootSchemaId,
+  clearReceiptSchemaId,
 }: {
   realm: `0x${string}`;
   preset: Preset | null;
+  lootSchemaId?: bigint;
+  clearReceiptSchemaId?: bigint;
 }) {
-  const activity = useRealmActivity({ realm, preset, limit: 8 });
+  const activity = useRealmActivity({
+    realm,
+    preset,
+    lootSchemaId,
+    clearReceiptSchemaId,
+    limit: 8,
+  });
 
   return (
     <Panel
@@ -64,41 +74,43 @@ export function RealmActivityFeed({
       <header className="flex items-baseline justify-between gap-2">
         <Stamp>Recent activity</Stamp>
         {activity.isFetching && (
-          <span className="text-[10px] opacity-50">refreshing…</span>
+          <span className="text-[10px] opacity-65">refreshing…</span>
         )}
       </header>
 
       {activity.isLoading ? (
-        <p className="text-sm opacity-60">Reading mint events…</p>
+        <p className="text-sm opacity-70">Reading mint events…</p>
       ) : activity.isError ? (
         <p className="text-sm text-[var(--color-danger)]">
           Failed to load activity. Check the dev server logs.
         </p>
       ) : !activity.data || activity.data.length === 0 ? (
-        <p className="text-sm opacity-60">
+        <p className="text-sm opacity-70">
           No mints on this realm yet. Clear the boss or accept a loot drop to
           populate the feed.
         </p>
       ) : (
         <ul className="flex flex-col gap-1.5">
           {activity.data.map((e) => (
-            <li
+            <Panel
+              as="li"
+              tone="glass-2"
               key={`${e.txHash}-${e.logIndex}`}
-              className="flex items-baseline justify-between gap-3 text-xs px-2 py-1.5 rounded bg-[var(--surface-2)]"
+              className="flex items-baseline justify-between gap-3 text-xs px-2 py-1.5 rounded"
             >
               <div className="flex items-baseline gap-2 min-w-0">
                 <KindBadge kind={e.kind} />
                 <span className="font-mono opacity-80 shrink-0">
                   {short(e.recipient)}
                 </span>
-                <span className="font-mono opacity-50 truncate min-w-0">
+                <span className="font-mono opacity-65 truncate min-w-0">
                   · token {shortTokenId(e.tokenId)}
                 </span>
               </div>
-              <span className="text-[10px] opacity-50 font-mono shrink-0">
+              <span className="text-[10px] opacity-65 font-mono shrink-0">
                 blk {e.blockNumber.toString()}
               </span>
-            </li>
+            </Panel>
           ))}
         </ul>
       )}

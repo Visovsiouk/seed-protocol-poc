@@ -13,7 +13,7 @@ export function ProvenanceBadge({ realm }: { realm: `0x${string}` }) {
       className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium bg-[var(--surface-2)] border border-[var(--border-1)]"
       title={realm}
     >
-      <span className="opacity-60">minted by</span>
+      <span className="opacity-70">minted by</span>
       <span className="font-mono">{shortAddress(realm)}</span>
     </span>
   );

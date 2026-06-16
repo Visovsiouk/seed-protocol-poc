@@ -37,7 +37,7 @@ export function Stat({
 }) {
   return (
     <div className={stat({ align })}>
-      <span className="text-[9px] uppercase tracking-widest opacity-40">{label}</span>
+      <span className="text-[9px] uppercase tracking-widest opacity-60">{label}</span>
       <span className="flex items-baseline gap-1 leading-none">
         <span className="text-base font-bold tabular-nums" style={color ? { color } : undefined}>
           {value}

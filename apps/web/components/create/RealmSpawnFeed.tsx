@@ -73,7 +73,7 @@ export function RealmSpawnFeed({
     >
       <header className="flex items-baseline justify-between gap-2">
         <Stamp tone="accent">Spawning realm</Stamp>
-        <span className="font-mono text-[10px] uppercase tracking-widest opacity-50">
+        <span className="font-mono text-[10px] uppercase tracking-widest opacity-65">
           {phase === "done"
             ? `${BEAT_COUNT} / ${BEAT_COUNT} stamped`
             : `${ORDER[phase]} / ${BEAT_COUNT} stamped`}
@@ -116,7 +116,7 @@ export function RealmSpawnFeed({
                   >
                     {beat.title}
                   </span>
-                  <code className="font-mono text-[10px] opacity-40">
+                  <code className="font-mono text-[10px] opacity-60">
                     {beat.call}
                   </code>
                 </div>

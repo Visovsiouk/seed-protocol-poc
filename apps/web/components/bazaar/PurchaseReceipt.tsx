@@ -32,14 +32,14 @@ export function PurchaseReceipt({
         <h2 className="text-lg font-semibold">Purchase complete</h2>
         <button
           onClick={onClose}
-          className="text-sm opacity-60 hover:opacity-100"
+          className="text-sm opacity-70 hover:opacity-100"
           aria-label="Close"
         >
           ✕
         </button>
       </div>
 
-      <p className="mt-1 font-mono text-[11px] opacity-50">
+      <p className="mt-1 font-mono text-[11px] opacity-65">
         tx {txHash.slice(0, 10)}…{txHash.slice(-6)}
       </p>
 
@@ -54,7 +54,7 @@ export function PurchaseReceipt({
           />
         ) : (
           <div className="flex h-40 items-center justify-center">
-            <span className="text-sm opacity-40">Loading recipients…</span>
+            <span className="text-sm opacity-60">Loading recipients…</span>
           </div>
         )}
       </div>

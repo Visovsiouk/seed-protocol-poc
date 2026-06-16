@@ -61,7 +61,7 @@ export function ListingsGrid() {
   if (isLoading) {
     return (
       <>
-        <p className="opacity-60">Loading listings…</p>
+        <p className="opacity-70">Loading listings…</p>
         {receiptPortal}
       </>
     );

@@ -39,9 +39,16 @@
  */
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
-import { useAccount, usePublicClient, useWriteContract } from "wagmi";
-import { ecosystemTemplateAbi } from "@abis/generated";
+import {
+  useAccount,
+  usePublicClient,
+  useReadContract,
+  useWriteContract,
+} from "wagmi";
+import { ecosystemFactoryAbi, ecosystemTemplateAbi } from "@abis/generated";
+import { getAddress } from "@/lib/contracts/addresses";
 import { useCreateEcosystem } from "@/lib/contracts/factory";
 import { useRegisterRealmSchemas } from "@/lib/contracts/register-schemas";
 import { useTutorialProgress } from "@/lib/reads/hooks";
@@ -99,6 +106,7 @@ async function fetchNextSigner(): Promise<NextSignerReply> {
 }
 
 export default function CreatePage() {
+  const router = useRouter();
   const { address } = useAccount();
   const publicClient = usePublicClient();
   const { createEcosystem } = useCreateEcosystem();
@@ -109,6 +117,26 @@ export default function CreatePage() {
   const hasSeed = tutorialQuery.data?.hasSeed === true;
   const seedKnown = !!address && tutorialQuery.isSuccess;
   const seedGate = !!address && seedKnown && !hasSeed;
+
+  // 1 Seed = 1 Ecosystem: the factory pins each owner's realm in
+  // `ecosystemOf(owner)`, returning the zero address until they found
+  // one. A non-zero value means this wallet already spent its seed, so
+  // `createEcosystem()` would revert "Seed already spent on an
+  // ecosystem". Gate the form on it and point the player at their realm
+  // instead of letting them sign a doomed tx.
+  const ZERO = "0x0000000000000000000000000000000000000000" as const;
+  const existingRealmQuery = useReadContract({
+    address: getAddress("ecosystemFactory"),
+    abi: ecosystemFactoryAbi,
+    functionName: "ecosystemOf",
+    args: address ? [address] : undefined,
+    query: { enabled: !!address },
+  });
+  const existingRealm =
+    existingRealmQuery.data && existingRealmQuery.data !== ZERO
+      ? (existingRealmQuery.data as `0x${string}`)
+      : null;
+  const alreadyFounded = !!existingRealm;
 
   const [preset, setPreset] = useState<Preset>("fantasy");
   const [bossId, setBossId] = useState<string>("forest_hag");
@@ -139,7 +167,12 @@ export default function CreatePage() {
     step.kind === "registering";
 
   const canSubmit =
-    !!address && !seedGate && !busy && step.kind === "form" && realmName.trim().length > 0;
+    !!address &&
+    !seedGate &&
+    !alreadyFounded &&
+    !busy &&
+    step.kind === "form" &&
+    realmName.trim().length > 0;
 
   /**
    * Step 2 + 3, with race retry. Signing setMinter is signed by the
@@ -242,6 +275,10 @@ export default function CreatePage() {
         signerIndex: result.signerIndex,
         maxTier: result.maxTier,
       });
+      // The realm is seeded — drop the player back at the base. Their new
+      // realm shows up among the community doors there. The Doors station is
+      // the base's default room.
+      router.push("/");
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setStep({ kind: "error", message });
@@ -277,7 +314,7 @@ export default function CreatePage() {
 
   return (
     <ProtocolSurfaceGate>
-      <AppShell title="Create a realm" back={{ href: "/", label: "← Realms" }}>
+      <AppShell title="Create a realm" back={{ href: "/", label: "← The hideout" }}>
         <section
           className="mx-auto flex max-w-3xl flex-col gap-6"
           data-preset={preset}
@@ -340,7 +377,42 @@ export default function CreatePage() {
             </Panel>
           )}
 
-          {step.kind === "form" && (
+          {alreadyFounded && existingRealm && (
+            <Panel
+              as="aside"
+              tone="glass-2"
+              aria-label="Realm already founded"
+              className="flex flex-col items-center gap-3 p-6 text-center"
+            >
+              <Stamp tone="accent">One seed · one realm</Stamp>
+              <h2 className="font-[family-name:var(--font-display)] text-lg font-semibold">
+                You&apos;ve already founded your realm
+              </h2>
+              <p className="max-w-md text-sm leading-relaxed opacity-75">
+                The Genesis Seed is spent the moment you deploy an ecosystem —
+                it&apos;s soulbound and singular. Your realm lives at{" "}
+                <span className="font-mono break-all">
+                  {shortAddress(existingRealm)}
+                </span>
+                . Tend the one you have rather than minting another.
+              </p>
+              <Rule tone="accent" />
+              <div className="flex flex-wrap items-center justify-center gap-3">
+                <Link href={`/realm/${existingRealm}`}>
+                  <Button intent="primary" size="sm">
+                    Open your realm dashboard →
+                  </Button>
+                </Link>
+                <Link href={`/play/realm/${existingRealm}`}>
+                  <Button intent="ghost" size="sm">
+                    Play your realm
+                  </Button>
+                </Link>
+              </div>
+            </Panel>
+          )}
+
+          {step.kind === "form" && !alreadyFounded && (
             <>
               <fieldset className="flex flex-col gap-3">
                 <legend className="mb-1">
@@ -377,7 +449,7 @@ export default function CreatePage() {
                     );
                   })}
                 </div>
-                <p className="text-[11px] opacity-60">
+                <p className="text-[11px] opacity-70">
                   Drives narration, monster pool, and loot vocabulary. The
                   schema pair the realm uses on-chain comes from the
                   preset&apos;s starter realm.
@@ -399,7 +471,7 @@ export default function CreatePage() {
                     />
                   ))}
                 </div>
-                <p className="text-[11px] opacity-60">
+                <p className="text-[11px] opacity-70">
                   Shown at BOSS_DEPTH with two baked-in effects. Stats are
                   tuned for T2 gear — a cleared boss mints a clearReceipt on
                   your realm.
@@ -419,7 +491,7 @@ export default function CreatePage() {
                   disabled={!address || seedGate}
                   className="rounded-md px-3 py-2 text-sm disabled:opacity-50 bg-[var(--surface-2)] border border-[var(--border-1)] text-[var(--color-preset-fg)]"
                 />
-                <p className="text-[11px] opacity-60">
+                <p className="text-[11px] opacity-70">
                   Shown in the realm selector and on the play page. Up to 64
                   characters.
                 </p>
@@ -447,9 +519,13 @@ export default function CreatePage() {
                           : "var(--border-1)",
                       outline:
                         accent === null
-                          ? "2px solid var(--color-preset-fg)"
+                          ? "3px solid var(--color-preset-fg)"
                           : "none",
-                      outlineOffset: 2,
+                      outlineOffset: 3,
+                      transform: accent === null ? "scale(1.2)" : undefined,
+                      boxShadow:
+                        accent === null ? "0 0 20px -2px var(--glow)" : undefined,
+                      zIndex: accent === null ? 1 : undefined,
                     }}
                   >
                     A
@@ -474,16 +550,18 @@ export default function CreatePage() {
                             ? "var(--color-preset-fg)"
                             : "transparent",
                           outline: active
-                            ? "2px solid var(--color-preset-fg)"
+                            ? "3px solid var(--color-preset-fg)"
                             : "none",
-                          outlineOffset: 2,
-                          boxShadow: active ? `0 0 16px -4px ${sw.hex}` : undefined,
+                          outlineOffset: 3,
+                          transform: active ? "scale(1.2)" : undefined,
+                          boxShadow: active ? `0 0 22px -2px ${sw.hex}` : undefined,
+                          zIndex: active ? 1 : undefined,
                         }}
                       />
                     );
                   })}
                 </div>
-                <p className="text-[11px] opacity-60">
+                <p className="text-[11px] opacity-70">
                   Recolours your realm&apos;s glow, borders, and buttons.
                   Leave on <strong>A</strong> to inherit the genre&apos;s
                   signature colour. The form above previews your choice.
@@ -547,7 +625,7 @@ export default function CreatePage() {
             >
               <header className="flex items-baseline justify-between gap-2">
                 <Stamp tone="accent">Realm spawned</Stamp>
-                <span className="font-mono text-[10px] uppercase tracking-widest opacity-60">
+                <span className="font-mono text-[10px] uppercase tracking-widest opacity-70">
                   Owner {address ? shortAddress(address) : ""}
                 </span>
               </header>
@@ -556,19 +634,19 @@ export default function CreatePage() {
               </h2>
               <Rule tone="accent" />
               <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-[13px]">
-                <dt className="opacity-50">Address</dt>
+                <dt className="opacity-65">Address</dt>
                 <dd className="font-mono break-all">{step.ecosystem}</dd>
-                <dt className="opacity-50">Delegate</dt>
+                <dt className="opacity-65">Delegate</dt>
                 <dd>
                   slot #{step.signerIndex} ·{" "}
                   <span className="font-mono">
                     {shortAddress(step.signerAddress)}
                   </span>
                 </dd>
-                <dt className="opacity-50">Max tier</dt>
+                <dt className="opacity-65">Max tier</dt>
                 <dd>T{step.maxTier}</dd>
               </dl>
-              <p className="break-all font-mono text-[11px] opacity-50">
+              <p className="break-all font-mono text-[11px] opacity-65">
                 tx {step.txHash}
               </p>
               <div className="mt-2 flex flex-wrap items-center gap-3">
@@ -624,7 +702,7 @@ function BossOption({
     >
       <div className="flex items-baseline justify-between gap-2">
         <span className="text-sm font-medium">{def.name}</span>
-        <span className="font-mono text-[10px] tabular-nums opacity-60">
+        <span className="font-mono text-[10px] tabular-nums opacity-70">
           {def.baseHp} HP · d{def.attackDie} · AC {def.ac}
         </span>
       </div>

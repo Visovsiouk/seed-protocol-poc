@@ -26,6 +26,7 @@ import { RealmAssetsGrid } from "@/components/realm/RealmAssetsGrid";
 import { RoyaltyEarnedDemo } from "@/components/realm/RoyaltyEarnedDemo";
 import { useRealms } from "@/lib/reads/hooks";
 import { listStarterRealms } from "@/lib/contracts/starter-realms";
+import { getSeededSchemaIds } from "@/lib/contracts/seeded-realms";
 import { resolveRealmDetail, type RealmDetail } from "@/lib/contracts/realm-detail";
 import type { Preset } from "@/lib/engine/types";
 import { AppShell, Panel, Button, Chip, Stamp, Rule } from "@/components/ui";
@@ -41,6 +42,7 @@ type CreatorMeta = {
   maxTier: number;
   createdAt: number;
   lootSchemaId: string;
+  clearReceiptSchemaId: string;
 };
 
 type MetaReply =
@@ -102,7 +104,7 @@ function KindPill({ detail, creatorMeta }: { detail: RealmDetail; creatorMeta: C
 function Field({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="flex flex-col gap-1 min-w-0">
-      <span className="font-mono text-[10px] uppercase tracking-[0.28em] opacity-55">
+      <span className="font-mono text-[10px] uppercase tracking-[0.28em] opacity-65">
         {label}
       </span>
       <span className="text-sm min-w-0">{value}</span>
@@ -171,7 +173,7 @@ function SetupPending() {
         <SetupStep done={false} label="Minter delegate authorised" />
       </div>
 
-      <p className="text-xs leading-relaxed opacity-45">
+      <p className="text-xs leading-relaxed opacity-60">
         This realm was deployed directly via the factory without going through
         the creation flow. Preset, boss, and the server-held minter delegate
         are not on record — loot and clear receipts cannot mint until setup
@@ -250,7 +252,6 @@ export default function RealmDashboardPage() {
   // Resolved display values for creator realms.
   const creatorName = creatorMeta?.name ?? (address ? `Realm ${shortAddress(address)}` : "Unknown realm");
   const creatorPreset: Preset | null = creatorMeta?.preset ?? null;
-  const lootSchemaId = creatorMeta?.lootSchemaId ? BigInt(creatorMeta.lootSchemaId) : undefined;
 
   // Effective preset for stats/leaderboard components — known for both
   // starter and registered creator realms.
@@ -258,6 +259,29 @@ export default function RealmDashboardPage() {
     detail?.kind === "starter"
       ? detail.preset
       : creatorPreset;
+
+  // Effective schema ids the stats/activity/asset readers classify against.
+  // Starter realms use the seeded per-preset pair; creator realms register
+  // their OWN pair on their clone (commit c90af90) and report it via meta.
+  // Threading these explicitly fixes player-realm dashboards that otherwise
+  // classified every mint against the wrong (seeded) preset ids.
+  const { lootSchemaId, clearReceiptSchemaId } = useMemo<{
+    lootSchemaId: bigint | undefined;
+    clearReceiptSchemaId: bigint | undefined;
+  }>(() => {
+    if (detail?.kind === "starter") {
+      const ids = getSeededSchemaIds(detail.preset);
+      return { lootSchemaId: ids.loot, clearReceiptSchemaId: ids.clearReceipt };
+    }
+    return {
+      lootSchemaId: creatorMeta?.lootSchemaId
+        ? BigInt(creatorMeta.lootSchemaId)
+        : undefined,
+      clearReceiptSchemaId: creatorMeta?.clearReceiptSchemaId
+        ? BigInt(creatorMeta.clearReceiptSchemaId)
+        : undefined,
+    };
+  }, [detail, creatorMeta]);
 
   const pageTitle =
     detail?.kind === "starter"
@@ -270,7 +294,7 @@ export default function RealmDashboardPage() {
     <AppShell title={pageTitle} back={{ href: "/", label: "← Realms" }}>
       <section className="mx-auto flex max-w-3xl flex-col gap-6">
         {realms.isLoading && !detail && (
-          <p className="text-sm opacity-60">Loading realm…</p>
+          <p className="text-sm opacity-70">Loading realm…</p>
         )}
 
         {realms.isError && (
@@ -394,7 +418,7 @@ export default function RealmDashboardPage() {
                   </Button>
                 </Link>
                 <Link
-                  href="/bazaar"
+                  href="/?station=market"
                   className="text-sm opacity-80 hover:opacity-100"
                 >
                   Bazaar
@@ -422,22 +446,29 @@ export default function RealmDashboardPage() {
             <MetricsRow
               realm={detail.address}
               preset={effectivePreset}
+              lootSchemaId={lootSchemaId}
+              clearReceiptSchemaId={clearReceiptSchemaId}
             />
             <div className="grid gap-6 lg:grid-cols-2">
               {effectivePreset && (
                 <BossLeaderboard
                   realm={detail.address}
                   preset={effectivePreset}
+                  lootSchemaId={lootSchemaId}
+                  clearReceiptSchemaId={clearReceiptSchemaId}
                 />
               )}
               <RealmActivityFeed
                 realm={detail.address}
                 preset={effectivePreset}
+                lootSchemaId={lootSchemaId}
+                clearReceiptSchemaId={clearReceiptSchemaId}
               />
             </div>
             <RealmAssetsGrid
               realm={detail.address}
               preset={effectivePreset}
+              clearReceiptSchemaId={clearReceiptSchemaId}
             />
           </>
         )}

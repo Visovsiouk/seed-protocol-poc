@@ -116,13 +116,13 @@ function FlowRow({
           style={{ background: color }}
         />
         <span>{label}</span>
-        <span className="font-mono text-xs opacity-50">
+        <span className="font-mono text-xs opacity-65">
           {shortAddress(addr)}
         </span>
       </div>
       <div className="text-right">
         <span className="font-semibold">{formatEth(amount)} ETH</span>
-        <span className="ml-2 text-xs opacity-50">{pct}%</span>
+        <span className="ml-2 text-xs opacity-65">{pct}%</span>
       </div>
     </div>
   );

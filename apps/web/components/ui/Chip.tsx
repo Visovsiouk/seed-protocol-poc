@@ -33,9 +33,15 @@ export function Chip({
     <span
       className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide leading-none"
       style={{
-        background: `color-mix(in srgb, ${color} 14%, transparent)`,
-        border: `1px solid color-mix(in srgb, ${color} 28%, transparent)`,
-        color,
+        // The fill/border carry the hue identity; the LABEL must stay
+        // legible on a dark surface. The label is therefore foreground-
+        // DOMINANT (75% fg) with just a 25% hue tint — bright enough to read
+        // whatever the hue, while still nodding to the chip's colour. Earlier
+        // attempts painted the raw `color` (washed out for dark hues, and
+        // invisible when a caller passed a semi-transparent token).
+        background: `color-mix(in srgb, ${color} 22%, transparent)`,
+        border: `1px solid color-mix(in srgb, ${color} 50%, transparent)`,
+        color: `color-mix(in oklab, var(--color-preset-text) 75%, ${color})`,
       }}
     >
       <span>{label}</span>

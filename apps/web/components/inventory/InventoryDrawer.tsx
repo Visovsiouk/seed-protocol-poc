@@ -67,15 +67,15 @@ function Section({
   if (cards.length === 0) {
     return (
       <div className="flex flex-col gap-1">
-        <h4 className="text-xs uppercase tracking-wider opacity-50">{label}</h4>
-        <p className="text-xs opacity-40">No {label.toLowerCase()} owned yet.</p>
+        <h4 className="text-xs uppercase tracking-wider opacity-65">{label}</h4>
+        <p className="text-xs opacity-60">No {label.toLowerCase()} owned yet.</p>
       </div>
     );
   }
   return (
     <div className="flex flex-col gap-2">
-      <h4 className="text-xs uppercase tracking-wider opacity-50">{label}</h4>
-      <div className="grid gap-2">
+      <h4 className="text-xs uppercase tracking-wider opacity-65">{label}</h4>
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(13rem,1fr))] gap-2">
         {cards.map((c) => (
           <AssetCard
             key={c.tokenId.toString()}
@@ -141,22 +141,26 @@ export function InventoryDrawer({
     };
   }, [open, onClose]);
 
-  const weapons = inventory.filter((c) => c.slot === "weapon");
-  const armors = inventory.filter((c) => c.slot === "armor");
+  // Highest tier first so the rarest gear leads each section.
+  const weapons = inventory
+    .filter((c) => c.slot === "weapon")
+    .sort((a, b) => b.tier - a.tier);
+  const armors = inventory
+    .filter((c) => c.slot === "armor")
+    .sort((a, b) => b.tier - a.tier);
 
   if (!open) return null;
   return (
     <div
-      className="fixed inset-0 z-40 flex"
+      className="fixed inset-0 z-40 flex items-center justify-center p-4 sm:p-6 backdrop-blur-sm bg-[color-mix(in_oklab,#000_55%,transparent)]"
       onClick={onClose}
     >
-      <div className="flex-1 bg-[color-mix(in_oklab,var(--color-preset-bg)_55%,#000_55%)]" />
       <aside
         ref={asideRef}
         role="dialog"
         aria-modal="true"
         aria-label="Inventory"
-        className="w-[360px] max-w-[90vw] h-full overflow-y-auto p-5 flex flex-col gap-4 bg-[var(--color-preset-bg)] border-l border-[var(--border-1)]"
+        className="w-full max-w-3xl max-h-[85vh] overflow-y-auto p-6 flex flex-col gap-4 rounded-xl bg-[var(--color-preset-bg)] border border-[var(--border-1)] shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <header className="flex items-baseline justify-between">
@@ -166,7 +170,7 @@ export function InventoryDrawer({
           <button
             type="button"
             onClick={onClose}
-            className="text-sm opacity-60 hover:opacity-100"
+            className="text-sm opacity-70 hover:opacity-100"
           >
             Close
           </button>

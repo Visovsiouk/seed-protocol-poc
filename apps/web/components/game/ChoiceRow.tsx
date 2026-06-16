@@ -294,27 +294,35 @@ function choiceStyle(
 ): React.CSSProperties {
   const isPrimary = variant === "primary";
   return {
+    // The action row is the moment-to-moment verb of the whole game, so the
+    // buttons carry real weight: primary is a glowing accent slab, default a
+    // raised glass key. `selected` layers the roving-focus emphasis (lift +
+    // ring) on top so keyboard players always see where they are.
     background: isPrimary
       ? "var(--color-preset-accent)"
       : selected
         ? "var(--surface-3)"
         : "var(--surface-2)",
-    color: isPrimary
-      ? "var(--color-preset-bg)"
-      : "var(--color-preset-fg)",
+    color: isPrimary ? "var(--color-preset-bg)" : "var(--color-preset-text)",
     border: isPrimary
       ? "none"
       : `1px solid ${selected ? "var(--color-preset-fg)" : "var(--border-1)"}`,
     outline: selected ? "2px solid var(--color-preset-fg)" : "none",
     outlineOffset: selected ? "3px" : "0",
-    boxShadow: selected ? "0 6px 18px -6px rgba(0,0,0,0.55)" : undefined,
+    boxShadow: isPrimary
+      ? selected
+        ? "0 10px 28px -8px var(--glow), 0 0 0 1px var(--color-preset-accent)"
+        : "0 8px 22px -10px var(--glow)"
+      : selected
+        ? "0 8px 22px -8px rgba(0,0,0,0.6)"
+        : "0 2px 8px -4px rgba(0,0,0,0.5)",
     transform: selected ? "translateY(-2px)" : undefined,
-    filter: selected ? "brightness(1.08)" : undefined,
+    filter: selected ? "brightness(1.06)" : undefined,
   };
 }
 
 const CHOICE_CLASS =
-  "rounded-md px-4 py-2.5 text-sm font-medium transition disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none inline-flex items-center justify-center no-underline";
+  "rounded-lg px-6 py-3.5 text-base font-semibold tracking-wide transition active:translate-y-0 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none inline-flex items-center justify-center no-underline min-w-[7rem]";
 
 // --- ChoiceButton -------------------------------------------------------
 
@@ -420,7 +428,7 @@ const ChoiceLink = forwardRef<HTMLElement, ChoiceLinkProps>(function ChoiceLink(
 export function KbdHint({ multi = true }: { multi?: boolean }) {
   return (
     <p
-      className="text-[10px] uppercase tracking-widest opacity-50 flex flex-wrap items-center gap-1.5 select-none"
+      className="text-[10px] uppercase tracking-widest opacity-65 flex flex-wrap items-center gap-1.5 select-none"
       aria-hidden="true"
     >
       {multi && (
@@ -444,7 +452,7 @@ function Kbd({ children }: { children: ReactNode }) {
       style={{
         border: "1px solid var(--border-1)",
         background: "var(--surface-1)",
-        color: "var(--color-preset-fg)",
+        color: "var(--color-preset-text)",
       }}
     >
       {children}

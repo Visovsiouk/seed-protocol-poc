@@ -7,9 +7,10 @@
  * then earlier blockNumber. The reader (`fetchRealmStats`) sorts; this
  * component just renders.
  *
- * Only meaningful for starter realms (creator realms have no seeded
- * clearReceipt schemaId, so the leaderboard would always be empty).
- * The parent gates rendering accordingly.
+ * Works for both starter and creator realms — the parent passes the
+ * realm's clearReceipt schemaId (seeded for starters, the row's own id
+ * for player realms registered post-c90af90) so clears are counted
+ * against the correct schema.
  */
 
 import { useAccount } from "wagmi";
@@ -24,12 +25,16 @@ function short(addr: `0x${string}`): string {
 export function BossLeaderboard({
   realm,
   preset,
+  lootSchemaId,
+  clearReceiptSchemaId,
 }: {
   realm: `0x${string}`;
   preset: Preset;
+  lootSchemaId?: bigint;
+  clearReceiptSchemaId?: bigint;
 }) {
   const { address: connected } = useAccount();
-  const stats = useRealmStats({ realm, preset });
+  const stats = useRealmStats({ realm, preset, lootSchemaId, clearReceiptSchemaId });
   const rows = stats.data?.leaderboard ?? [];
 
   return (
@@ -41,17 +46,17 @@ export function BossLeaderboard({
     >
       <header className="flex items-baseline justify-between gap-2">
         <Stamp>Boss leaderboard</Stamp>
-        <span className="text-[10px] opacity-50">fewest turns wins</span>
+        <span className="text-[10px] opacity-65">fewest turns wins</span>
       </header>
 
       {stats.isLoading ? (
-        <p className="text-sm opacity-60">Tallying clears…</p>
+        <p className="text-sm opacity-70">Tallying clears…</p>
       ) : stats.isError ? (
         <p className="text-sm text-[var(--color-danger)]">
           Failed to load leaderboard.
         </p>
       ) : rows.length === 0 ? (
-        <p className="text-sm opacity-60">
+        <p className="text-sm opacity-70">
           No boss clears yet. Be the first to drop the realm boss.
         </p>
       ) : (
@@ -72,7 +77,7 @@ export function BossLeaderboard({
                     : "1px solid transparent",
                 }}
               >
-                <span className="text-[10px] opacity-50 font-mono">
+                <span className="text-[10px] opacity-65 font-mono">
                   #{i + 1}
                 </span>
                 <span className="font-mono opacity-90 truncate">

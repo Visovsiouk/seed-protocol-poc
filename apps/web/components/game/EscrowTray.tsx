@@ -27,22 +27,19 @@ type Props = {
   realm: `0x${string}`;
   /** Human-readable realm name (shown on the AssetCard subline). */
   realmName: string;
-  /**
-   * Whether these findings are forfeited on death. `true` for canonical
-   * permadeath realms (the stake is real); `false` for seed-mercy starter
-   * realms where the escrow survives the rewind. Drives the framing
-   * copy only — the engine owns the actual discard/preserve behaviour.
-   */
-  atRisk: boolean;
 };
 
-export function EscrowTray({ escrow, preset, realm, realmName, atRisk }: Props) {
-  // Newest find first — the reveal beat should land on what just dropped.
+export function EscrowTray({ escrow, preset, realm, realmName }: Props) {
+  // Highest tier first; within a tier, newest find leads (descending index).
   const cards = useMemo(
     () =>
       escrow
-        .map((entry) => lootRollToMockCard(entry.loot, preset, realm, realmName))
-        .reverse(),
+        .map((entry, i) => ({
+          card: lootRollToMockCard(entry.loot, preset, realm, realmName),
+          i,
+        }))
+        .sort((a, b) => b.card.tier - a.card.tier || b.i - a.i)
+        .map((e) => e.card),
     [escrow, preset, realm, realmName],
   );
 
@@ -54,7 +51,7 @@ export function EscrowTray({ escrow, preset, realm, realmName, atRisk }: Props) 
       tone="glass-2"
       glow="accent"
       aria-label="Carried findings"
-      className="flex flex-col gap-3 p-4"
+      className="flex h-full min-h-0 flex-col gap-3 p-4"
     >
       <header className="flex items-baseline justify-between gap-2">
         <Stamp tone="accent">Carried findings</Stamp>
@@ -63,11 +60,27 @@ export function EscrowTray({ escrow, preset, realm, realmName, atRisk }: Props) 
         </span>
       </header>
       <p className="text-xs opacity-70 leading-relaxed">
-        {atRisk
-          ? "Not yours yet. These bank to your wallet when you extract or clear the boss — fall before then and they're gone."
-          : "Held safely while you learn the delve. They bank when you extract or clear the boss, and survive a fall here."}
+        Not yours yet. These bank to your wallet when you extract or clear the
+        boss — fall before then and they&apos;re gone.
       </p>
-      <ul className="flex flex-col gap-2">
+      {/*
+        The list fills the remaining height of the fixed focal slot and
+        scrolls internally, so the tray never grows as findings stack up
+        over a run — a growing panel here would push the Descend/Extract
+        buttons + HUD down on every drop. Filling (not capping) keeps the
+        tray the exact height of the slot the stage vacated, so swapping
+        stage↔tray moves nothing below it.
+
+        Sparse runs (one or two findings) used to orphan a single narrow
+        card in the top-left of a tall, mostly-empty box. The scroll
+        container now `safe`-centres its content vertically — a lone card
+        sits in the middle of the slot, but the moment findings overflow
+        the height the keyword falls back to start so every card stays
+        reachable by scroll. `auto-fit` (not auto-fill) collapses the empty
+        column tracks so a single finding spans the full width instead of
+        hugging the left at 11rem.
+      */}
+      <ul className="grid min-h-0 flex-1 grid-cols-[repeat(auto-fill,minmax(13rem,1fr))] content-start gap-2 overflow-y-auto pr-1">
         {cards.map((card, i) => (
           <li key={`${card.tokenId.toString()}-${i}`}>
             <AssetCard card={card} />

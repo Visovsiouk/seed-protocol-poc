@@ -28,7 +28,7 @@
  * realm's palette glued to the chrome.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { notFound, useParams, useRouter } from "next/navigation";
 import { useAccount, usePublicClient } from "wagmi";
@@ -50,22 +50,20 @@ import {
 } from "@/lib/engine/runtime";
 import { EncounterFrame } from "@/components/game/EncounterFrame";
 import { RealmClearedInterstitial } from "@/components/game/RealmClearedInterstitial";
-import { InventoryDrawer } from "@/components/inventory/InventoryDrawer";
 import { TutorialOverlay } from "@/components/tutorial/TutorialOverlay";
-import { AppShell, Panel, Button } from "@/components/ui";
+import { AppShell, Panel } from "@/components/ui";
 import { emptyTutorialProgress, type TutorialProgress } from "@/lib/tutorial/progress";
 import {
   useInventoryCards,
   useStarterRealm,
   useTutorialProgress,
-  useBossClears,
 } from "@/lib/reads/hooks";
 import { useMintLoot } from "@/lib/contracts/loot";
 import { useMintClearReceipt } from "@/lib/contracts/boss-cleared";
-import { useClaimSeed } from "@/lib/contracts/seed-claim";
 import { useRunSeedCommitment } from "@/lib/contracts/run-seed";
-import { getStarterRealm, isStarterRealmDeployed } from "@/lib/contracts/starter-realms";
-import { translateCardForRealm } from "@/lib/contracts/adapters";
+import { getStarterRealm } from "@/lib/contracts/starter-realms";
+import { presetForRealm, translateCardForRealm } from "@/lib/contracts/adapters";
+import { GearTranslationScreen } from "@/components/game/GearTranslationScreen";
 import {
   type EquippedSnapshot,
   loadEquipped,
@@ -94,8 +92,6 @@ export default function PlayPage() {
   const onchain = useInventoryCards(address);
   const starter = useStarterRealm(preset);
   const tutorialQuery = useTutorialProgress(address);
-  const bossClears = useBossClears(address);
-  const { claimSeed, isPending: claimPending } = useClaimSeed();
 
   // Run-start nonce (ms since epoch). Stable across re-renders so the
   // `useRunSeedCommitment` query key doesn't shift; bump via remount to
@@ -116,28 +112,18 @@ export default function PlayPage() {
     setMounted(true);
   }, [csprngSeed]);
 
-  // Roguelike restart bookkeeping. `runEpoch` is bumped each time the
-  // player dies and clicks "Step back in" — it doubles as the React key
-  // on `<EncounterFrame/>` so the engine state (depth, encounter, defeated
-  // flag) hard-resets without us having to thread a separate "reset"
-  // signal into the frame. `restartSeed` overrides the commitment seed
-  // for retry runs: re-pinning to a fresh blockhash would require a new
-  // signature, which is bad UX for a death-retry loop. Trade-off
-  // documented in the run-pinned-to-block footer (hidden on restart runs).
-  const [runEpoch, setRunEpoch] = useState(0);
-  const [restartSeed, setRestartSeed] = useState<`0x${string}` | null>(null);
-
   // The seed actually fed to `startRun` below. When connected, prefer
   // the on-chain commitment so the run is verifiable; while it's still
-  // resolving, fall back to CSPRNG so play isn't blocked. After a
-  // permadeath restart, `restartSeed` takes top priority so the retry
-  // doesn't deterministically replay the death encounter.
+  // resolving, fall back to CSPRNG so play isn't blocked. Death ends the
+  // descent and returns the player to the base (no in-place restart), so a
+  // fresh run is always a fresh page mount with its own seed.
   const rngSeed: `0x${string}` | null =
-    restartSeed ?? commitment.data?.seed ?? csprngSeed ?? null;
+    commitment.data?.seed ?? csprngSeed ?? null;
 
   // Effect-only body palette toggle — keeps SSR pristine. Starters have
-  // no custom accent, so the genre default always wins.
-  useRealmTheme(preset);
+  // no custom accent, so the genre default always wins. The "crt" skin
+  // flips the play screen to the amber terminal look.
+  useRealmTheme(preset, null, "crt");
 
   // startRun is deterministic from the seed. While connected and the
   // on-chain commitment is still resolving, we gate the EncounterFrame
@@ -156,34 +142,39 @@ export default function PlayPage() {
   // Equipped slots — *native* cards. Hydrated from localStorage on mount
   // so gear earned in one realm carries into the next. This is the
   // canonical, persisted shape: we always store the native card (source
-  // realm + native stats), never a translated copy. WarpInterstitial and
-  // InventoryDrawer read this directly — their AssetCard renders use
+  // realm + native stats), never a translated copy. GearTranslationScreen
+  // and InventoryDrawer read this directly — their AssetCard renders use
   // `targetRealm` to do the display-side translation, so they need the
   // native source to start from.
   const [equipped, setEquipped] = useState<{
     weapon?: AssetCardType;
     armor?: AssetCardType;
   }>({ weapon: starterGear.weapon, armor: starterGear.armor });
-  // Equipped slots as the *engine* sees them — translated for the active
-  // realm so combat rolls the same numbers the HUD displays. NOT persisted
-  // (the next realm hop derives a fresh translation off `equipped`). When
-  // a card is native to `cfg.realm`, this mirrors `equipped`; when it's
-  // foreign, the hydration / equip handlers populate this with the
-  // adapter-translated stats.
-  const [equippedForEngine, setEquippedForEngine] = useState<{
-    weapon?: AssetCardType;
-    armor?: AssetCardType;
-  }>({ weapon: starterGear.weapon, armor: starterGear.armor });
   // The equipped state used at run-start. Captured once at hydration time
-  // so subsequent equip changes (from drawer clicks or auto-equip on
-  // mint) don't restart the run. Holds *translated* cards so the engine
-  // is initialised against the right numbers.
+  // from the loadout the player staged in the hub, then frozen for the
+  // whole delve (gear is locked once you descend — there is no in-run
+  // equip path). Holds *translated* cards so the engine is initialised
+  // against the right numbers for this realm.
   const [runStartEquipped, setRunStartEquipped] = useState<{
     weapon?: AssetCardType;
     armor?: AssetCardType;
   } | null>(null);
-  const [drawerOpen, setDrawerOpen] = useState(false);
   const [tutorialDismissed, setTutorialDismissed] = useState(false);
+
+  // Did the player carry gear from a *different* genre into this realm? If
+  // so, the entry "your gear changes shape" beat plays once before the run
+  // (see render). Starter gear is realm-local (its origin preset === this
+  // realm's), so a first-ever descent with starter gear is native and shows
+  // nothing. We read the *native* `equipped` cards' origin preset, not the
+  // translated run-start snapshot.
+  const [entryAck, setEntryAck] = useState(false);
+  const crossGenre = useMemo(() => {
+    return [equipped.weapon, equipped.armor].some((c) => {
+      if (!c) return false;
+      const origin = c.realmPreset ?? presetForRealm(c.realm);
+      return !!origin && origin !== preset;
+    });
+  }, [equipped, preset]);
 
   const initial = useMemo(() => {
     if (!rngSeed || !runStartEquipped) return null;
@@ -196,12 +187,11 @@ export default function PlayPage() {
         armor: runStartEquipped.armor,
       },
       bossId: cfg.bossId,
-      // Per-realm narrative-mechanic surface (see `StarterRealm`). Genesis
-      // ships `bossDepth: 5`, `defeatMode: "seed-mercy"`, and forces the
-      // first weapon to "fire" so the Pilgrim's Brand lands as story; the
-      // sci-fi/cyberpunk shards default to permadeath at depth 6.
+      // Per-realm narrative-mechanic surface (see `StarterRealm`). All
+      // three starters ship `bossDepth: 5` (every realm is permadeath);
+      // fantasy also forces the first weapon to "fire" so the Pilgrim's
+      // Brand lands as story rather than coincidence.
       bossDepth: cfg.bossDepth,
-      defeatMode: cfg.defeatMode,
       forcedFirstWeaponElement: cfg.forcedFirstWeaponElement,
       // Starter realms cap rolls at T2 to preserve the seed-liquidity floor:
       // the bank should fill up with T1/T2 gear from tutorials, and T3+ is
@@ -211,7 +201,7 @@ export default function PlayPage() {
       schemas: { ...CANONICAL_SCHEMAS[preset], maxTier: 2 },
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [preset, rngSeed, runStartEquipped, runEpoch]);
+  }, [preset, rngSeed, runStartEquipped]);
 
   // Connected players wait briefly while we pin the run to a blockhash;
   // disconnected players go straight to the CSPRNG path. `mounted` keeps
@@ -312,9 +302,7 @@ export default function PlayPage() {
       translateOne("armor", nativeBaseline.armor),
     ]).then(([w, a]) => {
       if (cancelled) return;
-      const translated = { weapon: w, armor: a };
-      setEquippedForEngine(translated);
-      setRunStartEquipped(translated);
+      setRunStartEquipped({ weapon: w, armor: a });
     });
 
     return () => {
@@ -348,14 +336,13 @@ export default function PlayPage() {
     walletConnected && starter.isSuccess && !realmReady;
 
   // When the chain path is live, the drawer is the on-chain truth. When
-  // we're falling back (disconnected OR connected-but-realm-not-ready)
-  // we surface the in-session accumulator on top of whatever on-chain
-  // holdings the player already has, so they keep visibility into both.
+  // we're falling back (the wallet is connected — the page gates entry on
+  // that — but the realm isn't chain-ready) we surface the in-session
+  // accumulator on top of whatever on-chain holdings the player already
+  // has, so they keep visibility into both.
   const inventory: readonly AssetCardType[] = chainMintAvailable
     ? (onchain.data ?? [])
-    : walletConnected
-      ? [...(onchain.data ?? []), ...localInventory]
-      : localInventory;
+    : [...(onchain.data ?? []), ...localInventory];
 
   // Reconcile stale equipped gear against the current inventory. After
   // Anvil restart (or a wallet swap), the localStorage snapshot can
@@ -383,14 +370,7 @@ export default function PlayPage() {
       weapon: isStale(equipped.weapon) ? starterGear.weapon : equipped.weapon,
       armor: isStale(equipped.armor) ? starterGear.armor : equipped.armor,
     };
-    // Starter gear is native to `cfg.realm`, so engine-side mirrors the
-    // same shape. For the non-stale slot we keep whatever
-    // `equippedForEngine` already had (its translation, if any).
     setEquipped(reconciled);
-    setEquippedForEngine((prev) => ({
-      weapon: isStale(equipped.weapon) ? starterGear.weapon : prev.weapon,
-      armor: isStale(equipped.armor) ? starterGear.armor : prev.armor,
-    }));
     setRunStartEquipped(reconciled);
   }, [
     walletConnected,
@@ -434,64 +414,6 @@ export default function PlayPage() {
     }
   };
 
-  // Per-(tokenId, targetRealm) translation cache. The drawer fires
-  // `onEquip` synchronously; rather than await inside the click handler
-  // (which would block the React tree on a chain read), we kick off the
-  // translation and pop the translated card into `equipped` when it
-  // resolves. The cache keys off the foreign tokenId so re-equipping the
-  // same card costs nothing past the first hop.
-  const [translationCache] = useState<Map<string, AssetCardType>>(() => new Map());
-
-  const handleEquip = (
-    slot: "weapon" | "armor",
-    card: AssetCardType,
-  ) => {
-    // `equipped` always tracks the *native* card (source realm, native
-    // stats) so localStorage stays free of mutated translations — a
-    // translated card persisted here would cause stat drift on the next
-    // realm hop (the realm field is preserved by the adapter, so we
-    // couldn't tell it apart from a fresh native card next time around).
-    setEquipped((prev) => ({ ...prev, [slot]: card }));
-    // Engine-side: optimistically equip with native stats so the HUD
-    // doesn't blank; the translation below swaps in the adapter's stats
-    // when it lands. If the card is already native to `cfg.realm`,
-    // `translateCardForRealm` short-circuits and returns the same ref —
-    // engine state stays correct in one frame.
-    setEquippedForEngine((prev) => ({ ...prev, [slot]: card }));
-    if (!publicClient) return;
-    const key = `${card.tokenId.toString()}::${cfg.realm.toLowerCase()}`;
-    const cached = translationCache.get(key);
-    if (cached) {
-      setEquippedForEngine((prev) => ({ ...prev, [slot]: cached }));
-      return;
-    }
-    void translateCardForRealm({
-      card,
-      targetRealm: cfg.realm,
-      publicClient,
-    })
-      .then((translated) => {
-        // No-op if translation returned the same card (native, missing
-        // adapter, or revert — see `translateCardForRealm` fallbacks).
-        if (translated === card) return;
-        translationCache.set(key, translated);
-        // Only apply if this slot still holds the card the user picked
-        // — they may have clicked something else in the meantime. The
-        // optimistic write above put `card` itself into `prev[slot]`,
-        // so a tokenId match means no later click has overwritten it.
-        setEquippedForEngine((prev) =>
-          prev[slot]?.tokenId === card.tokenId
-            ? { ...prev, [slot]: translated }
-            : prev,
-        );
-      })
-      .catch(() => {
-        // translateCardForRealm already swallows view-call reverts; this
-        // catches only programming errors. Silent — the card stays
-        // equipped with native stats.
-      });
-  };
-
   // Set the moment the engine emits BossCleared for this run, drives
   // the inline story interstitial in the run-over panel. We *don't*
   // wait for the on-chain receipt — the narrative beat is engine-truth
@@ -516,20 +438,6 @@ export default function PlayPage() {
     | { status: "skipped"; reason: string }
     | undefined
   >(undefined);
-
-  // Roguelike restart. Bumps `runEpoch` (which keys EncounterFrame so its
-  // local engine state hard-resets), draws a fresh CSPRNG seed so the
-  // retry doesn't deterministically replay the death encounter, and
-  // clears clear-receipt/boss-cleared state from the prior run. Gear in
-  // `equipped` is retained per the engine's death contract — death
-  // surrenders progress, not inventory.
-  const handleRestart = useCallback(() => {
-    setRestartSeed(fallbackSeed());
-    setBossClearedThisRun(false);
-    setClearReceipt(undefined);
-    setCurrentDepth(1);
-    setRunEpoch((e) => e + 1);
-  }, []);
 
   // Mint the on-chain clearReceipt the moment the engine emits
   // BossCleared. Disconnected / realm-not-ready runs surface a
@@ -576,30 +484,9 @@ export default function PlayPage() {
       });
   };
 
-  // Act-4 Claim CTA wiring. The overlay only renders the button when
-  // `progress.eligibleForSeed && onClaimSeed` are both set, so we leave
-  // `onClaimSeed` undefined whenever the events aren't available yet —
-  // the button hides cleanly instead of being un-clickable.
-  const canClaim =
-    walletConnected &&
-    tutorial.eligibleForSeed &&
-    (bossClears.data?.length ?? 0) > 0 &&
-    !claimPending;
-
-  const handleClaimSeed = canClaim
-    ? async () => {
-        try {
-          // Server independently rebuilds the proof from on-chain
-          // events — we only pass identity via the wallet.
-          await claimSeed();
-        } catch (err) {
-          // Surface the revert verbatim; the author
-          // needs the raw text to debug proof-shape mismatches.
-          // eslint-disable-next-line no-console
-          console.error("claimSeed failed", err);
-        }
-      }
-    : undefined;
+  // The Seed claim now lives at the chest (the Altar station's
+  // GenesisLedger), reached automatically after the arc-completing clear.
+  // The tutorial overlay no longer surfaces a claim CTA.
 
   // Projected post-clear tutorial progress for the inline story beat.
   // We don't wait on the on-chain refetch — the player needs the next
@@ -700,7 +587,7 @@ export default function PlayPage() {
     }
     return (
       <AppShell back={{ href: "/", label: "← Realms" }}>
-        <p className="text-sm opacity-60">Redirecting…</p>
+        <p className="text-sm opacity-70">Redirecting…</p>
       </AppShell>
     );
   }
@@ -711,89 +598,90 @@ export default function PlayPage() {
       title={
         <span className="flex flex-col items-center gap-0.5 leading-none">
           {realmDisplayName}
-          {isStarterRealmDeployed(cfg.realm) && currentDepth >= 2 && (
+          {/*
+            Only surface the realm-details link when the realm is actually
+            registered + active on-chain (realmReady), not merely when the
+            config carries a non-zero address. Otherwise the link points at a
+            /realm/[address] page that has no on-chain realm to render.
+          */}
+          {realmReady && currentDepth >= 2 && (
             <Link
               href={`/realm/${cfg.realm}`}
-              className="text-[10px] font-normal uppercase tracking-widest opacity-60 hover:opacity-100"
+              className="text-[10px] font-normal uppercase tracking-widest opacity-70 hover:opacity-100"
             >
               Realm details ↗
             </Link>
           )}
         </span>
       }
-      actions={
-        <Button
-          intent="ghost"
-          size="sm"
-          onClick={() => setDrawerOpen(true)}
-        >
-          Inventory ({inventory.length})
-        </Button>
-      }
     >
       <section className="mx-auto flex max-w-4xl flex-col gap-4">
-        <TutorialOverlay
-          progress={tutorial}
-          dismissed={tutorialDismissed}
-          onDismiss={() => setTutorialDismissed((v) => !v)}
-          onClaimSeed={handleClaimSeed}
-        />
+        {!bossClearedThisRun && (
+          <TutorialOverlay
+            progress={tutorial}
+            dismissed={tutorialDismissed}
+            onDismiss={() => setTutorialDismissed((v) => !v)}
+          />
+        )}
         {showRealmNotDeployedNotice && (
-          <aside
-            aria-label="Realm not yet deployed"
-            className="rounded-lg border p-3 text-sm"
-            style={{
-              background:
-                "color-mix(in oklab, var(--color-warn) 10%, transparent)",
-              borderColor:
-                "color-mix(in oklab, var(--color-warn) 40%, transparent)",
-            }}
-          >
+          <Panel as="aside" tone="warn" aria-label="Realm not yet deployed" className="p-3 text-sm">
             <strong>Heads up:</strong>{" "}
             {starter.data?.deployed === false
               ? "The starter realm for this preset isn't deployed on this chain yet."
               : "The starter realm isn't active in the registry yet."}{" "}
             Drops will accumulate in this session only and won&apos;t be
             minted on-chain.
-          </aside>
+          </Panel>
         )}
         {seedReady && initialState && initial ? (
+          crossGenre && !entryAck ? (
+            // Cross-genre descent: play the "your gear changes shape" beat
+            // once before the run boots. Native (first-ever / same-genre)
+            // descents skip straight to combat.
+            <GearTranslationScreen
+              realm={cfg.realm}
+              preset={preset}
+              equipped={equipped}
+              onDescend={() => setEntryAck(true)}
+            />
+          ) : (
           <>
             <EncounterFrame
-              key={runEpoch}
               initialState={initialState}
               initialLines={initial.lines}
               bossId={cfg.bossId}
-              equipped={equippedForEngine}
               activePreset={preset}
               realmName={cfg.name}
+              // Same gate as the header title (`realmDisplayName`) so the
+              // escrow tray and the title reveal the realm name together.
+              realmNameRevealed={currentDepth >= 2}
+              chainReady={chainMintAvailable}
               onEvent={handleEngineEvent}
               onBankEscrow={handleBankEscrow}
-              onRestart={handleRestart}
               clearReceipt={clearReceipt}
+              // Arc-completing (third) clear lands on the chest (Altar); every
+              // other clear returns to the base picker. The redirect itself is
+              // owned by EncounterFrame's boss-clear dwell effect.
+              bossReturnHref={
+                projectedProgress.starterClears >= 3 ? "/?station=altar" : "/"
+              }
               interstitial={
                 bossClearedThisRun ? (
                   <RealmClearedInterstitial
                     justCleared={preset}
                     projected={projectedProgress}
-                    equipped={equipped}
-                    onClaimSeed={handleClaimSeed}
                   />
                 ) : null
               }
             />
-            {commitment.data && !restartSeed && (
-              <p className="text-[11px] opacity-50 font-mono break-all">
+            {commitment.data && (
+              <p className="text-[11px] opacity-65 font-mono break-all">
                 Run committed against block {commitment.data.blockNumber.toString()}{" "}
                 · seed {commitment.data.seed.slice(0, 10)}…
               </p>
             )}
-            {restartSeed && (
-              <p className="text-[11px] opacity-50 font-mono break-all">
-                Retry run · seed {restartSeed.slice(0, 10)}… (not chain-pinned)
-              </p>
-            )}
           </>
+          )
         ) : (
           <Panel
             as="aside"
@@ -805,15 +693,6 @@ export default function PlayPage() {
           </Panel>
         )}
       </section>
-
-      <InventoryDrawer
-        open={drawerOpen}
-        onClose={() => setDrawerOpen(false)}
-        inventory={inventory}
-        equipped={equipped}
-        onEquip={handleEquip}
-        activeRealm={cfg.realm}
-      />
     </AppShell>
   );
 }

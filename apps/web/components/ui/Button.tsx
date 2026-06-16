@@ -24,7 +24,7 @@ const button = tv({
       primary:
         "bg-[var(--color-preset-accent)] text-[var(--color-preset-bg)] hover:shadow-[0_0_20px_-4px_var(--glow)]",
       ghost:
-        "bg-[var(--surface-1)] text-[var(--color-preset-fg)] border border-[var(--border-1)] hover:bg-[var(--surface-2)]",
+        "bg-[var(--surface-1)] text-[var(--color-preset-text)] border border-[var(--border-1)] hover:bg-[var(--surface-2)]",
       danger:
         "bg-[var(--color-danger)] text-[var(--color-preset-bg)] hover:brightness-110",
       diegetic: [

@@ -7,7 +7,8 @@
  * globals.css (`--surface-*`, `--border-*`, `--glow`, `--parchment`), so a
  * single `[data-preset]` switch re-themes all panels at once.
  *
- *   tone   glass-1 | glass-2 | glass-3 | parchment   (which surface layer)
+ *   tone   glass-1 | glass-2 | glass-3 | parchment    (neutral surface layer)
+ *          danger | warn | ok                          (semantic tinted surface)
  *   glow   none | accent                              (accent halo ring)
  *   inset  true | false                               (inner vs. raised)
  */
@@ -24,6 +25,9 @@ const panel = tv({
       "glass-3": "bg-[var(--surface-3)] border-[var(--border-1)]",
       parchment:
         "bg-[var(--parchment)] text-[var(--parchment-ink)] border-[var(--border-1)]",
+      danger: "bg-[var(--surface-danger)] border-[var(--border-danger)]",
+      warn: "bg-[var(--surface-warn)] border-[var(--border-warn)]",
+      ok: "bg-[var(--surface-ok)] border-[var(--border-ok)]",
     },
     glow: {
       none: "",

@@ -69,21 +69,23 @@ export function RealmLeaderboards() {
     >
       <header className="flex items-baseline justify-between gap-2">
         <Stamp>Realm leaderboards</Stamp>
-        <span className="text-[10px] opacity-50">ranked by mints</span>
+        <span className="text-[10px] opacity-65">ranked by mints</span>
       </header>
 
       {isLoading && rows.every((r) => r.stats.metrics.totalMints === 0) ? (
-        <p className="text-sm opacity-60">Tallying realm activity…</p>
+        <p className="text-sm opacity-70">Tallying realm activity…</p>
       ) : rows.length === 0 ? (
-        <p className="text-sm opacity-60">No starter realms deployed yet.</p>
+        <p className="text-sm opacity-70">No starter realms deployed yet.</p>
       ) : (
         <ol className="flex flex-col gap-1.5">
           {rows.map((r, i) => (
-            <li
+            <Panel
+              as="li"
+              tone="glass-2"
               key={r.entry.realm}
-              className="grid grid-cols-[1.25rem_1fr_auto] items-baseline gap-3 text-xs px-2 py-1.5 rounded bg-[var(--surface-2)]"
+              className="grid grid-cols-[1.25rem_1fr_auto] items-baseline gap-3 text-xs px-2 py-1.5 rounded"
             >
-              <span className="text-[10px] opacity-50 font-mono">
+              <span className="text-[10px] opacity-65 font-mono">
                 #{i + 1}
               </span>
               <Link
@@ -91,7 +93,7 @@ export function RealmLeaderboards() {
                 className="truncate hover:underline"
               >
                 <span className="font-medium">{r.entry.name}</span>
-                <span className="ml-2 opacity-50">
+                <span className="ml-2 opacity-65">
                   {presetLabel(r.entry.preset)}
                 </span>
               </Link>
@@ -99,7 +101,7 @@ export function RealmLeaderboards() {
                 {r.stats.metrics.totalMints} mints ·{" "}
                 {r.stats.metrics.clearReceipts} clears
               </span>
-            </li>
+            </Panel>
           ))}
         </ol>
       )}

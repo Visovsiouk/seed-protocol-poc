@@ -17,11 +17,15 @@ import { Panel } from "@/components/ui";
 export function MetricsRow({
   realm,
   preset,
+  lootSchemaId,
+  clearReceiptSchemaId,
 }: {
   realm: `0x${string}`;
   preset: Preset | null;
+  lootSchemaId?: bigint;
+  clearReceiptSchemaId?: bigint;
 }) {
-  const stats = useRealmStats({ realm, preset });
+  const stats = useRealmStats({ realm, preset, lootSchemaId, clearReceiptSchemaId });
   const m: RealmMetrics = stats.data?.metrics ?? {
     totalMints: 0,
     lootMints: 0,

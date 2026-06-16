@@ -16,13 +16,6 @@
   --color-warn: #f0c860;
   --color-danger: #f9706b;
 
-  /* tier ramp (loot rarity) — drives AssetCard spine + TierChip */
-  --color-tier-1: #8a8f98;
-  --color-tier-2: #5fa8d3;
-  --color-tier-3: #8b7be8;
-  --color-tier-4: #e0a458;
-  --color-tier-5: #ff5d8f;
-
   /* motion */
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
   --dur-fast: 140ms;
@@ -42,18 +35,59 @@
    than being frozen into static utility classes. Consume via arbitrary values,
    e.g. bg-[var(--surface-1)] border-[var(--border-1)]. */
 :root {
-  --surface-1: color-mix(in oklab, var(--color-preset-fg) 4%, transparent);
-  --surface-2: color-mix(in oklab, var(--color-preset-fg) 7%, transparent);
-  --surface-3: color-mix(in oklab, var(--color-preset-fg) 11%, transparent);
-  --border-1: color-mix(in oklab, var(--color-preset-fg) 12%, transparent);
-  --border-2: color-mix(in oklab, var(--color-preset-accent) 35%, transparent);
+  /* tier ramp (loot rarity) — drives AssetCard spine/tint + TierChip.
+     Canonical rarity scheme, tuned for contrast on the dark preset bgs.
+     Lives here (plain :root) rather than @theme so it is never tree-shaken:
+     these vars are consumed only via JS (`tierColor()`), which the Tailwind
+     scanner can't see, so an @theme declaration would be pruned from output. */
+  --color-tier-1: #e8eaf0; /* Common    — white  */
+  --color-tier-2: #5cd382; /* Uncommon  — green  */
+  --color-tier-3: #5aa9f0; /* Rare      — blue   */
+  --color-tier-4: #a87ff0; /* Epic      — purple */
+  --color-tier-5: #ff9d3c; /* Legendary — orange */
+}
+
+/* These tokens are color-mix() expressions over --color-preset-accent /
+   --color-preset-fg. Custom-property var() substitution happens at the
+   element where the property is *declared*, then the resolved value
+   inherits down — so declaring them only on :root would freeze them to the
+   root default accent (#7c5cff), and scifi/cyberpunk/crt would never get
+   their own glow, borders, or surfaces. Re-declaring them on every
+   [data-preset] / [data-theme] element makes them re-resolve against that
+   element's preset accent/fg, and descendants inherit the correct value. */
+:root,
+[data-preset],
+[data-theme] {
+  --surface-1: color-mix(in oklab, var(--color-preset-fg) 7%, transparent);
+  --surface-2: color-mix(in oklab, var(--color-preset-fg) 11%, transparent);
+  --surface-3: color-mix(in oklab, var(--color-preset-fg) 16%, transparent);
+  --border-1: color-mix(in oklab, var(--color-preset-fg) 22%, transparent);
+  --border-2: color-mix(in oklab, var(--color-preset-accent) 48%, transparent);
   --glow: color-mix(in oklab, var(--color-preset-accent) 40%, transparent);
 
+  /* body text color — split from --color-preset-fg so a tint can keep its hue
+     on panels/surfaces (fg-derived) while giving body copy a legible, BG-aware
+     color. Declared here (not @theme) for the same re-resolution reason as the
+     tokens above: `var(--color-preset-fg)` must substitute against *this*
+     element's preset fg, so non-CRT presets get their own fg unchanged. The CRT
+     theme overrides it to a faint-tint near-white (see [data-theme="crt"]). */
+  --color-preset-text: var(--color-preset-fg);
+
   --parchment: color-mix(in oklab, var(--color-preset-fg) 8%, var(--color-preset-bg));
-  --parchment-ink: var(--color-preset-fg);
+  --parchment-ink: var(--color-preset-text);
 
   --rare: var(--color-preset-accent);
   --focus-ring: color-mix(in oklab, var(--color-preset-accent) 70%, transparent);
+
+  /* semantic tinted surfaces — danger/warn/ok panels (at-risk escrow,
+     not-deployed notices, success states). Same color-mix discipline as
+     the glass tokens so they re-resolve under [data-preset]. */
+  --surface-danger: color-mix(in oklab, var(--color-danger) 12%, transparent);
+  --border-danger: color-mix(in oklab, var(--color-danger) 35%, transparent);
+  --surface-warn: color-mix(in oklab, var(--color-warn) 10%, transparent);
+  --border-warn: color-mix(in oklab, var(--color-warn) 40%, transparent);
+  --surface-ok: color-mix(in oklab, var(--color-ok) 10%, transparent);
+  --border-ok: color-mix(in oklab, var(--color-ok) 35%, transparent);
 }
 
 [data-preset="fantasy"] {
@@ -101,15 +135,96 @@
     );
 }
 
+/* ─── CRT terminal theme (play routes) ────────────────────────────────────
+   A scoped override set via `data-theme="crt"` on <body> (useRealmTheme).
+   It keeps the *terminal* skin — phosphor bg/fg, scanline grain, VT323 +
+   JetBrains Mono type scale — but recolours it to the *live realm accent*
+   instead of pinning amber, so each realm's combat glows in its own hue
+   (cyberpunk magenta, sci-fi cyan, fantasy gold, or a player realm's custom
+   accent). The accent itself is intentionally NOT set here: it flows in from
+   `[data-preset]` (genre default) or the inline override `useRealmTheme`
+   writes for a registered realm. We only derive the phosphor bg/fg from it.
+
+   bg: a near-black base, lightly hue-tinted by the accent so the CRT glass
+   reads as the realm's colour rather than neutral black.
+   fg: a bright phosphor foreground — the accent mixed heavily toward white
+   so dark-ish accents (e.g. gold #c9a14a) stay legible as body text. Every
+   glass surface/border derives from `fg`, so this is what tints the panel.
+
+   Every play component already consumes these tokens, so the whole screen
+   flips with no per-component markup changes. Layout + mechanics untouched. */
+[data-theme="crt"] {
+  --color-preset-bg: color-mix(in oklab, var(--color-preset-accent) 10%, #050406);
+  --color-preset-fg: color-mix(in oklab, var(--color-preset-accent) 62%, #ffffff);
+
+  /* body text: a faintly hue-tinted near-white. Much lighter than the
+     62%-accent `fg` (which still tints every panel/surface) so saturated
+     accents like cyberpunk magenta stay legible as copy while the realm keeps
+     its glow. */
+  --color-preset-text: color-mix(in oklab, var(--color-preset-accent) 20%, #ffffff);
+
+  /* one mono voice everywhere; VT323 only for the display face */
+  --font-display: var(--font-vt323), ui-monospace, "SFMono-Regular", monospace;
+  --font-sans: var(--font-jetbrains-mono), ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, "SFMono-Regular", Menlo, monospace;
+
+  /* horizontal scanline grain on every panel surface */
+  --preset-texture:
+    repeating-linear-gradient(
+      0deg,
+      color-mix(in oklab, var(--color-preset-accent) 7%, transparent) 0px,
+      color-mix(in oklab, var(--color-preset-accent) 7%, transparent) 1px,
+      transparent 1px,
+      transparent 3px
+    );
+}
+
+/* phosphor bloom on the display face — titles, monster names, big numbers */
+[data-theme="crt"] h1,
+[data-theme="crt"] h2,
+[data-theme="crt"] h3 {
+  text-shadow: 0 0 8px color-mix(in oklab, var(--color-preset-accent) 45%, transparent);
+}
+
+/* full-route scanline + vignette overlay (CRT glass). Fixed, click-through,
+   above content; portaled modals sit under it so the effect is unbroken.
+   Static (no animation) so it never pins the GPU or blocks idle. */
+[data-theme="crt"]::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  pointer-events: none;
+  background:
+    repeating-linear-gradient(
+      0deg,
+      rgba(0, 0, 0, 0.16) 0px,
+      rgba(0, 0, 0, 0.16) 1px,
+      transparent 1px,
+      transparent 3px
+    ),
+    radial-gradient(
+      120% 120% at 50% 50%,
+      transparent 60%,
+      color-mix(in oklab, #000 55%, transparent) 100%
+    );
+  mix-blend-mode: multiply;
+}
+
 html,
 body {
   background: var(--color-preset-bg);
-  color: var(--color-preset-fg);
+  color: var(--color-preset-text);
   font-family: var(--font-sans);
 }
 
 * {
   box-sizing: border-box;
+}
+
+/* ─── interactive cursor (buttons + button-role elements) ─────────────────── */
+:where(button, [role="button"], [type="button"], [type="submit"], [type="reset"]):not(:disabled) {
+  cursor: pointer;
 }
 
 /* ─── focus ring (one token, every interactive element) ───────────────────── */
