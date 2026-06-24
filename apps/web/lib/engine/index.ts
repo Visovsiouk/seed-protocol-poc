@@ -26,7 +26,6 @@
 import type {
   ActionChoice,
   AssetCard,
-  CatalogEffectName,
   CombatState,
   Element,
   EncounterState,
@@ -41,12 +40,7 @@ import type {
 import { createRng, type Rng } from "./rng";
 import { resolveRound } from "./combat";
 import { checkPhaseTransition, createBossEncounter } from "./boss";
-import {
-  pickArchetype,
-  pickMonster,
-  planTrial,
-  resolveTrial,
-} from "./encounter";
+import { pickMonster } from "./encounter";
 import { pickSlot, rollLoot, type RealmSchemas } from "./loot";
 import type { Difficulty } from "./tier";
 import { getFlavorBank } from "../flavor";
@@ -54,24 +48,12 @@ import { monsterTitle, pickVariant } from "./narration";
 import type { FlavorBank } from "../flavor/types";
 
 /**
- * Default depth at which the per-realm boss arrives. Realm-specific
- * configs (see `StartRunArgs.bossDepth`) override this — Genesis uses
- * 5 because the Reach is the narrowest skin the Seed ever wore; the
- * other starters and player realms stay at 6.
+ * Default depth at which the per-realm boss arrives, used when a realm
+ * config omits `StartRunArgs.bossDepth`. The starters all pass 3 (the
+ * three-room easy → elite → boss shape); this default only covers
+ * player/community realms that don't specify their own depth.
  */
 export const BOSS_DEPTH = 6;
-
-/**
- * Depth at which a Ledger room may appear (once per run). When the
- * player has not yet consumed a ledger and an upcoming boss with baked
- * effects is known, this depth's regular encounter is replaced with the
- * Ledger room. Set to 3 — early enough to inform the player, late enough
- * that they've seen a couple of fights.
- *
- * If `bossDepth <= LEDGER_DEPTH`, the ledger override is skipped (the
- * boss arrives too soon to bother).
- */
-export const LEDGER_DEPTH = 3;
 
 /**
  * Derive a sub-seed from (rngSeed, depth, stepInRoom). XOR-in the salts
@@ -120,68 +102,21 @@ export function playerStartHp(equipped: RunState["equipped"]): {
   return { hp: baseHp + hpBonus, maxHp: baseHp + hpBonus, ac: baseAc + acBonus };
 }
 
-function difficultyFor(depth: number, isBoss: boolean): Difficulty {
-  // Delve depth→tier escalation. Depths 1–4 are
-  // unchanged from the pre-delve curve (depth 1 trivial, 2–4 standard) so
-  // the tuned early-game balance is untouched; the pre-boss depth (5, and
-  // any depth ≥5 below a higher bossDepth) is the new "deep" band, where
-  // the loot you're risking on the way down gets meaningfully richer.
+function difficultyFor(
+  depth: number,
+  isBoss: boolean,
+  bossDepth: number,
+): Difficulty {
+  // Delve depth→tier escalation. Depth 1 is the easy room
+  // (trivial). The room immediately before the boss is the "elite" room and
+  // rolls in the richer "deep" band; anything between is "standard". For the
+  // three-room starters (bossDepth 3) this resolves to trivial → deep → boss
+  // (easy → elite → boss). For longer realms it preserves the prior curve:
+  // depth 1 trivial, deep only on the pre-boss depth, standard in between.
   if (isBoss) return "boss";
   if (depth <= 1) return "trivial";
-  if (depth <= 4) return "standard";
-  return "deep";
-}
-
-/**
- * Per-preset flavor for rest encounters. Kept inline (not in flavor banks)
- * because it's a single short string-pair per preset and the rest
- * mechanic isn't preset-authored content the way monsters/rooms are. If
- * a future realm wants custom rest flavor, lift this into `FlavorBank`.
- */
-function restFlavorFor(
-  preset: Preset,
-): ReadonlyArray<{ prompt: string; actionLabel: string }> {
-  if (preset === "fantasy") {
-    return [
-      {
-        prompt:
-          "An abandoned shrine offers an unguarded breath. You set down your pack.",
-        actionLabel: "Make Camp",
-      },
-      {
-        prompt:
-          "Sunlight filters through a collapsed ceiling onto soft moss — no claws, no echoes.",
-        actionLabel: "Rest a Spell",
-      },
-    ];
-  }
-  if (preset === "scifi") {
-    return [
-      {
-        prompt:
-          "A dormant maintenance bay. Cooling fans hum; no hostiles on scan.",
-        actionLabel: "Patch Up",
-      },
-      {
-        prompt:
-          "Telemetry shows a quiet pocket of corridor. Your medkit pings ready.",
-        actionLabel: "Medkit",
-      },
-    ];
-  }
-  // cyberpunk
-  return [
-    {
-      prompt:
-        "A cracked netcafe with no patrons and one working chair. You boot a hostile-free node.",
-      actionLabel: "Reboot",
-    },
-    {
-      prompt:
-        "An empty rooftop — neon hum, no drones, no eyes. You jack into a clean stream.",
-      actionLabel: "Cycle Buffers",
-    },
-  ];
+  if (depth >= bossDepth - 1) return "deep";
+  return "standard";
 }
 
 /** Picks a room template at the given depth from the bank. */
@@ -205,10 +140,9 @@ function pickRoomTemplate(
 }
 
 /**
- * Picks a room template restricted to combat archetype. Used when we've
- * decided this depth should be a fight (e.g. trial/fork rolled out, or
- * the depth has only combat templates anyway). Falls back to `pickRoomTemplate`
- * if no combat templates exist at this depth.
+ * Picks a room template restricted to combat archetype — the only
+ * archetype now that every non-boss room is a fight. Falls back to
+ * `pickRoomTemplate` if no combat templates exist at this depth.
  */
 function pickCombatRoomTemplate(
   rng: Rng,
@@ -247,7 +181,6 @@ function generateEncounter(
       playerHp: state.playerHp,
       playerMaxHp: state.playerMaxHp,
       playerAc: player.ac,
-      suppressedBakedEffects: state.runSuppressedBossEffects,
     });
     lines.push({
       text: `${monsterTitle(boss)} blocks your path.`,
@@ -259,119 +192,45 @@ function generateEncounter(
     };
   }
 
-  // Ledger override at the configured depth, once per run. Requires
-  // an upcoming boss with both baked effects still in play.
-  const boss = bank.bosses[bossId];
-  if (
-    !state.ledgerConsumed &&
-    state.depth === LEDGER_DEPTH &&
-    state.bossDepth > LEDGER_DEPTH &&
-    boss
-  ) {
-    lines.push({
-      text: pickVariant(
-        { ledger: bank.ledgerPrompts as readonly string[] },
-        "ledger",
-        rng,
-      ),
-      emphasis: "info",
-    });
-    return {
-      encounter: {
-        kind: "ledger",
-        archetype: "ledger",
-        bossName: boss.name,
-        effects: boss.bakedEffects,
-      },
-      lines,
-    };
-  }
-
-  // Regular room.
-  const room = pickRoomTemplate(rng, bank, state.depth);
-  const archetype = pickArchetype(rng, {
-    depth: state.depth,
-    hp: state.playerHp,
-    maxHp: state.playerMaxHp,
+  // Regular room — always combat. Depth 1 is the easy room; the depth right
+  // before the boss is the elite (tougher monster pool + richer "deep" loot
+  // band, see `difficultyFor`).
+  const combatRoom = pickCombatRoomTemplate(rng, bank, state.depth);
+  const pool =
+    combatRoom.monsterPool ??
+    bank.roomTemplates.flatMap((r) => r.monsterPool ?? []);
+  const roomForPick: RoomTemplate = { ...combatRoom, monsterPool: pool };
+  const monster = pickMonster(rng, roomForPick, bank.monsters);
+  const player = playerStartHp(state.equipped);
+  lines.push({
+    text: pickVariant(bank.rooms, combatRoom.narrationKey, rng),
+    emphasis: "info",
   });
-  lines.push({ text: pickVariant(bank.rooms, room.narrationKey, rng), emphasis: "info" });
-
-  if (archetype === "combat") {
-    // Force a combat-tagged template at this depth so monster pools resolve.
-    const combatRoom = pickCombatRoomTemplate(rng, bank, state.depth);
-    const pool =
-      combatRoom.monsterPool ??
-      bank.roomTemplates.flatMap((r) => r.monsterPool ?? []);
-    const roomForPick: RoomTemplate = { ...combatRoom, monsterPool: pool };
-    const monster = pickMonster(rng, roomForPick, bank.monsters);
-    const player = playerStartHp(state.equipped);
-    const combat: CombatState = {
-      // Persistent HP carry: room-to-room HP carries from `state.playerHp`.
-      // `playerMaxHp` is the run cap (re-pinned by equipItem). AC still
-      // comes from current equipment.
-      playerHp: state.playerHp,
-      playerMaxHp: state.playerMaxHp,
-      playerAc: player.ac,
-      monster,
-      monsterHp: monster.hp,
-      bracedThisTurn: false,
-      guaranteedDodgeThisTurn: false,
-      regenDoubledThisTurn: false,
-      thornsDoubledThisTurn: false,
-      focusPrimed: false,
-      // Non-boss combats can't trigger phase transitions; this flag stays
-      // false but the field is required by the CombatState shape.
-      phase2PlayerBuffed: false,
-      bleedStacks: 0,
-      suppressedEffects: [],
-      turn: 0,
-    };
-    return {
-      encounter: { kind: "combat", archetype: "combat", combat },
-      lines,
-      roomTemplate: combatRoom,
-    };
-  }
-
-  if (archetype === "rest") {
-    const flavor = restFlavorFor(state.preset);
-    const variant = flavor[rng.nextInt(flavor.length)]!;
-    // Heal is 50% maxHp, clamped against current HP so the field reflects
-    // the actual delta (no "+15 HP" line when only 4 HP was missing).
-    const fullHeal = Math.floor(state.playerMaxHp * 0.5);
-    const healAmount = Math.min(fullHeal, state.playerMaxHp - state.playerHp);
-    lines.push({ text: variant.prompt, emphasis: "info" });
-    return {
-      encounter: {
-        kind: "rest",
-        archetype: "rest",
-        prompt: variant.prompt,
-        actionLabel: variant.actionLabel,
-        healAmount,
-      },
-      lines,
-      roomTemplate: room,
-    };
-  }
-
-  // trial
-  const trial = rng.pick(bank.trials);
-  const plan = planTrial(trial.ability, equippedFor(state), state.depth);
+  const combat: CombatState = {
+    // Persistent HP carry: room-to-room HP carries from `state.playerHp`.
+    // `playerMaxHp` is the run cap (re-pinned by equipItem). AC still
+    // comes from current equipment.
+    playerHp: state.playerHp,
+    playerMaxHp: state.playerMaxHp,
+    playerAc: player.ac,
+    monster,
+    monsterHp: monster.hp,
+    bracedThisTurn: false,
+    guaranteedDodgeThisTurn: false,
+    regenDoubledThisTurn: false,
+    thornsDoubledThisTurn: false,
+    focusPrimed: false,
+    // Non-boss combats can't trigger phase transitions; this flag stays
+    // false but the field is required by the CombatState shape.
+    phase2PlayerBuffed: false,
+    bleedStacks: 0,
+    suppressedEffects: [],
+    turn: 0,
+  };
   return {
-    encounter: {
-      kind: "trial",
-      archetype: "trial",
-      ability: plan.ability,
-      dc: plan.dc,
-      bonus: plan.bonus,
-      prompt: trial.prompt,
-      intent: trial.intent,
-      stakes: trial.stakes,
-      onSuccess: trial.onSuccess,
-      onFailure: trial.onFailure,
-    },
+    encounter: { kind: "combat", archetype: "combat", combat },
     lines,
-    roomTemplate: room,
+    roomTemplate: combatRoom,
   };
 }
 
@@ -398,7 +257,7 @@ export type StartRunArgs = {
 
 /** Internal: schema info is needed by `step` for loot rolls; we stash it on state. */
 const SCHEMA_STORE = new WeakMap<RunState, RealmSchemas>();
-/** Internal: bossId stashed with the run so non-boss-depth step() calls can resolve ledger effects. */
+/** Internal: bossId stashed with the run so `advance` can regenerate the boss encounter. */
 const BOSS_STORE = new WeakMap<RunState, string>();
 
 /** Builds the initial RunState, depth 1, with the first encounter generated. */
@@ -422,8 +281,6 @@ export function startRun(args: StartRunArgs): { state: RunState; lines: Narratio
     defeated: false,
     forcedFirstWeaponElement: args.forcedFirstWeaponElement,
     firstWeaponDropped: false,
-    runSuppressedBossEffects: [],
-    ledgerConsumed: false,
   };
   const gen = generateEncounter(baseState, args.bossId);
   const state: RunState = { ...baseState, encounter: gen.encounter };
@@ -433,12 +290,9 @@ export function startRun(args: StartRunArgs): { state: RunState; lines: Narratio
 }
 
 /**
- * Resolve one player action against the current encounter. Dispatches on
- * `enc.kind`:
- *   - combat → `resolveRound`, with the new Attack/Secondary surface
- *   - trial  → d20 + bonus vs DC; heal-on-pass / damage-on-fail
- *   - fork   → Forge (HP cost → reroll weapon element) or Cache (free T1 loot)
- *   - ledger → record suppressed boss effects in the run state
+ * Resolve one player action against the current encounter. The run is now
+ * pure combat (easy → elite → boss), so the only encounter kind is
+ * `combat`, resolved via `resolveRound` with the Attack/Secondary surface.
  */
 export function step(state: RunState, choice: ActionChoice): StepResult {
   const enc = state.encounter;
@@ -451,9 +305,8 @@ export function step(state: RunState, choice: ActionChoice): StepResult {
     throw new Error("step: missing schemas — state must come from startRun()");
   }
 
-  // We use stepInRoom = combat turn (or 1 for non-combat resolution).
-  const rngStep = enc.kind === "combat" ? enc.combat.turn + 1 : 1;
-  const rng = rngFor(state, rngStep);
+  // stepInRoom = combat turn (room generation uses 0).
+  const rng = rngFor(state, enc.combat.turn + 1);
   const equipped = equippedFor(state);
   const events: EngineEvent[] = [];
 
@@ -461,7 +314,7 @@ export function step(state: RunState, choice: ActionChoice): StepResult {
     throw new Error("step: run is over — call startRun() to begin a new run");
   }
 
-  if (enc.kind === "combat") {
+  {
     const result = resolveRound(enc.combat, choice, equipped, rng);
     let combat = result.state;
     const lines = [...result.lines];
@@ -487,7 +340,7 @@ export function step(state: RunState, choice: ActionChoice): StepResult {
       });
       let loot = rollLoot({
         rng,
-        difficulty: difficultyFor(state.depth, isBoss),
+        difficulty: difficultyFor(state.depth, isBoss, state.bossDepth),
         slot: pickSlot(rng),
         schemas,
         preset: state.preset,
@@ -561,129 +414,6 @@ export function step(state: RunState, choice: ActionChoice): StepResult {
     const nextState: RunState = {
       ...state,
       encounter: { ...enc, combat },
-    };
-    SCHEMA_STORE.set(nextState, schemas);
-    const bossId = BOSS_STORE.get(state);
-    if (bossId) BOSS_STORE.set(nextState, bossId);
-    return { state: nextState, outcome: lines, events };
-  }
-
-  if (enc.kind === "trial") {
-    if (choice.kind !== "trial") {
-      throw new Error("step: trial encounter requires a trial choice");
-    }
-    const plan = { ability: enc.ability, dc: enc.dc, bonus: enc.bonus };
-    const r = resolveTrial(rng, plan, state.depth);
-    const lines: NarrationLine[] = [];
-    // Apply heal/damage to persistent HP. Until HP carry landed these
-    // values were narration-only; now they actually move the pool.
-    const delta = r.success ? r.healOnSuccess : -r.damageOnFail;
-    const nextHp = Math.max(0, Math.min(state.playerHp + delta, state.playerMaxHp));
-    if (r.success) {
-      lines.push({ text: enc.onSuccess, emphasis: "info" });
-      lines.push({
-        text: `You roll d20 ${r.dieRoll}+${plan.bonus}=${r.total} vs DC ${plan.dc}. You recover ${r.healOnSuccess} HP.`,
-        emphasis: "heal",
-      });
-    } else {
-      lines.push({ text: enc.onFailure, emphasis: "damage" });
-      lines.push({
-        text: `You roll d20 ${r.dieRoll}+${plan.bonus}=${r.total} vs DC ${plan.dc}. You lose ${r.damageOnFail} HP.`,
-        emphasis: "damage",
-      });
-    }
-
-    // Trial damage can kill — permadeath ends the run here too.
-    if (nextHp <= 0) {
-      lines.push({ text: "The toll is too steep. You fall.", emphasis: "drama" });
-      events.push({ type: "PlayerDefeated", depth: state.depth, turn: 0 });
-      const nextState: RunState = {
-        ...state,
-        encounter: null,
-        playerHp: 0,
-        defeated: true,
-        defeatedAtDepth: state.depth,
-        defeatedTurn: 0,
-      };
-      SCHEMA_STORE.set(nextState, schemas);
-      const bossId = BOSS_STORE.get(state);
-      if (bossId) BOSS_STORE.set(nextState, bossId);
-      return { state: nextState, outcome: lines, events };
-    }
-
-    events.push({ type: "RoomCleared", depth: state.depth });
-    const nextState: RunState = {
-      ...state,
-      encounter: null,
-      playerHp: nextHp,
-    };
-    SCHEMA_STORE.set(nextState, schemas);
-    const bossId = BOSS_STORE.get(state);
-    if (bossId) BOSS_STORE.set(nextState, bossId);
-    return { state: nextState, outcome: lines, events };
-  }
-
-  if (enc.kind === "rest") {
-    if (choice.kind !== "rest") {
-      throw new Error("step: rest encounter requires a rest choice");
-    }
-    const lines: NarrationLine[] = [];
-    const heal = Math.min(enc.healAmount, state.playerMaxHp - state.playerHp);
-    const nextHp = state.playerHp + heal;
-    if (heal > 0) {
-      lines.push({
-        text: `You patch up and steady yourself. (+${heal} HP)`,
-        emphasis: "heal",
-      });
-    } else {
-      lines.push({
-        text: "You are already at full strength. You move on.",
-        emphasis: "info",
-      });
-    }
-    events.push({ type: "RoomCleared", depth: state.depth });
-    const nextState: RunState = {
-      ...state,
-      encounter: null,
-      playerHp: nextHp,
-    };
-    SCHEMA_STORE.set(nextState, schemas);
-    const bossId = BOSS_STORE.get(state);
-    if (bossId) BOSS_STORE.set(nextState, bossId);
-    return { state: nextState, outcome: lines, events };
-  }
-
-  if (enc.kind === "ledger") {
-    if (choice.kind !== "ledger") {
-      throw new Error("step: ledger encounter requires a ledger choice");
-    }
-    const lines: NarrationLine[] = [];
-    const suppress = choice.suppress;
-    const runSuppressed: CatalogEffectName[] = suppress
-      ? [...state.runSuppressedBossEffects, suppress]
-      : [...state.runSuppressedBossEffects];
-
-    if (suppress) {
-      lines.push({
-        text: `You strike the entry for "${suppress.replace(/_/g, " ")}" from the ledger.`,
-        emphasis: "drama",
-      });
-      lines.push({
-        text: `${enc.bossName} will not draw on that power against you.`,
-        emphasis: "info",
-      });
-    } else {
-      lines.push({
-        text: "You close the ledger without marking it.",
-        emphasis: "info",
-      });
-    }
-    events.push({ type: "RoomCleared", depth: state.depth });
-    const nextState: RunState = {
-      ...state,
-      encounter: null,
-      runSuppressedBossEffects: runSuppressed,
-      ledgerConsumed: true,
     };
     SCHEMA_STORE.set(nextState, schemas);
     const bossId = BOSS_STORE.get(state);

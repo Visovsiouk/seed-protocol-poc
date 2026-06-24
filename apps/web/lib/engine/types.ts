@@ -437,7 +437,7 @@ export type BossDef = {
   resistTo?: Element;
 };
 
-export type EncounterArchetype = "combat" | "trial" | "ledger" | "rest";
+export type EncounterArchetype = "combat";
 
 export type RoomTemplate = {
   id: string;
@@ -494,67 +494,11 @@ export type CombatState = {
   turn: number;
 };
 
-export type EncounterState =
-  | {
-      kind: "combat";
-      archetype: "combat";
-      combat: CombatState;
-    }
-  /**
-   * Visible skill check. The player sees the DC and their bonus up
-   * front, taps Attempt, rolls d20 + bonus. Success → small heal;
-   * failure → larger HP loss (depth-scaled). Pass/fail narration is
-   * baked onto the encounter at generation so the resolution lines
-   * match the obstacle, intent, and stakes the player saw.
-   */
-  | {
-      kind: "trial";
-      archetype: "trial";
-      /** Ability axis — driven by the chosen obstacle, not a die roll. */
-      ability: "agility" | "endurance";
-      /** Static DC the player must meet or exceed. */
-      dc: number;
-      /** Player's bonus from equipped armor, locked at room generation. */
-      bonus: number;
-      /** Scene-setting line: what the obstacle is. */
-      prompt: string;
-      /** Player goal: what you're trying to do about it. */
-      intent: string;
-      /** What's on the line on failure. */
-      stakes: string;
-      /** Narration rendered on a passed roll. */
-      onSuccess: string;
-      /** Narration rendered on a failed roll. */
-      onFailure: string;
-    }
-  /**
-   * Ledger room — once-per-run at a fixed depth. Player picks one of
-   * the upcoming boss's two baked-in catalog effects to suppress for
-   * the boss fight (or skips to keep both active).
-   */
-  | {
-      kind: "ledger";
-      archetype: "ledger";
-      bossName: string;
-      /** The two baked effects on the upcoming boss. */
-      effects: [CatalogEffectName, CatalogEffectName];
-    }
-  /**
-   * Rest room — safe-haven beat. Single button heals +50% maxHp,
-   * clamped, no risk. Spawned probabilistically past depth 2 and only
-   * when the player is meaningfully chipped (HP < ~80% maxHp); at full
-   * HP the slot reverts to a trial so the safe room isn't wasted.
-   */
-  | {
-      kind: "rest";
-      archetype: "rest";
-      /** Scene-setting line (preset-flavored). */
-      prompt: string;
-      /** Button label for the heal action ("Make Camp" / "Patch Up" / "Reboot"). */
-      actionLabel: string;
-      /** Pre-rolled heal amount, clamped at generation against current HP/maxHp. */
-      healAmount: number;
-    };
+export type EncounterState = {
+  kind: "combat";
+  archetype: "combat";
+  combat: CombatState;
+};
 
 export type LootRoll = {
   tier: Tier;
@@ -611,10 +555,9 @@ export type RunState = {
   /** Current room number, 1-indexed. */
   depth: number;
   /**
-   * Depth at which the boss arrives. Defaults to 6 (the canonical
-   * Reach-and-deeper layout). Genesis sets 5 — the Seed's first skin
-   * is narrower than the shards. Player-built realms scale higher via
-   *.
+   * Depth at which the boss arrives. Starters set 3 — the run is three
+   * rooms (easy → elite → boss). Player-built realms may pick their own
+   * depth (default `BOSS_DEPTH`).
    */
   bossDepth: number;
   encounter: EncounterState | null;
@@ -623,9 +566,9 @@ export type RunState = {
    * Persistent player HP across encounters. Seeded at run start from
    * `playerStartHp(equipped).hp`, then carried room-to-room: combat
    * write-back copies `CombatState.playerHp` onto this field when a fight
-   * resolves; trial resolution applies heal/damage against it directly.
-   * Encounter generation reads from here instead of resetting to max.
-   * Clamped `[0, playerMaxHp]`; zero terminates the run via permadeath.
+   * resolves. Encounter generation reads from here instead of resetting
+   * to max. Clamped `[0, playerMaxHp]`; zero terminates the run via
+   * permadeath.
    */
   playerHp: number;
   /**
@@ -695,40 +638,17 @@ export type RunState = {
    * `forcedFirstWeaponElement` so the override fires exactly once.
    */
   firstWeaponDropped: boolean;
-  /**
-   * Catalog effect names the player chose to suppress on the upcoming
-   * boss via the Ledger room (depth 3). Applied at boss creation time —
-   * the boss's `bakedEffects` array is filtered against this list. At
-   * most one entry today; the list shape leaves room for stacked
-   * suppression from future ledger beats.
-   */
-  runSuppressedBossEffects: CatalogEffectName[];
-  /**
-   * True once this run has visited a Ledger room. Gates the depth-3
-   * override so the room only fires once.
-   */
-  ledgerConsumed: boolean;
 };
 
 /**
- * Player input to `step()`. The set of acceptable choices depends on
- * the active encounter's `kind`:
+ * Player input to `step()`. The only encounter kind is combat:
  *
- *   combat → "attack" always; "secondary" only when the current monster
- *     is a boss. Secondary's mechanical effect is resolved from the
- *     player's equipped armor (see `combat.ts` for the mapping).
- *
- *   trial → "trial".
- *
- *   ledger → "ledger" with `suppress` set to one of the boss's two
- *     baked effects, or null to skip.
+ *   combat → "attack" always; "secondary" resolves its mechanical effect
+ *     from the player's equipped armor (see `combat.ts` for the mapping).
  */
 export type ActionChoice =
   | { kind: "attack" }
-  | { kind: "secondary" }
-  | { kind: "trial" }
-  | { kind: "ledger"; suppress: CatalogEffectName | null }
-  | { kind: "rest" };
+  | { kind: "secondary" };
 
 export type NarrationLine = {
   text: string;

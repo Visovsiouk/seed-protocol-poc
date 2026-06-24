@@ -131,6 +131,6 @@ describe("checkPhaseTransition", () => {
     const s = { ...baseState(), monsterHp: 30 };
     const r = checkPhaseTransition(s);
     expect(r.lines.length).toBeGreaterThan(0);
-    expect(r.lines.some((l) => /more dangerous/i.test(l.text))).toBe(true);
+    expect(r.lines.some((l) => l.emphasis === "drama")).toBe(true);
   });
 });

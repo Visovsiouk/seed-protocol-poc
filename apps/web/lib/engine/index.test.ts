@@ -58,33 +58,13 @@ function makeRun(overrides: Partial<Parameters<typeof startRun>[0]> = {}) {
 const attack: ActionChoice = { kind: "attack" };
 
 /**
- * Helper: keep stepping with whichever choice resolves the current
- * encounter kind until the room clears.
- *
- *   combat → attack
- *   trial  → { kind: "trial" } (single roll resolves the room either way)
- *   ledger → { kind: "ledger", suppress: null } (skip — no suppression)
+ * Helper: keep attacking until the current (always-combat) room clears.
  */
 function clearRoom(state: RunState): RunState {
   let s = state;
   for (let i = 0; i < 50; i++) {
     if (!s.encounter) return s;
-    let choice: ActionChoice;
-    switch (s.encounter.kind) {
-      case "trial":
-        choice = { kind: "trial" };
-        break;
-      case "ledger":
-        choice = { kind: "ledger", suppress: null };
-        break;
-      case "rest":
-        choice = { kind: "rest" };
-        break;
-      case "combat":
-      default:
-        choice = attack;
-    }
-    const r = step(s, choice);
+    const r = step(s, attack);
     s = r.state;
   }
   return s;
@@ -122,18 +102,8 @@ describe("engine.startRun", () => {
 
 describe("engine.step + advance", () => {
   it("step on a combat encounter advances combat turn or clears the room", () => {
-    // Pin the seed so the depth-1 encounter is combat — trial/fork would
-    // take a different (single-step) clear path.
-    let s: RunState | undefined;
-    for (let i = 0; i < 50; i++) {
-      const run = makeRun({ rngSeed: seedHex(i) });
-      if (run.state.encounter?.kind === "combat") {
-        s = run.state;
-        break;
-      }
-    }
-    expect(s).toBeDefined();
-    const r = step(s!, attack);
+    const s = makeRun().state;
+    const r = step(s, attack);
     // Either the room cleared (encounter null + a drop banked into escrow)
     // or the turn ticked.
     if (r.state.encounter === null) {
@@ -261,16 +231,23 @@ describe("engine boss-depth handling", () => {
     expect((s.encounter as { combat: { monster: { id: string } } }).combat.monster.id).toBe("lich");
   });
 
-  it("custom bossDepth lands the boss earlier (Genesis: 5-room layout)", () => {
+  it("starter three-room shape: combat at d1-2, boss at d3", () => {
     let s: RunState = makeRun({
       equipped: { armor: TANK_ARMOR },
-      bossDepth: 5,
+      bossDepth: 3,
     }).state;
-    expect(s.bossDepth).toBe(5);
-    for (let d = 1; d < 5; d++) {
-      s = clearRoom(s);      s = advance(s, "lich").state;
-    }
-    expect(s.depth).toBe(5);
+    expect(s.bossDepth).toBe(3);
+    // Depth 1 and 2 are non-boss combat rooms.
+    expect(s.depth).toBe(1);
+    expect(s.encounter?.kind).toBe("combat");
+    s = clearRoom(s);
+    s = advance(s, "lich").state;
+    expect(s.depth).toBe(2);
+    expect(s.encounter?.kind).toBe("combat");
+    s = clearRoom(s);
+    s = advance(s, "lich").state;
+    // Depth 3 is the boss.
+    expect(s.depth).toBe(3);
     expect(s.encounter?.kind).toBe("combat");
     expect(
       (s.encounter as { combat: { monster: { id: string } } }).combat.monster.id,
@@ -321,18 +298,7 @@ describe("engine permadeath + forced first weapon", () => {
         s = advance(s, "lich").state;
         continue;
       }
-      let choice: ActionChoice;
-      switch (s.encounter.kind) {
-        case "trial":
-          choice = { kind: "trial" };
-          break;
-        case "ledger":
-          choice = { kind: "ledger", suppress: null };
-          break;
-        default:
-          choice = attack;
-      }
-      const r = step(s, choice);
+      const r = step(s, attack);
       s = r.state;
       if (s.defeated) {
         deathFired = true;

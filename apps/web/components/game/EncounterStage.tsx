@@ -15,9 +15,9 @@
  *   - threat chips (attacks / weak / resists),
  *   - the room's flavor line woven in as scene-setting prose.
  *
- * Non-combat rooms (trial / ledger / rest / between-rooms) reuse the same
- * stage so the screen stays coherent — a calmer accent vignette instead of
- * the hostile combat tint, with the room's prompt/flavor as the focus.
+ * Between-rooms (no active encounter) reuses the same stage so the screen
+ * stays coherent — a calmer accent vignette instead of the hostile combat
+ * tint, with the aftermath/transition prose as the focus.
  *
  * Inert: it never drives the engine. It only renders the live encounter and
  * animates HP deltas it observes via its `combat` prop.
@@ -218,43 +218,13 @@ function CombatStage({
 
 const KIND_LABEL: Record<NonNullable<EncounterState>["kind"], string> = {
   combat: "Encounter",
-  trial: "Trial",
-  ledger: "Ledger",
-  rest: "Safe Room",
 };
 
-/** The calm view: trial prompt, rest, ledger framing, or between-rooms prose. */
-function QuietStage({
-  encounter,
-  intro,
-}: {
-  encounter: EncounterState | null;
-  intro: string;
-}) {
-  if (encounter?.kind === "trial") {
-    return (
-      <div className="flex flex-col gap-3">
-        {intro && (
-          <p className="text-sm italic leading-relaxed opacity-80">{intro}</p>
-        )}
-        <h2 className="font-[family-name:var(--font-display)] text-2xl font-bold leading-tight sm:text-3xl">
-          {encounter.prompt}
-        </h2>
-        <p className="text-base leading-relaxed opacity-90">
-          <span className="opacity-70">You attempt:</span> {encounter.intent}
-        </p>
-        <p className="text-sm leading-relaxed opacity-80">{encounter.stakes}</p>
-        <p className="font-mono text-xs uppercase tracking-widest opacity-70">
-          {encounter.ability === "agility" ? "Agility" : "Endurance"} check —
-          d20+{encounter.bonus} vs DC {encounter.dc}
-        </p>
-      </div>
-    );
-  }
-
+/** The calm view: between-rooms / aftermath prose. */
+function QuietStage({ intro }: { intro: string }) {
   return (
     <p className="text-base leading-relaxed opacity-90">
-      {intro || "The way ahead is quiet."}
+      {intro || "Nothing moves ahead. The quiet has a held quality, like the page before the next line is written."}
     </p>
   );
 }
@@ -295,7 +265,7 @@ export function EncounterStage({
       {/*
         The stage is locked to its parent's fixed height. Content centres
         within the box and scrolls internally if it overruns, so the slot's
-        outer geometry never changes between rooms (short trial prompt vs.
+        outer geometry never changes between rooms (short intro prose vs.
         tall combat stage) — that constancy is the zero-jump guarantee.
       */}
       <div className="flex min-h-0 flex-1 flex-col justify-center gap-4 overflow-y-auto overflow-x-clip">
@@ -310,7 +280,7 @@ export function EncounterStage({
             activePreset={activePreset}
           />
         ) : (
-          <QuietStage encounter={encounter} intro={intro} />
+          <QuietStage intro={intro} />
         )}
       </div>
     </section>

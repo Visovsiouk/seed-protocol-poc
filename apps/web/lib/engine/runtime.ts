@@ -228,14 +228,17 @@ export function lootRollToMockCard(
   // identity and never changes across realms; the schema-native TYPE
   // ladder is rendered separately as a chip.
   const element = loot.slot === "weapon" ? loot.element : loot.resistElement;
+  // Resolve the tokenId first: it is the pick-seed for `evocativeName`, so the
+  // stored name matches what `AssetCard` re-derives from the same tokenId.
+  const tokenId = opts?.tokenId ?? nextMockTokenId++;
   const assembledName =
-    loot.nameOverride ?? evocativeName(loot.nameSeed, loot.tier, element);
+    loot.nameOverride ?? evocativeName(preset, tokenId, loot.tier, element);
   return lootRoundtripToCard({
     loot,
     preset,
     realm,
     realmName,
     assembledName,
-    tokenId: opts?.tokenId ?? nextMockTokenId++,
+    tokenId,
   });
 }

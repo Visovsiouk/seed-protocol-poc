@@ -17,38 +17,21 @@
  * Strike/Brace/Flank semantics.
  */
 
-import type {
-  BossDef,
-  CatalogEffectName,
-  CombatState,
-  NarrationLine,
-} from "./types";
+import type { BossDef, CombatState, NarrationLine } from "./types";
 import { monsterTitle } from "./narration";
 
 /**
  * Builds the initial CombatState for a boss encounter. `playerAc` includes
- * any equipped-armor bonus the caller has already summed in.
- *
- * `suppressedBakedEffects` (optional) filters the boss's `bakedEffects`
- * array — the ledger-room mechanic. The filtered boss is what combat
- * resolution sees, so `getMonsterEffectValue` will naturally return 0
- * for suppressed effects without needing extra plumbing.
+ * any equipped-armor bonus the caller has already summed in. The boss always
+ * carries both of its baked-in catalog effects.
  */
 export function createBossEncounter(args: {
   boss: BossDef;
   playerHp: number;
   playerMaxHp: number;
   playerAc: number;
-  suppressedBakedEffects?: readonly CatalogEffectName[];
 }): CombatState {
-  const suppress = new Set(args.suppressedBakedEffects ?? []);
-  const filteredBaked = args.boss.bakedEffects.filter(
-    (e) => !suppress.has(e),
-  ) as BossDef["bakedEffects"];
-  // We clone the boss with the filtered list. The tuple-shape isn't required
-  // at the combat layer (it only reads `bakedEffects.includes`), so a length-1
-  // or length-0 array is fine here even though the declared type is a 2-tuple.
-  const boss: BossDef = { ...args.boss, bakedEffects: filteredBaked };
+  const boss = args.boss;
   return {
     playerHp: args.playerHp,
     playerMaxHp: args.playerMaxHp,
@@ -126,7 +109,7 @@ export function checkPhaseTransition(state: CombatState): PhaseTransition {
   };
 
   const lines: NarrationLine[] = [
-    { text: `${monsterTitle(monster)} grows more dangerous.`, emphasis: "drama" },
+    { text: `${monsterTitle(monster)} stops holding back — whatever keeps it is done pretending.`, emphasis: "drama" },
     { text: "You see the opening. Your strikes find purchase.", emphasis: "heal" },
   ];
   if (monster.phase2SuppressEffect) {

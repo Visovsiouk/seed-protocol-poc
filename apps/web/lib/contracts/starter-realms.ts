@@ -25,11 +25,11 @@ export type StarterRealm = {
   name: string;
   tagline: string;
   /**
-   * Depth at which the boss arrives. Normalized to 5 across all three
-   * starters — the linear forced progression keeps the cadence even,
-   * so the player isn't ambushed by a longer run when they cross a
-   * warp. The post-3-clear free play (and any community realm) can
-   * pick its own depth without touching this baseline.
+   * Depth at which the boss arrives. Normalized to 3 across all three
+   * starters — the run is three rooms (easy → elite → boss), so the
+   * cadence stays even and every room leans on the combat system. The
+   * post-3-clear free play (and any community realm) can pick its own
+   * depth without touching this baseline.
    */
   bossDepth: number;
   /**
@@ -55,23 +55,23 @@ const STARTER_MECHANICS_BY_PRESET: Record<
   Preset,
   Pick<StarterRealm, "bossDepth" | "forcedFirstWeaponElement">
 > = {
-  // The Hollow Reach — first door. Five rooms and a forced fire first
-  // weapon so the player stumbles onto the Pilgrim's Brand and the Hag's
-  // fire-weakness reads as a story beat, not a coincidence.
+  // The Hollow Reach — first door. Three rooms (easy → elite → boss) and a
+  // forced fire first weapon so the player stumbles onto the Pilgrim's Brand
+  // and the Hag's fire-weakness reads as a story beat, not a coincidence.
   fantasy: {
-    bossDepth: 5,
+    bossDepth: 3,
     forcedFirstWeaponElement: "fire",
   },
-  // Black Ice District — second door. Same five-room cadence, in wetter
+  // Black Ice District — second door. Same three-room cadence, in wetter
   // neon. No forced first weapon — the warp brought the Brand across,
   // translated.
   cyberpunk: {
-    bossDepth: 5,
+    bossDepth: 3,
   },
-  // Drift Station Ker-7 — third door. Last starter; the corridor is
-  // longer but the cadence stays even.
+  // Drift Station Ker-7 — third door. Last starter; same three-room cadence,
+  // hardest tonal stretch.
   scifi: {
-    bossDepth: 5,
+    bossDepth: 3,
   },
 };
 
@@ -84,12 +84,12 @@ const STARTER_DISPLAY_BY_PRESET: Record<Preset, { name: string; tagline: string 
   scifi: {
     name: "Drift Station Ker-7",
     tagline:
-      "A dead colony ship adrift on a long elliptical. Something rebooted the core last cycle.",
+      "A dead colony ship on a long elliptical, frost creeping across the inside of the hull. Something rebooted the core last cycle.",
   },
   cyberpunk: {
     name: "Black Ice District",
     tagline:
-      "Neon over wet concrete. The ICE has names. The contract on your head has a quota.",
+      "Neon bleeds on wet concrete. The ICE knows your name before you give it. Everything down here that watches is also counting.",
   },
 };
 
