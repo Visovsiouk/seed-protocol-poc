@@ -224,7 +224,7 @@ describe("buildTranslatedMetadataURI", () => {
     expect(rebuilt.element).toBe("plasma");
     expect(rebuilt.weaponType).toBe("cannon");
     // Name is the asset's identity — passes through untranslated. The
-    // schema-native TYPE label (Plasma Cannon) is rendered separately
+    // schema-native TYPE label (Siege Cannon) is rendered separately
     // as a chip via `weaponName(targetPreset, weaponType, tier)`.
     expect(rebuilt.name).toBe("Test Card");
   });

@@ -75,10 +75,19 @@ export function useMintLoot() {
       // Brand" etc., matching the in-feed narration.
       const element =
         args.loot.slot === "weapon" ? args.loot.element : args.loot.resistElement;
+      // The tokenId is the pick-seed for `evocativeName` (so the stored name
+      // matches what `AssetCard` re-derives from the same tokenId). It's a pure
+      // function of the mint inputs, so we can compute it here before the call.
+      const tokenId = deriveLootTokenId({
+        realm: args.realm,
+        runSeed: args.runSeed,
+        depth: args.depth,
+        nameSeed: args.loot.nameSeed,
+      });
       const assembledName =
         args.loot.nameOverride ??
         (args.loot.slot === "weapon" || args.loot.slot === "armor"
-          ? evocativeName(args.loot.nameSeed, args.loot.tier, element)
+          ? evocativeName(args.preset, tokenId, args.loot.tier, element)
           : `Loot #${args.loot.nameSeed.toString(16).slice(0, 8)}`);
 
       setPending(true);

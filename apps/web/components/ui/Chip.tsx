@@ -12,8 +12,6 @@ import type { CatalogEffect } from "@/lib/engine/types";
 import {
   effectMeta,
   elementColor,
-  TIER_LABEL,
-  tierColor,
 } from "@/lib/ui/loot-visuals";
 
 // ─── base ────────────────────────────────────────────────────────────────────
@@ -50,12 +48,6 @@ export function Chip({
       )}
     </span>
   );
-}
-
-// ─── tier ──────────────────────────────────────────────────────────────────
-
-export function TierChip({ tier }: { tier: number }) {
-  return <Chip color={tierColor(tier)} label={`T${tier}`} sub={TIER_LABEL[tier]} />;
 }
 
 // ─── element ─────────────────────────────────────────────────────────────────

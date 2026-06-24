@@ -257,6 +257,32 @@ body {
   }
 }
 
+/*
+ * Horizontal reveal for the AssetCard element/effect rail. The shift distance
+ * is dynamic (chip count varies), so the component measures the overflow and
+ * passes it in via `--rail-shift`; `alternate` in the animation shorthand makes
+ * the track ping-pong back to the start. Only runs on card hover/focus.
+ */
+@keyframes rail-scroll {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(var(--rail-shift, 0));
+  }
+}
+
+/*
+ * Run the rail reveal while the parent card (`.group`) is hovered or
+ * keyboard-focused. The component only adds `.chip-rail-track` when the rail
+ * overflows, so this never fires on cards whose chips already fit. The global
+ * reduced-motion rule below neutralizes this automatically.
+ */
+.group:hover .chip-rail-track,
+.group:focus-visible .chip-rail-track {
+  animation: rail-scroll var(--rail-dur, 2s) ease-in-out infinite alternate;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .ambient-orb {
     animation: none;

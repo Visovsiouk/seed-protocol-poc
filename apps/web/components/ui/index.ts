@@ -10,7 +10,6 @@ export { Button } from "./Button";
 export { Rule, Stamp, Body, Footnote } from "./Ledger";
 export {
   Chip,
-  TierChip,
   ElementChip,
   EffectChip,
   ProvenanceChip,

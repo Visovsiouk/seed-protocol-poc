@@ -172,7 +172,7 @@ export function RoyaltyEarnedDemo({ realm, preset, realmLabel, lootSchemaId }: P
         depth: DEMO_DEPTH,
         nameSeed,
       });
-      const assembledName = evocativeName(nameSeed, 1, loot.element);
+      const assembledName = evocativeName(preset, newTokenId, 1, loot.element);
       const metadataURI = buildLootMetadataURI({
         loot,
         preset,

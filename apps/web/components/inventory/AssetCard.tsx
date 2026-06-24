@@ -28,11 +28,23 @@ import {
   useTranslatedCard,
 } from "@/lib/contracts/adapters";
 import { getAdapterAddress } from "@/lib/contracts/seeded-adapters";
-import { armorName, weaponName } from "@/lib/loot/names";
+import {
+  armorName,
+  composeDisplayName,
+  evocativeName,
+  weaponName,
+} from "@/lib/loot/names";
 import { tierColor } from "@/lib/ui/loot-visuals";
 import { fadeRise, withReducedMotion } from "@/lib/ui/motion";
-import { TierChip, ElementChip, EffectChip, ProvenanceChip } from "@/components/ui";
+import { ElementChip, EffectChip, ProvenanceChip } from "@/components/ui";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import {
+  useLayoutEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
 
 const ZERO_ADDR = "0x0000000000000000000000000000000000000000" as const;
 
@@ -219,6 +231,90 @@ function OriginalStrip({
   );
 }
 
+/**
+ * Single-line element/effect rail. Height-reserved and non-wrapping so a
+ * zero-chip card holds the same height as a three-chip one — cards stay
+ * uniform instead of growing double-/triple-decker as the chip count climbs.
+ *
+ * Chips past the first line are clipped behind a right-edge fade at rest.
+ * On hover / keyboard focus of the *card* (driven by the ancestor `group`),
+ * the track ping-pongs horizontally so the hidden chips cycle into view and
+ * back. The scroll distance is dynamic, so we measure it (`scrollWidth -
+ * clientWidth`) and feed it to the `rail-scroll` keyframe via `--rail-shift`;
+ * a medium-speed duration is derived from the distance via `--rail-dur`.
+ * Reduced-motion users get no animation (overflow stays clipped — punted).
+ */
+function ChipRail({ children }: { children: ReactNode }) {
+  const reduced = useReducedMotion();
+  const outerRef = useRef<HTMLDivElement>(null);
+  const trackRef = useRef<HTMLDivElement>(null);
+  const [overflow, setOverflow] = useState(0);
+
+  useLayoutEffect(() => {
+    const outer = outerRef.current;
+    const track = trackRef.current;
+    if (!outer || !track) return;
+    const measure = () => {
+      setOverflow(Math.max(0, track.scrollWidth - outer.clientWidth));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(outer);
+    ro.observe(track);
+    return () => ro.disconnect();
+  }, [children]);
+
+  const animate = overflow > 0 && !reduced;
+  // Medium speed: ~80px/sec, clamped so short rails aren't jittery-fast and
+  // long ones don't crawl.
+  const dur = Math.min(5, Math.max(1.2, overflow / 80));
+
+  return (
+    <div
+      ref={outerRef}
+      className="overflow-hidden"
+      style={
+        overflow > 0
+          ? {
+              height: "1.375rem",
+              maskImage:
+                "linear-gradient(to right, #000 calc(100% - 1rem), transparent)",
+              WebkitMaskImage:
+                "linear-gradient(to right, #000 calc(100% - 1rem), transparent)",
+            }
+          : { height: "1.375rem" }
+      }
+    >
+      {/*
+        `chip-rail-track` is the hook for the hover/focus reveal: globals.css
+        animates `.group:hover/.group:focus-visible .chip-rail-track` with the
+        `rail-scroll` keyframe, reading the measured `--rail-shift`/`--rail-dur`
+        set below. We drive it from a plain class + global rule rather than a
+        Tailwind arbitrary variant so the (long, var()-bearing) animation
+        shorthand can't get dropped by JIT scanning. Only attached when the
+        rail actually overflows and motion is allowed.
+      */}
+      <div
+        ref={trackRef}
+        className={
+          "flex w-max flex-nowrap items-center gap-1 [&>*]:shrink-0" +
+          (animate ? " chip-rail-track" : "")
+        }
+        style={
+          animate
+            ? ({
+                "--rail-shift": `-${overflow}px`,
+                "--rail-dur": `${dur}s`,
+              } as CSSProperties)
+            : undefined
+        }
+      >
+        {children}
+      </div>
+    </div>
+  );
+}
+
 export function AssetCard({
   card,
   selected,
@@ -270,6 +366,28 @@ export function AssetCard({
     ? targetPreset
     : sourcePreset;
 
+  // The evocative half of the headline. Normal loot re-derives its word in
+  // the *current* realm's vocabulary so it follows the element across genres
+  // (fantasy "Inferno" → sci-fi "Meltdown"). Story-objects ship a verbatim
+  // `nameOverride` baked into `.name` — we detect those by checking whether
+  // the stored name still equals what the source-realm derivation produces;
+  // if it diverges it's an override and we pass it through unchanged.
+  const sourceEvocative = evocativeName(
+    sourcePreset ?? "fantasy",
+    card.tokenId,
+    card.tier,
+    card.element ?? card.resistElement,
+  );
+  const isNameOverride = card.name !== sourceEvocative;
+  const headlineEvocative = isNameOverride
+    ? displayCard.name
+    : evocativeName(
+        topLabelPreset ?? sourcePreset ?? "fantasy",
+        displayCard.tokenId,
+        displayCard.tier,
+        displayCard.element ?? displayCard.resistElement,
+      );
+
   const adapter = isHop
     ? getAdapterAddress(
         card.slot as "weapon" | "armor",
@@ -284,7 +402,7 @@ export function AssetCard({
       type="button"
       onClick={onClick}
       disabled={!onClick}
-      className="text-left w-full rounded-lg p-3 pl-6 transition flex flex-col gap-2 border overflow-hidden relative"
+      className="group text-left w-full h-full rounded-lg p-3 pl-6 transition flex flex-col gap-2 border overflow-hidden relative"
       style={{
         // Tier-tinted glass surface so the card reads its rarity at a glance.
         // The tint stays low (8% base) so the dark glass dominates and body
@@ -355,13 +473,16 @@ export function AssetCard({
         )}
       </AnimatePresence>
       <header className="flex items-baseline justify-between gap-2">
-        <h4 className="font-semibold text-sm truncate">{displayCard.name}</h4>
-        <TierChip tier={displayCard.tier} />
+        <h4 className="font-semibold text-sm truncate">
+          {composeDisplayName(
+            headlineEvocative,
+            typeLabelFor(displayCard, topLabelPreset),
+          )}
+        </h4>
       </header>
       {!compact && (
         <p className="text-xs opacity-75 truncate">
-          {typeLabelFor(displayCard, topLabelPreset) || displayCard.slot} ·{" "}
-          {displayCard.realmName}
+          {displayCard.slot} · {displayCard.realmName}
         </p>
       )}
       <div className="text-xs opacity-80 tabular-nums">
@@ -377,42 +498,29 @@ export function AssetCard({
           </>
         )}
       </div>
-      {(() => {
-        const showAnyChip =
-          (isWeapon && displayCard.element && displayCard.element !== "none") ||
-          (!isWeapon &&
-            displayCard.resistElement &&
-            displayCard.resistElement !== "none") ||
-          displayCard.catalogEffects.length > 0;
-        if (!showAnyChip) return null;
-        return (
-        <div className="flex flex-wrap gap-1">
-          {isWeapon &&
-            displayCard.element &&
-            displayCard.element !== "none" && (
-              <TranslatedElementChip
-                element={displayCard.element as Exclude<Element, "none">}
-                kind="damage"
-                preset={topLabelPreset}
-              />
-            )}
-          {!isWeapon &&
-            displayCard.resistElement &&
-            displayCard.resistElement !== "none" && (
-              <TranslatedElementChip
-                element={
-                  displayCard.resistElement as Exclude<Element, "none">
-                }
-                kind="resist"
-                preset={topLabelPreset}
-              />
-            )}
-          {displayCard.catalogEffects.map((e) => (
-            <EffectChip key={e.name} effect={e} />
-          ))}
-        </div>
-        );
-      })()}
+      <ChipRail>
+        {isWeapon &&
+          displayCard.element &&
+          displayCard.element !== "none" && (
+            <TranslatedElementChip
+              element={displayCard.element as Exclude<Element, "none">}
+              kind="damage"
+              preset={topLabelPreset}
+            />
+          )}
+        {!isWeapon &&
+          displayCard.resistElement &&
+          displayCard.resistElement !== "none" && (
+            <TranslatedElementChip
+              element={displayCard.resistElement as Exclude<Element, "none">}
+              kind="resist"
+              preset={topLabelPreset}
+            />
+          )}
+        {displayCard.catalogEffects.map((e) => (
+          <EffectChip key={e.name} effect={e} />
+        ))}
+      </ChipRail>
       {displayCard.preseed && (
         <ProvenanceChip>Genesis liquidity</ProvenanceChip>
       )}
