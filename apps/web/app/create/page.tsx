@@ -314,7 +314,7 @@ export default function CreatePage() {
 
   return (
     <ProtocolSurfaceGate>
-      <AppShell title="Create a realm" back={{ href: "/", label: "← The hideout" }}>
+      <AppShell title="Create a realm" back={{ href: "/", label: "← The base" }}>
         <section
           className="mx-auto flex max-w-3xl flex-col gap-6"
           data-preset={preset}

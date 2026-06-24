@@ -476,13 +476,13 @@ function PreArcBase({
         <Stamp>{first ? "The base" : "Between descents"}</Stamp>
         <h2 className="font-mono text-xl leading-snug font-medium tracking-[-0.015em]">
           {first
-            ? "Still air, and the realms below."
+            ? "You land on your feet in a room that wasn't there."
             : "Back in the hush between realms."}
         </h2>
         <Body size="sm">
           {first
-            ? "The book set you down here — a room that holds its breath in the gap between realms, the one place the ground beneath you has forgotten how to count. Three ways down wait along the wall, but only the nearest will open for you; the rest keep their names until you've earned the breaking of their seals. Choose your descent."
-            : "The room still holds its breath. Another seal has given way since you last passed through — the rest keep their names a while longer. Choose your descent."}
+            ? "The fall just stops, and the floor is under you — a small dry room drawn close as a held breath, the gap the protocol keeps between its worlds. This is where it sets you down between descents to weigh what you're becoming before it lets you go deeper. The mark on your hand has gone quiet here: not cold, only waiting. It does its counting below, never in this room. Three ways down lead off the walls. Two are sealed flat — no seam, no handle, no name — and stay that way until you've gone deep enough to earn the breaking of them. The nearest already stands open. Go down."
+            : "The room draws close around you again, quiet as a held breath, and the mark warms the moment you turn to the wall — it remembers what it counted last time. One more seal has given way since you passed through; the rest keep their names a while longer. Go down."}
         </Body>
         <Rule tone="muted" />
       </header>

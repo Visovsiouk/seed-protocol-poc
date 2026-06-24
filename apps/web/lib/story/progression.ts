@@ -85,13 +85,13 @@ export function lockTeaseFor(preset: Preset): string {
  */
 export function stakesNoteFor(preset: Preset): string {
   if (preset === "fantasy") {
-    return "Death here is final. The wet earth keeps what you hadn't carried out.";
+    return "Death here is final. The wet earth keeps you, and keeps what you hadn't carried out.";
   }
   if (preset === "cyberpunk") {
-    return "Death here is final. The district logs your kill and keeps your unbanked haul.";
+    return "Death here is final. The district keeps you, and everything you hadn't carried out stays in the dark.";
   }
   if (preset === "scifi") {
-    return "Death here is final. The station vents the run and everything still in hand.";
+    return "Death here is final. The station keeps you, and vents everything still in hand.";
   }
   return "";
 }
@@ -100,9 +100,9 @@ export const STORY_HERO_OPEN = {
   eyebrow: "The doors stand open",
   title: "Three doors closed behind you. The rest are up to you.",
   body:
-    "Starter realms remain walkable; the bazaar has goods you couldn't see before; " +
-    "realms other hands have raised line the registry. The protocol is still weighing " +
-    "you, and it will keep doing so until the Seed itself is in your hand.",
+    "The founding doors stay walkable, the market shows goods it kept hidden before, and " +
+    "the registry fills with doors other hands have raised. You read your way this far; " +
+    "what comes next, you write.",
 } as const;
 
 /**
@@ -138,10 +138,11 @@ export function interstitialFor(args: {
       eyebrow: "Door I · the Reach falls",
       title: "Her laughter splinters into static.",
       body:
-        "The Hag drops to one knee, and the Reach drops with her. The wet wood thins. " +
-        "Beneath it is rain on concrete. A shard catches the light in your hand. The " +
-        "ground here remembers you. Carry what's yours.",
-      cta: { kind: "warp-next", label: "Walk forward", nextPreset: "cyberpunk" },
+        "The Hag drops to one knee, and for a breath her face is only a face — someone " +
+        "who walked this far and was kept. Then the Reach drops with her. The wet wood " +
+        "thins; beneath it is rain on concrete. A shard settles warm against the mark on " +
+        "your hand: the first third of something. Two doors down to go. Carry what's yours.",
+      cta: { kind: "warp-next", label: "Go down", nextPreset: "cyberpunk" },
     };
   }
 
@@ -151,10 +152,11 @@ export function interstitialFor(args: {
       eyebrow: "Door II · the ICE shatters",
       title: "Blue smoke peels back from a longer corridor.",
       body:
-        "The contract burns in your hand. Behind the neon, a hum that isn't an engine " +
-        "and isn't a furnace. One more door. The shards on your belt are heavier than " +
-        "they look, and they'll travel.",
-      cta: { kind: "warp-next", label: "Walk forward", nextPreset: "scifi" },
+        "Black ICE goes dark, and in the last of its light it almost wears a face you " +
+        "could have worn. A second shard finds the mark, warmer than the first — two " +
+        "thirds now, and the cold ahead is older than either. One more door down. What " +
+        "you carry will travel; the protocol sees to that.",
+      cta: { kind: "warp-next", label: "Go down", nextPreset: "scifi" },
     };
   }
 
@@ -166,18 +168,24 @@ export function interstitialFor(args: {
       eyebrow: "Door III · the Core goes quiet",
       title: "Three doors closed behind you.",
       body:
-        "The reactor's whisper drops below hearing. You step out onto a registry full " +
-        "of doors raised by other hands. The protocol has counted every step. What " +
-        "you've earned is waiting; what's left depends on what comes next.",
-      cta: { kind: "claim-seed", label: "See what's waiting" },
+        "The Core's whisper drops below hearing, and the last thing it shows you is a " +
+        "reader's face — the one it used to be, kept here to keep the door. The third " +
+        "shard settles warm against the mark; you carry all three up now. They are not " +
+        "the Seed yet — only the Seed in pieces. The base has an Altar where shards are " +
+        "pressed whole, and it will weigh whether the three you've brought are enough. " +
+        "Climb. Let it weigh you.",
+      cta: { kind: "claim-seed", label: "Climb to the Altar" },
     };
   }
 
   // Any community-realm clear, or out-of-band starter clears post-arc.
   return {
     eyebrow: "Realm cleared",
-    title: "The realm is yours.",
-    body: "Pick the next door.",
-    cta: { kind: "open-picker", label: "Open the realm picker" },
+    title: "Another door walked, another dialect read.",
+    body:
+      "The warden falls and the world thins behind you. This door was raised by a hand " +
+      "like yours — read clean now, its findings yours to carry up. The base is still " +
+      "above; the registry still has doors you haven't opened.",
+    cta: { kind: "open-picker", label: "Climb back to the base" },
   };
 }

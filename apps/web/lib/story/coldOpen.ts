@@ -55,10 +55,12 @@ export const COLD_OPEN_BOOK: readonly ColdOpenBeat[] = [
     stamp: "Page II · the ink answers",
     body: [
       "The letters lift off the paper and come down on the back of your " +
-        "hand. They settle in, the way a name settles in. You try to wipe " +
-        "them off and they only go further in.",
+        "hand. They settle in — the way a name settles in, the way a seed " +
+        "settles into turned earth. You try to wipe them off and they only " +
+        "go further in.",
       "The lamp does not flicker. The room does not change. Only the " +
-        "edges of the room become uncertain about where they were.",
+        "edges of the room become uncertain about where they were. The mark " +
+        "is warm. It was not warm a moment ago.",
     ],
     cta: "Keep reading",
   },
@@ -80,9 +82,10 @@ export const COLD_OPEN_BOOK: readonly ColdOpenBeat[] = [
       "You wake somewhere dry. A small room with the patience of a place " +
         "that was kept for you — a low cot, a colder lamp, and the realms " +
         "waiting below it like water under thin ice.",
-      "The mark on your hand is still there, and it is warm. Only the " +
-        "nearest way down is open to you. Beyond each one the ground has " +
-        "already begun to count.",
+      "The mark on your hand is still there, and warmer than before — as " +
+        "though the thing pressed into it has taken root and started keeping " +
+        "a tally. Only the nearest way down is open to you. Beyond each " +
+        "sealed one, the ground has already begun to count.",
     ],
     footnote: "you are in the base",
     cta: "Wake",
@@ -94,4 +97,4 @@ export const COLD_OPEN_BOOK: readonly ColdOpenBeat[] = [
  * On returning visits, the landing surfaces the continue card directly.
  * Versioned so we can re-introduce the Book if the content rewrites.
  */
-export const COLD_OPEN_STORAGE_KEY = "seed-protocol:cold-open-consumed.v1";
+export const COLD_OPEN_STORAGE_KEY = "seed-protocol:cold-open-consumed.v2";

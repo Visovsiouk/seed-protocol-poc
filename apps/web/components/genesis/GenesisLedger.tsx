@@ -1,13 +1,14 @@
 "use client";
 
 /**
- * The Seed-claim credential, presented as a *chest with three locks*
- *. Each lock is keyed by one founding realm:
- * defeating that realm's boss turns its key. A locked realm stays sealed
- * and *unnamed* — "?????" — to preserve the next-realm surprise, exactly
- * like the base picker. A cleared realm lights its lock with the realm's
- * own accent and reveals its name. When all three keys have turned the
- * chest opens and the luminous "Claim my Seed" CTA unseals.
+ * The Seed-claim credential, presented as the *three shards and the Seed
+ * they complete*. Each founding realm gives up one
+ * shard when its boss falls; the Altar is where the shards are pressed
+ * whole — the fusion that is the real on-chain SeedSBT mint. A realm still
+ * below stays *unnamed* — "?????" — to preserve the next-realm surprise,
+ * exactly like the base picker. A recovered shard lights its plate with the
+ * realm's own accent and reveals its name. When all three are in hand the
+ * luminous "Claim my Seed" CTA unseals.
  *
  * Reconstructed honestly from chain: it reads the player's per-realm
  * `BossCleared` history via `useTutorialProgress` and posts to
@@ -26,8 +27,8 @@ import { emptyTutorialProgress } from "@/lib/tutorial/progress";
 import { listStarterRealms } from "@/lib/contracts/starter-realms";
 import { useClaimSeed, type ClaimSeedResult } from "@/lib/contracts/seed-claim";
 
-// Ordered fantasy → cyberpunk → scifi (matches REALM_ORDER), so the locks
-// read left-to-right in the order the player earns their keys.
+// Ordered fantasy → cyberpunk → scifi (matches REALM_ORDER), so the shards
+// read left-to-right in the order the player recovers them.
 const STARTERS = listStarterRealms();
 
 function shortAddr(addr: `0x${string}`): string {
@@ -56,16 +57,16 @@ export function GenesisLedger({
   // Lowercased set of realms the player has actually cleared on-chain.
   const clearedByRealm = new Set(progress.cleared.map((c) => c.realm.toLowerCase()));
 
-  const keysTurned = STARTERS.filter((s) =>
+  const shardsRecovered = STARTERS.filter((s) =>
     clearedByRealm.has(s.realm.toLowerCase()),
   ).length;
-  const allKeysTurned = keysTurned >= STARTERS.length;
+  const allShardsRecovered = shardsRecovered >= STARTERS.length;
 
   async function handleClaim() {
     try {
       const r = await claimSeed();
       setResult(r);
-      // The Seed is the key to authorship — send the player to the Forge.
+      // The Seed is what lets a reader write — send the player to the Forge.
       if (onClaimed) onClaimed();
       else router.push("/?station=forge");
     } catch {
@@ -86,60 +87,61 @@ export function GenesisLedger({
           <div className="flex flex-wrap items-baseline justify-between gap-2">
             <Stamp>Seed credential</Stamp>
             <span className="font-mono text-[10px] uppercase tracking-widest opacity-65">
-              {keysTurned} / {STARTERS.length} keys
+              {shardsRecovered} / {STARTERS.length} shards
             </span>
           </div>
           <Rule />
           <h2 className="font-mono text-2xl font-medium tracking-[-0.015em]">
             {progress.hasSeed
               ? "The Seed is yours"
-              : allKeysTurned
-                ? "The chest opens"
-                : "Three locks, three keys"}
+              : allShardsRecovered
+                ? "Press the three shards whole"
+                : "Three shards, one Seed"}
           </h2>
           <p className="max-w-[58ch] text-sm leading-relaxed opacity-75">
             {progress.hasSeed
-              ? "Three keys turned, the chest stands open, and the Seed travels with you now — sealed on-chain from the same receipts that earned it."
-              : allKeysTurned
-                ? "Every lock has turned to its own key. Lift the lid — the server rebuilds your proof from the same on-chain receipts and mints the Seed to your wallet."
-                : "The chest answers to three keys, one cut by each founding realm. Each boss you fell turns its lock. The realms still sealed keep their keys — and their names — until you reach them."}
+              ? "The three shards are pressed whole, and the Seed travels with you now — fused on-chain from the same receipts that earned it."
+              : allShardsRecovered
+                ? "All three shards rest on the Altar. Press them together — the server rebuilds your proof from the same on-chain receipts and fuses the Seed into your wallet."
+                : "Each founding realm gives up one shard when its warden falls. The realms still below keep their shards — and their names — until you go down to them."}
           </p>
         </header>
 
-        {/* The chest: three lock plates, one per founding realm. A turned key
-            lights its plate with the realm's accent and reveals the name; a
-            sealed lock stays dim and unnamed to preserve the surprise. */}
+        {/* The Seed in pieces: three shard plates, one per founding realm. A
+            recovered shard lights its plate with the realm's accent and reveals
+            the name; a shard still below stays dim and unnamed to preserve the
+            surprise. */}
         <div
-          aria-label="The chest's three locks"
+          aria-label="The three shards of the Seed"
           className="grid grid-cols-1 gap-3 sm:grid-cols-3"
         >
           {STARTERS.map((s) => {
-            const turned = clearedByRealm.has(s.realm.toLowerCase());
+            const recovered = clearedByRealm.has(s.realm.toLowerCase());
             return (
               <div
                 key={s.realm}
                 data-preset={s.preset}
-                aria-label={turned ? `${s.name} — key turned` : "Sealed lock"}
+                aria-label={recovered ? `${s.name} — shard recovered` : "Shard still below"}
                 className="flex flex-col items-center gap-2 rounded-md p-4 text-center transition"
                 style={{
-                  border: turned
+                  border: recovered
                     ? "1px solid color-mix(in oklab, var(--color-preset-accent) 55%, transparent)"
                     : "1px dashed var(--border-2)",
-                  background: turned
+                  background: recovered
                     ? "color-mix(in oklab, var(--color-preset-accent) 9%, var(--surface-1))"
                     : "var(--surface-1)",
-                  boxShadow: turned
+                  boxShadow: recovered
                     ? "0 0 18px -4px color-mix(in oklab, var(--color-preset-accent) 60%, transparent)"
                     : "none",
-                  opacity: turned ? 1 : 0.6,
+                  opacity: recovered ? 1 : 0.6,
                 }}
               >
-                {/* Lock glyph — a padlock that reads open (turned) or shut. */}
+                {/* Shard glyph — a faceted sliver, lit when recovered. */}
                 <span
                   aria-hidden
                   className="flex h-9 w-9 items-center justify-center rounded-full text-base font-bold"
                   style={
-                    turned
+                    recovered
                       ? {
                           background: "var(--color-preset-accent)",
                           color: "var(--color-preset-bg)",
@@ -150,17 +152,17 @@ export function GenesisLedger({
                         }
                   }
                 >
-                  {turned ? "🔓" : "🔒"}
+                  {recovered ? "◆" : "◇"}
                 </span>
                 <span
                   className="text-sm font-medium"
-                  style={{ opacity: turned ? 1 : 0.85 }}
+                  style={{ opacity: recovered ? 1 : 0.85 }}
                 >
-                  {turned ? s.name : "?????"}
+                  {recovered ? s.name : "?????"}
                 </span>
                 <Chip
-                  color={turned ? "var(--color-preset-accent)" : "var(--border-2)"}
-                  label={turned ? "Key turned" : "Sealed"}
+                  color={recovered ? "var(--color-preset-accent)" : "var(--border-2)"}
+                  label={recovered ? "Shard recovered" : "Still below"}
                 />
               </div>
             );
@@ -204,9 +206,9 @@ export function GenesisLedger({
               </Button>
               {!progress.eligibleForSeed && (
                 <p className="text-xs opacity-65">
-                  {allKeysTurned
-                    ? "All three keys are turned. If the lid stays shut, a community realm clear may still be required (min 3, or however many exist)."
-                    : "Turn all three keys — clear all three founding realms — to open the chest."}
+                  {allShardsRecovered
+                    ? "All three shards are in hand. If they won't fuse yet, a community realm clear may still be required (min 3, or however many exist)."
+                    : "Recover all three shards — clear all three founding realms — before they can be pressed whole."}
                 </p>
               )}
               {error && (

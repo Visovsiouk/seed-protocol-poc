@@ -606,7 +606,7 @@ export function EncounterFrame({
               )}
             </p>
             {/* Surfacing ends the delve and returns the player to the
-                hideout automatically once the chosen findings have banked
+                base automatically once the chosen findings have banked
                 (see handleConfirmExtract). We only linger on this panel when
                 the bank FAILED — then BankStatusLine offers a retry, and a
                 successful retry redirects home like the happy path. */}
@@ -802,13 +802,14 @@ function DefeatOverlay({
               instant, turn-1 run.
             */}
             {turn !== undefined && turn > 0
-              ? ` · turn ${turn} of that fight`
+              ? ` · turn ${turn} of the fight there`
               : ""}
           </p>
         )}
         <p className="text-sm opacity-90 leading-relaxed">
-          The run is over. No clear receipt is minted, and the realm chain
-          stays unchanged — your owned, equipped gear is untouched, but
+          The protocol writes you in where you fell — another face for the next
+          reader to find. No clear receipt is minted and the realm chain stays
+          unchanged; your owned, equipped gear is untouched, but
           {escrowLost > 0 ? (
             <>
               {" "}the{" "}
@@ -816,7 +817,7 @@ function DefeatOverlay({
                 {escrowLost} unminted finding
                 {escrowLost === 1 ? "" : "s"}
               </strong>{" "}
-              you carried are gone. Bank them next time.
+              you carried are gone. Carry them out next time.
             </>
           ) : (
             <> you carried nothing out to lose.</>

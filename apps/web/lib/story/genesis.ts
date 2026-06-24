@@ -1,7 +1,9 @@
 /**
  * The Pilgrim's Brand — fantasy starter story object.
  *
- * Long before the player, a fire-mage walked the Reach and burned. Her
+ * Long before the player, a fire-mage walked the Reach and burned. She
+ * was a reader too, marked as the player is; the Reach kept her, the way
+ * it keeps everyone it can. Her
  * blade — or one of its sisters — is buried in the second clearing. The
  * Hag is `weakTo: fire` for a reason. **Fantasy-only**: the brand is
  * tied to `forcedFirstWeaponElement: "fire"` on the fantasy starter, so
@@ -27,13 +29,16 @@
  */
 const PILGRIM_BRAND_DROPS: readonly string[] = [
   "Under the moss, a blade wrapped in burnt cloth. The hilt is still warm. " +
-    "Someone walked these rooms before you. They didn't walk back.",
+    "Someone walked these rooms before you, marked the way you are marked. " +
+    "They didn't walk back — the Reach kept them.",
   "A sword has been driven into the dirt to mark a grave. The wood around " +
-    "it is charred. The name on the hilt is too faded to read.",
+    "it is charred. The name on the hilt is too faded to read; the Reach " +
+    "has already started writing its own name over hers.",
   "A scorched scabbard. The runes have melted into each other. Inside, the " +
     "blade is still hungry.",
   "A pilgrim's body kneels at the foot of an oak, long since dried to leather. " +
-    "Her hand is wrapped around the grip. It opens for you.",
+    "Her hand is wrapped around the grip. It opens for you — one pilgrim handing " +
+    "the next what the deeper dark already took her for.",
 ];
 
 /**

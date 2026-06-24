@@ -45,28 +45,33 @@ function copyFor(progress: TutorialProgress): ActCopy | null {
   switch (progress.act) {
     case 1:
       return {
-        eyebrow: "You wake somewhere",
-        title: "There is a bell, and a laugh, and mud under your hand.",
+        eyebrow: "You read your way in",
+        title: "A bell, a wet laugh, and mud under your hand.",
         body:
-          "You don't remember walking here. Something is waiting in the dark ahead. " +
-          "Walk into it — the ground will hold you, and what falls from what you kill " +
-          "is yours to carry.",
+          "You don't remember walking here — only the page that went wet, the ink that " +
+          "climbed into your hand, the floor that stopped being a floor. The mark is warm " +
+          "now, and it has started to count. Go down and meet what's waiting: what you " +
+          "strip from the dead is yours to carry out — until the Reach takes it back, and " +
+          "you with it. It has kept everyone who came this far before you.",
       };
     case 2:
       return {
-        eyebrow: "Another door opens",
-        title: "The forest closed. Somewhere else opens.",
+        eyebrow: "The Reach keeps its dead — you walked out",
+        title: "Wet stone thins to rain on concrete.",
         body:
-          "What you carried here came with you. The shape of it changed; the weight " +
-          "didn't. Walk forward.",
+          "Most who go down stay down, rewritten into the dark they fell in. You didn't. " +
+          "What you carried came with you — the protocol only changed its accent. One " +
+          "shard rests against the mark; two doors left below. Go down.",
       };
     case 3:
       return {
-        eyebrow: "One last door",
-        title: "Two doors closed. One hums behind glass.",
+        eyebrow: "Two doors closed",
+        title: "One door left, humming behind frost and glass.",
         body:
-          "You know how this goes by now. Cross the threshold, find the thing at the " +
-          "end, and bring it down. Then you'll see what kind of thing you've become.",
+          "Two shards now, and the cold ahead is older than both — the dialect the protocol " +
+          "spoke first, where the writing barely holds. Go down, find what the dead station " +
+          "grew around its core, and break it before it keeps you too. Then you'll see what " +
+          "you've become.",
       };
     case 4: {
       const communityRequirement = Math.min(3, progress.communityRealmCount);
@@ -78,39 +83,41 @@ function copyFor(progress: TutorialProgress): ActCopy | null {
       // The Seed settles immediately.
       if (progress.communityRealmCount === 0) {
         return {
-          eyebrow: "Act 4 · The Seed",
-          title: "Three doors closed behind you. The Seed is whole.",
+          eyebrow: "The three become one",
+          title: "Three doors closed. The Seed is whole.",
           body:
-            "Forest, district, reactor — every skin the protocol wore now knows your " +
-            "shape. The registry is still empty of doors raised by other hands, and so " +
-            "there is nothing more to weigh you against. The Seed is yours.",
+            "Forest, district, reactor — every dialect the protocol speaks now knows your " +
+            "shape. The three shards close against the mark and stop being shards: a Seed, " +
+            "warm and whole, the thing the wardens died reaching for. No other hands have " +
+            "raised doors yet, so there is nothing left to weigh you against. It's yours.",
           guidance:
-            "Once others raise their realms, later pilgrims will be asked to walk " +
-            "through them too. You arrived first.",
+            "You read your way in and walked your way out — the first to. When others " +
+            "raise realms, later pilgrims will walk through them too. You were first.",
         };
       }
       // Community realms exist, but the pilgrim hasn't cleared enough yet.
       if (communityRemaining > 0) {
         return {
-          eyebrow: "Act 4 · The Seed waits",
+          eyebrow: "The Seed waits on you",
           title: "Three of the protocol's doors remember you.",
           body:
-            "But the registry has grown since you started walking. Other hands have " +
-            "raised doors of their own, and the Seed will weigh you against them " +
-            "before it settles.",
+            "But the registry has grown while you walked. Other hands have raised doors " +
+            "of their own, and the Seed won't settle until it has weighed you against " +
+            "them too.",
           guidance:
             communityRemaining === 1
-              ? "Clear one more realm raised by another pilgrim, and the Seed will be yours."
-              : `Clear ${communityRemaining} more realms raised by other pilgrims, and the Seed will be yours.`,
+              ? "Go down one more realm raised by another pilgrim, and the Seed is yours."
+              : `Go down ${communityRemaining} more realms raised by other pilgrims, and the Seed is yours.`,
         };
       }
       // Both tiers satisfied — Claim CTA appears.
       return {
-        eyebrow: "Act 4 · The Seed",
-        title: "You have walked through every door the protocol asked of you.",
+        eyebrow: "Every door, walked",
+        title: "You've gone down every door the protocol asked of you.",
         body:
-          "Three starters, and the pilgrims who came before. The Seed has weighed you " +
-          "and settled. Take it.",
+          "Three founding realms, and the doors other pilgrims raised after. The shards " +
+          "are one now; the Seed has weighed you and settled. Take it — then start writing " +
+          "realms of your own.",
       };
     }
     case 5:

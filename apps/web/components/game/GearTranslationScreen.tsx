@@ -64,8 +64,9 @@ export function GearTranslationScreen({
         </h3>
         <Body size="sm">
           The same blade, the same coat, the same token in the same wallet —
-          but the ground beneath them speaks a different language here. The
-          protocol translates. Watch.
+          the same self, only the dialect changes. The ground beneath you
+          speaks differently here, so the protocol translates what you carry.
+          Watch.
         </Body>
 
         <div className="flex flex-col gap-4">

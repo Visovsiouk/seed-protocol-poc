@@ -42,7 +42,7 @@ export function BossPhaseBanner({
         Phase 2
       </span>
       <span className="font-semibold">
-        {bossName} grows more dangerous.
+        {bossName} stops holding back — whatever keeps it is done pretending.
       </span>
     </div>
   );

@@ -15,7 +15,7 @@ export const metadata = {
 export default function BazaarPage() {
   return (
     <ProtocolSurfaceGate>
-      <AppShell title="Bazaar" back={{ href: "/", label: "← The hideout" }}>
+      <AppShell title="Bazaar" back={{ href: "/", label: "← The base" }}>
         <BazaarSurface />
       </AppShell>
     </ProtocolSurfaceGate>

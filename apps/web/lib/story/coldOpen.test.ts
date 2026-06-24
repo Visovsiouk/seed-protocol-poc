@@ -23,7 +23,7 @@ describe("cold-open Book", () => {
   });
 
   it("storage key is versioned so a future rewrite can re-introduce the Book", () => {
-    expect(COLD_OPEN_STORAGE_KEY).toBe("seed-protocol:cold-open-consumed.v1");
+    expect(COLD_OPEN_STORAGE_KEY).toBe("seed-protocol:cold-open-consumed.v2");
     expect(COLD_OPEN_STORAGE_KEY).toMatch(/\.v\d+$/);
   });
 });

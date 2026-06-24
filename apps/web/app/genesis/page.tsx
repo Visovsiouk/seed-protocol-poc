@@ -14,7 +14,7 @@ export const metadata = {
 export default function GenesisPage() {
   return (
     <ProtocolSurfaceGate>
-      <AppShell title="Genesis" back={{ href: "/", label: "← The hideout" }}>
+      <AppShell title="Genesis" back={{ href: "/", label: "← The base" }}>
         <GenesisLedger />
       </AppShell>
     </ProtocolSurfaceGate>

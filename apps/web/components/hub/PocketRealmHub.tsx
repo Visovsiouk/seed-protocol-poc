@@ -55,11 +55,11 @@ const STATIONS: { id: Station; label: string }[] = [
   { id: "forge", label: "The Forge" },
 ];
 
-/** Three diamond glyphs marking founding doors walked (mirrors RealmSelector). */
+/** Three diamond glyphs marking shards recovered (mirrors RealmSelector). */
 function ShardTrack({ shards }: { shards: number }) {
   return (
     <div
-      aria-label={`Founding doors walked: ${shards} of 3`}
+      aria-label={`Shards recovered: ${shards} of 3`}
       className="flex items-center gap-1.5"
     >
       {[0, 1, 2].map((i) => {
@@ -131,11 +131,11 @@ function HideoutHeader({
       as="header"
       tone="glass-3"
       glow="accent"
-      aria-label="The hideout"
+      aria-label="The base"
       className="flex flex-wrap items-center justify-between gap-4 p-5"
     >
       <div className="flex flex-col gap-1">
-        <Stamp tone="accent">The hideout</Stamp>
+        <Stamp tone="accent">The base</Stamp>
         <h1 className="font-mono text-2xl font-medium tracking-[-0.015em]">
           Your base between the realms
         </h1>
@@ -241,7 +241,7 @@ export function PocketRealmHub() {
 
       {/* Station rail — in-world wayfinding (replaces the top-nav) */}
       <nav
-        aria-label="Hideout stations"
+        aria-label="Base stations"
         className="flex flex-wrap items-center gap-2"
       >
         {stations.map((s) => {
