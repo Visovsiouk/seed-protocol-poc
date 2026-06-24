@@ -14,6 +14,7 @@ import {
   getPlayerRealm,
   insertPlayerRealm,
 } from "@/lib/server/realm-db";
+import { playerRealmMaxTier } from "@/lib/reads/realm-tier";
 import { getFlavorBank } from "@/lib/flavor";
 import { isAllowedAccent } from "@/lib/ui/accents";
 import type { Preset, Tier } from "@/lib/engine/types";
@@ -322,7 +323,8 @@ export async function POST(req: Request) {
       signerAddress,
       clearReceiptSchemaId: row.clearReceiptSchemaId,
       lootSchemaId: row.lootSchemaId,
-      maxTier: row.maxTier,
+      // A freshly registered realm has zero clearers → the T3 base.
+      maxTier: playerRealmMaxTier(0),
     },
   });
 }

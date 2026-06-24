@@ -16,6 +16,10 @@ import {
 } from "@/lib/contracts/seeded-realms";
 import { getPlayerRealm } from "@/lib/server/realm-db";
 import {
+  countDistinctClearers,
+  playerRealmMaxTier,
+} from "@/lib/reads/realm-tier";
+import {
   buildLootMetadataURI,
   deriveLootTokenId,
 } from "@/lib/contracts/loot-derive";
@@ -26,12 +30,12 @@ import { elementsFor } from "@/lib/engine/types";
 import { getCatalogEffectsForSlot } from "@/lib/contracts/catalog-effects";
 
 /**
- * Per-preset starter-realm tier ceiling. Player-authored realms carry
- * their own `maxTier` in the sqlite row (`player_realms.max_tier`);
- * starter realms are pinned to T2 to preserve the seed-liquidity floor
- * (tutorial gear stays bounded so the bank doesn't flood with T3+).
- * Honest clients respect the cap; tampered clients are rejected here
- * before `mintAsset` is signed.
+ * Per-preset starter-realm tier ceiling. Player-authored realms earn their
+ * ceiling per-realm from the on-chain distinct-clearer count (see
+ * `playerRealmMaxTier` in lib/reads/realm-tier.ts); starter realms are
+ * pinned to T2 to preserve the seed-liquidity floor (tutorial gear stays
+ * bounded so the bank doesn't flood with T3+). Honest clients respect the
+ * cap; tampered clients are rejected here before `mintAsset` is signed.
  */
 const STARTER_REALM_MAX_TIER: Record<Preset, Tier> = {
   fantasy: 2,
@@ -288,9 +292,24 @@ export async function POST(req: Request) {
     });
   }
 
-  const maxTier: Tier = playerRow
-    ? playerRow.maxTier
-    : STARTER_REALM_MAX_TIER[body.preset];
+  // Player realms earn their loot ceiling from how many distinct wallets
+  // have cleared them (uncapped on-chain scan — the cap must be accurate).
+  // Starter realms stay pinned to T2. Resolve the realm's clearReceipt
+  // schema the same way `boss-cleared` does: prefer the row's own id,
+  // fall back to the seeded per-preset pair for legacy/starter realms.
+  let maxTier: Tier;
+  if (playerRow) {
+    const clearReceiptSchemaId = playerRow.clearReceiptSchemaId
+      ? BigInt(playerRow.clearReceiptSchemaId)
+      : seededIds.clearReceipt;
+    const distinctClearers = await countDistinctClearers({
+      realm: playerRow.address,
+      clearReceiptSchemaId,
+    });
+    maxTier = playerRealmMaxTier(distinctClearers);
+  } else {
+    maxTier = STARTER_REALM_MAX_TIER[body.preset];
+  }
 
   // Reconstruct the LootRoll shape the helpers expect (LootRoll's
   // `nameSeed` is bigint internally; we serialize it as decimal string

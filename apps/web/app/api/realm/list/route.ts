@@ -3,6 +3,8 @@ import "server-only";
 import { NextResponse } from "next/server";
 
 import { listPlayerRealms } from "@/lib/server/realm-db";
+import { fetchRealmTierProgress } from "@/lib/reads/realm-tier";
+import { getSeededSchemaIds } from "@/lib/contracts/seeded-realms";
 
 /**
  * `GET /api/realm/list`
@@ -21,17 +23,33 @@ export const dynamic = "force-dynamic";
 
 export async function GET() {
   const rows = listPlayerRealms();
-  return NextResponse.json({
-    ok: true as const,
-    realms: rows.map((r) => ({
-      address: r.address,
-      owner: r.owner,
-      preset: r.preset,
-      bossId: r.bossId,
-      name: r.name,
-      accent: r.accent,
-      maxTier: r.maxTier,
-      createdAt: r.createdAt,
-    })),
-  });
+  // Tier is earned per-realm from each realm's on-chain distinct-clearer
+  // count, so this fans out one scan per realm. The scan is memoized
+  // per-realm (see lib/reads/realm-tier.ts), keeping bursts cheap.
+  const realms = await Promise.all(
+    rows.map(async (r) => {
+      const seeded = getSeededSchemaIds(r.preset);
+      const clearReceiptSchemaId = r.clearReceiptSchemaId
+        ? BigInt(r.clearReceiptSchemaId)
+        : seeded.clearReceipt;
+      const { maxTier, distinctClearers, nextTierAt } =
+        await fetchRealmTierProgress({
+          realm: r.address,
+          clearReceiptSchemaId,
+        });
+      return {
+        address: r.address,
+        owner: r.owner,
+        preset: r.preset,
+        bossId: r.bossId,
+        name: r.name,
+        accent: r.accent,
+        maxTier,
+        distinctClearers,
+        nextTierAt,
+        createdAt: r.createdAt,
+      };
+    }),
+  );
+  return NextResponse.json({ ok: true as const, realms });
 }

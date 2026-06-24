@@ -274,8 +274,18 @@ function CreatorCard({
       <p className="text-sm opacity-75 leading-relaxed">
         {isRegistered ? (
           <>
-            Creator realm · final boss <code>{meta.bossId}</code> · max
-            tier <strong>T{meta.maxTier}</strong>. Owner{" "}
+            Creator realm · final boss <code>{meta.bossId}</code> · tier{" "}
+            <strong>T{meta.maxTier}</strong>
+            {meta.nextTierAt !== null ? (
+              <>
+                {" "}
+                ({meta.distinctClearers}/{meta.nextTierAt} clearers to T
+                {meta.maxTier + 1})
+              </>
+            ) : (
+              <> (max)</>
+            )}
+            . Owner{" "}
             <span className="font-mono">{shortAddress(card.owner)}</span>.
           </>
         ) : (

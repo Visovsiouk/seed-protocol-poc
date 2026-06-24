@@ -31,13 +31,14 @@ export function MetricsRow({
     lootMints: 0,
     clearReceipts: 0,
     distinctHolders: 0,
+    distinctClearers: 0,
     firstClearBlock: null,
   };
 
   return (
     <section
       aria-label="Realm metrics"
-      className="grid grid-cols-2 sm:grid-cols-4 gap-3"
+      className="grid grid-cols-2 sm:grid-cols-5 gap-3"
     >
       <Cell label="Mints" value={fmt(m.totalMints)} loading={stats.isLoading} />
       <Cell
@@ -49,6 +50,12 @@ export function MetricsRow({
       <Cell
         label="Boss clears"
         value={fmt(m.clearReceipts)}
+        loading={stats.isLoading}
+        muted={preset === null}
+      />
+      <Cell
+        label="Distinct clearers"
+        value={fmt(m.distinctClearers)}
         loading={stats.isLoading}
         muted={preset === null}
       />

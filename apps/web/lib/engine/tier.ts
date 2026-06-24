@@ -71,8 +71,8 @@ export type Difficulty = "trivial" | "standard" | "deep" | "boss";
  * an instant ladder. Standard drops T2/T3/T4; Boss drops T3+. With
  * starter realms capped at maxTier 2, a `trivial` drop in a starter
  * realm is 70% T1 / 30% T2, and a `standard` drop collapses to all-T2.
- * Player-built realms scale with EcosystemRegistry size (see
- * `playerRealmMaxTier` in lib/server/realm-db.ts).
+ * Player-built realms earn their ceiling from distinct clearers (see
+ * `playerRealmMaxTier` in lib/reads/realm-tier.ts).
  */
 const TIER_DISTRIBUTION: Record<Difficulty, ReadonlyArray<readonly [Tier, number]>> = {
   trivial: [

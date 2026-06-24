@@ -40,6 +40,8 @@ type CreatorMeta = {
   name: string;
   accent: string | null;
   maxTier: number;
+  distinctClearers: number;
+  nextTierAt: number | null;
   createdAt: number;
   lootSchemaId: string;
   clearReceiptSchemaId: string;
@@ -395,8 +397,22 @@ export default function RealmDashboardPage() {
                       value={<span className="font-mono">{creatorMeta.bossId}</span>}
                     />
                     <Field
-                      label="Max tier"
-                      value={<span className="font-mono">T{creatorMeta.maxTier}</span>}
+                      label="Loot tier"
+                      value={
+                        <span className="font-mono">
+                          T{creatorMeta.maxTier}
+                          {creatorMeta.nextTierAt !== null ? (
+                            <span className="opacity-65">
+                              {" "}
+                              · {creatorMeta.distinctClearers}/
+                              {creatorMeta.nextTierAt} clearers to T
+                              {creatorMeta.maxTier + 1}
+                            </span>
+                          ) : (
+                            <span className="opacity-65"> · max</span>
+                          )}
+                        </span>
+                      }
                     />
                   </>
                 )}

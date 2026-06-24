@@ -333,6 +333,12 @@ export default function CreatePage() {
               stay the on-chain owner — royalties on every asset sold from
               your realm flow to your wallet, forever.
             </p>
+            <p className="mt-2 text-sm leading-relaxed opacity-80">
+              Your realm opens at loot tier <strong>T3</strong> and earns its
+              ceiling from real play: <strong>T4 at 20 distinct clearers</strong>,{" "}
+              <strong>T5 at 50</strong>. Each unique wallet that beats your boss
+              counts once, so the cap tracks reach, not grinding.
+            </p>
           </Panel>
 
           {!address && (
@@ -643,8 +649,10 @@ export default function CreatePage() {
                     {shortAddress(step.signerAddress)}
                   </span>
                 </dd>
-                <dt className="opacity-65">Max tier</dt>
-                <dd>T{step.maxTier}</dd>
+                <dt className="opacity-65">Loot tier</dt>
+                <dd>
+                  T{step.maxTier} · earns T4 at 20 clearers, T5 at 50
+                </dd>
               </dl>
               <p className="break-all font-mono text-[11px] opacity-65">
                 tx {step.txHash}

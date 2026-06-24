@@ -3,6 +3,7 @@ import "server-only";
 import { NextResponse } from "next/server";
 
 import { getPlayerRealm } from "@/lib/server/realm-db";
+import { fetchRealmTierProgress } from "@/lib/reads/realm-tier";
 import { getSeededSchemaIds } from "@/lib/contracts/seeded-realms";
 
 /**
@@ -52,6 +53,10 @@ export async function GET(
     ? BigInt(row.clearReceiptSchemaId)
     : seeded.clearReceipt;
 
+  // Tier is earned per-realm from the on-chain distinct-clearer count.
+  const { maxTier, distinctClearers, nextTierAt } =
+    await fetchRealmTierProgress({ realm: row.address, clearReceiptSchemaId });
+
   return NextResponse.json({
     ok: true as const,
     realm: {
@@ -61,7 +66,9 @@ export async function GET(
       bossId: row.bossId,
       name: row.name,
       accent: row.accent,
-      maxTier: row.maxTier,
+      maxTier,
+      distinctClearers,
+      nextTierAt,
       createdAt: row.createdAt,
       // Strings — JSON cannot represent bigint. Consumers must BigInt() these.
       lootSchemaId: lootSchemaId.toString(),

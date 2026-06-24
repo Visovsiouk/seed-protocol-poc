@@ -25,6 +25,9 @@ export type RealmMetrics = {
   lootMints: number;
   clearReceipts: number;
   distinctHolders: number;
+  /** Unique wallets holding a clearReceipt — the metric that drives the
+   * realm's earned tier (see lib/reads/realm-tier.ts). */
+  distinctClearers: number;
   firstClearBlock: bigint | null;
 };
 
@@ -88,6 +91,7 @@ export async function fetchRealmStats(args: {
         lootMints: 0,
         clearReceipts: 0,
         distinctHolders: 0,
+        distinctClearers: 0,
         firstClearBlock: null,
       },
       leaderboard: [],
@@ -141,6 +145,7 @@ export async function fetchRealmStats(args: {
   );
 
   const recipients = new Set<string>();
+  const clearers = new Set<string>();
   let lootMints = 0;
   let clearReceipts = 0;
   let firstClearBlock: bigint | null = null;
@@ -151,6 +156,7 @@ export async function fetchRealmStats(args: {
     if (r.schemaId === lootId) lootMints += 1;
     if (r.schemaId === clearId) {
       clearReceipts += 1;
+      clearers.add(r.recipient.toLowerCase());
       if (firstClearBlock === null || r.blockNumber < firstClearBlock) {
         firstClearBlock = r.blockNumber;
       }
@@ -178,6 +184,7 @@ export async function fetchRealmStats(args: {
       lootMints,
       clearReceipts,
       distinctHolders: recipients.size,
+      distinctClearers: clearers.size,
       firstClearBlock,
     },
     leaderboard: leaderboard.slice(0, leaderboardLimit),

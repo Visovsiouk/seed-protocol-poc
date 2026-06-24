@@ -23,7 +23,7 @@ import "server-only";
 import { existsSync, mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import Database, { type Database as DatabaseType } from "better-sqlite3";
-import type { Preset, Tier } from "@/lib/engine/types";
+import type { Preset } from "@/lib/engine/types";
 
 /**
  * BIP-44 indices 0–3 are reserved for the admin + 3 starter-realm
@@ -33,26 +33,6 @@ import type { Preset, Tier } from "@/lib/engine/types";
  * same realm; collisions are prevented by the `UNIQUE` constraint.
  */
 export const PLAYER_REALM_SIGNER_INDEX_START = 4;
-
-/**
- * Player-realm tier ceiling as a function of total registered player-realm
- * count. Retroactive: when the registry crosses 10 entries every realm —
- * including ones registered when the cap was T3 — starts dropping T4 loot.
- * Same at 50 for T5.
- *
- *   count < 10  → T3
- *   count < 50  → T4
- *   count ≥ 50  → T5
- *
- * Because this is count-driven (not stored on the row), it is recomputed
- * on every read in `rowToRealm`. The `max_tier` column is now a vestige
- * left in place to avoid a migration; it is no longer consulted on reads.
- */
-export function playerRealmMaxTier(count: number): Tier {
-  if (count >= 50) return 5;
-  if (count >= 10) return 4;
-  return 3;
-}
 
 export type PlayerRealmRow = {
   address: `0x${string}`;
@@ -71,7 +51,6 @@ export type PlayerRealmRow = {
    */
   clearReceiptSchemaId: string | null;
   lootSchemaId: string | null;
-  maxTier: Tier;
   createdAt: number;
 };
 
@@ -141,7 +120,7 @@ function open(): DatabaseType {
   return db;
 }
 
-function rowToRealm(r: Row, maxTier: Tier): PlayerRealmRow {
+function rowToRealm(r: Row): PlayerRealmRow {
   return {
     address: r.address as `0x${string}`,
     owner: r.owner as `0x${string}`,
@@ -152,16 +131,8 @@ function rowToRealm(r: Row, maxTier: Tier): PlayerRealmRow {
     signerIndex: r.signer_index,
     clearReceiptSchemaId: r.clear_receipt_schema_id ?? null,
     lootSchemaId: r.loot_schema_id ?? null,
-    maxTier,
     createdAt: r.created_at,
   };
-}
-
-function getPlayerRealmCount(db: DatabaseType): number {
-  const row = db
-    .prepare<[], { c: number }>("SELECT COUNT(*) AS c FROM player_realms")
-    .get();
-  return row?.c ?? 0;
 }
 
 /**
@@ -192,8 +163,7 @@ export function getPlayerRealm(
     .prepare<[string], Row>("SELECT * FROM player_realms WHERE address = ?")
     .get(address.toLowerCase());
   if (!row) return undefined;
-  const maxTier = playerRealmMaxTier(getPlayerRealmCount(db));
-  return rowToRealm(row, maxTier);
+  return rowToRealm(row);
 }
 
 export function listPlayerRealms(): PlayerRealmRow[] {
@@ -201,8 +171,7 @@ export function listPlayerRealms(): PlayerRealmRow[] {
   const rows = db
     .prepare<[], Row>("SELECT * FROM player_realms ORDER BY created_at ASC")
     .all();
-  const maxTier = playerRealmMaxTier(rows.length);
-  return rows.map((r) => rowToRealm(r, maxTier));
+  return rows.map((r) => rowToRealm(r));
 }
 
 export function insertPlayerRealm(input: {
@@ -221,34 +190,28 @@ export function insertPlayerRealm(input: {
 }): PlayerRealmRow {
   const db = open();
   const createdAt = Math.floor(Date.now() / 1000);
-  // `max_tier` column is a vestige — we still write a value to keep the
-  // NOT NULL constraint happy, but reads ignore it (see playerRealmMaxTier
-  // above). Persist the value as of insert time so casual `SELECT` on the
-  // db file is still somewhat sensible.
-  const tx = db.transaction(() => {
-    const postInsertCount = getPlayerRealmCount(db) + 1;
-    const maxTier = playerRealmMaxTier(postInsertCount);
-    db.prepare(`
-      INSERT INTO player_realms (
-        address, owner, preset, boss_id, name, accent, signer_index,
-        clear_receipt_schema_id, loot_schema_id, max_tier, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      input.address.toLowerCase(),
-      input.owner.toLowerCase(),
-      input.preset,
-      input.bossId,
-      input.name,
-      input.accent ?? null,
-      input.signerIndex,
-      input.clearReceiptSchemaId ?? null,
-      input.lootSchemaId ?? null,
-      maxTier,
-      createdAt,
-    );
-    return maxTier;
-  });
-  const maxTier = tx();
+  // `max_tier` column is a vestige — tier is now earned per-realm from the
+  // on-chain distinct-clearer count (see lib/reads/realm-tier.ts) and is
+  // never read off the row. We write the T3 base only to satisfy the NOT
+  // NULL constraint so a casual `SELECT` on the db file still parses.
+  db.prepare(`
+    INSERT INTO player_realms (
+      address, owner, preset, boss_id, name, accent, signer_index,
+      clear_receipt_schema_id, loot_schema_id, max_tier, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    input.address.toLowerCase(),
+    input.owner.toLowerCase(),
+    input.preset,
+    input.bossId,
+    input.name,
+    input.accent ?? null,
+    input.signerIndex,
+    input.clearReceiptSchemaId ?? null,
+    input.lootSchemaId ?? null,
+    3,
+    createdAt,
+  );
   return {
     address: input.address.toLowerCase() as `0x${string}`,
     owner: input.owner.toLowerCase() as `0x${string}`,
@@ -259,7 +222,6 @@ export function insertPlayerRealm(input: {
     signerIndex: input.signerIndex,
     clearReceiptSchemaId: input.clearReceiptSchemaId ?? null,
     lootSchemaId: input.lootSchemaId ?? null,
-    maxTier,
     createdAt,
   };
 }

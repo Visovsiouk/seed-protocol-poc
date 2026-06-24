@@ -114,7 +114,12 @@ export type PlayerRealmMeta = {
   name: string;
   /** Creator-chosen accent hex, or null to inherit the genre default. */
   accent: string | null;
+  /** Loot ceiling, earned per-realm from `distinctClearers` (T3 base). */
   maxTier: number;
+  /** Unique wallets that have cleared this realm's boss. */
+  distinctClearers: number;
+  /** Clearer count that unlocks the next tier, or null when at T5. */
+  nextTierAt: number | null;
   createdAt: number;
 };
 
@@ -297,6 +302,7 @@ export function useRealmStats(args: {
               lootMints: 0,
               clearReceipts: 0,
               distinctHolders: 0,
+              distinctClearers: 0,
               firstClearBlock: null,
             },
             leaderboard: [],
