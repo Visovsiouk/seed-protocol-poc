@@ -28,12 +28,8 @@ import {
   useTranslatedCard,
 } from "@/lib/contracts/adapters";
 import { getAdapterAddress } from "@/lib/contracts/seeded-adapters";
-import {
-  armorName,
-  composeDisplayName,
-  evocativeName,
-  weaponName,
-} from "@/lib/loot/names";
+import { armorName, weaponName } from "@/lib/loot/names";
+import { cardDisplayName } from "@/lib/loot/card-name";
 import { tierColor } from "@/lib/ui/loot-visuals";
 import { fadeRise, withReducedMotion } from "@/lib/ui/motion";
 import { ElementChip, EffectChip, ProvenanceChip } from "@/components/ui";
@@ -366,28 +362,6 @@ export function AssetCard({
     ? targetPreset
     : sourcePreset;
 
-  // The evocative half of the headline. Normal loot re-derives its word in
-  // the *current* realm's vocabulary so it follows the element across genres
-  // (fantasy "Inferno" → sci-fi "Meltdown"). Story-objects ship a verbatim
-  // `nameOverride` baked into `.name` — we detect those by checking whether
-  // the stored name still equals what the source-realm derivation produces;
-  // if it diverges it's an override and we pass it through unchanged.
-  const sourceEvocative = evocativeName(
-    sourcePreset ?? "fantasy",
-    card.tokenId,
-    card.tier,
-    card.element ?? card.resistElement,
-  );
-  const isNameOverride = card.name !== sourceEvocative;
-  const headlineEvocative = isNameOverride
-    ? displayCard.name
-    : evocativeName(
-        topLabelPreset ?? sourcePreset ?? "fantasy",
-        displayCard.tokenId,
-        displayCard.tier,
-        displayCard.element ?? displayCard.resistElement,
-      );
-
   const adapter = isHop
     ? getAdapterAddress(
         card.slot as "weapon" | "armor",
@@ -474,9 +448,11 @@ export function AssetCard({
       </AnimatePresence>
       <header className="flex items-baseline justify-between gap-2">
         <h4 className="font-semibold text-sm truncate">
-          {composeDisplayName(
-            headlineEvocative,
-            typeLabelFor(displayCard, topLabelPreset),
+          {cardDisplayName(
+            card,
+            sourcePreset ?? "fantasy",
+            displayCard,
+            topLabelPreset,
           )}
         </h4>
       </header>

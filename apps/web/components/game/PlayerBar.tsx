@@ -23,7 +23,8 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import type { AssetCard, CombatState, RunState } from "@/lib/engine/types";
-import { useTranslatedCard } from "@/lib/contracts/adapters";
+import { presetForRealm, useTranslatedCard } from "@/lib/contracts/adapters";
+import { cardDisplayName } from "@/lib/loot/card-name";
 import { elementColor } from "@/lib/ui/loot-visuals";
 import { Button, ElementChip, EffectChip, Rule } from "@/components/ui";
 
@@ -219,6 +220,12 @@ function GearSlot({
 }) {
   const { data: translated } = useTranslatedCard(card, currentRealm);
   const display = translated ?? card;
+  // Same display-vocabulary rule AssetCard uses: a real cross-realm hop labels
+  // the gear in the current realm's words, otherwise its home-realm words.
+  const hasTranslation = !!translated && translated !== card;
+  const sourcePreset =
+    card?.realmPreset ?? (card ? presetForRealm(card.realm) : null) ?? "fantasy";
+  const displayPreset = hasTranslation ? presetForRealm(currentRealm) : sourcePreset;
 
   const el = display?.element && display.element !== "none" ? display.element : null;
   const borderColor = el
@@ -257,7 +264,11 @@ function GearSlot({
         )}
       </div>
       <span className="truncate text-sm font-semibold leading-tight">
-        {display?.name ?? <span className="italic font-normal opacity-25">empty</span>}
+        {card && display ? (
+          cardDisplayName(card, sourcePreset, display, displayPreset)
+        ) : (
+          <span className="italic font-normal opacity-25">empty</span>
+        )}
       </span>
       {display && (
         <div className="flex flex-wrap items-center gap-1">
