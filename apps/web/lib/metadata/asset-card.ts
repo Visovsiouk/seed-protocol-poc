@@ -115,6 +115,36 @@ function inferSlot(args: {
   return schemaId % 2 === 1 ? "weapon" : "armor";
 }
 
+/**
+ * True when the decoded metadata belongs to a `clearReceipt` asset (boss-clear
+ * proof), regardless of which realm minted it. Detected by content marker, not
+ * schemaId: every receipt carries `seed_protocol.schema === "clearReceipt"` and
+ * a `Schema` attribute suffixed `:clearReceipt`. Loot/translated assets use a
+ * numeric `Schema` suffix and have no `seed_protocol.schema`, so they never
+ * match. Used by the inventory read to drop receipts before they're shoehorned
+ * into the weapon/armor tabs.
+ */
+export function isClearReceiptMetadata(metadataURI: string): boolean {
+  try {
+    const decoded = decodeMetadataURI(metadataURI);
+    const sp = decoded.json.seed_protocol as { schema?: string } | undefined;
+    if (sp?.schema === "clearReceipt") return true;
+    for (const attr of decoded.json.attributes ?? []) {
+      if (
+        String(attr.trait_type).toLowerCase() === "schema" &&
+        typeof attr.value === "string" &&
+        attr.value.split(":")[1]?.toLowerCase() === "clearreceipt"
+      ) {
+        return true;
+      }
+    }
+    return false;
+  } catch {
+    // Non-renderer URI → treat as a normal asset.
+    return false;
+  }
+}
+
 export function buildAssetCardFromMetadata(args: {
   tokenId: bigint;
   tier: Tier;

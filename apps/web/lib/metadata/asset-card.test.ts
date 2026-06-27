@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { buildAssetCardFromMetadata } from "./asset-card";
+import {
+  buildAssetCardFromMetadata,
+  isClearReceiptMetadata,
+} from "./asset-card";
+import { buildClearReceiptMetadataURI } from "@/lib/contracts/clear-receipt-derive";
 
 function b64(s: string): string {
   return Buffer.from(s, "utf8").toString("base64");
@@ -220,5 +224,37 @@ describe("buildAssetCardFromMetadata", () => {
       mintedByRealm: "0x0000000000000000000000000000000000000a01",
     });
     expect(card.damageDie).toBeUndefined();
+  });
+});
+
+describe("isClearReceiptMetadata", () => {
+  it("detects a clearReceipt URI (any realm)", () => {
+    const uri = buildClearReceiptMetadataURI({
+      preset: "fantasy",
+      realmLabel: "Lichdom",
+      player: "0x0000000000000000000000000000000000000b01",
+      bossId: "forest_hag",
+      runSeed: `0x${"ab".repeat(32)}`,
+      turns: 7,
+      finalHp: 12,
+      clearedAt: 1_700_000_000,
+    });
+    expect(isClearReceiptMetadata(uri)).toBe(true);
+  });
+
+  it("does not flag a normal loot URI", () => {
+    const uri = jsonUri(
+      basePayload({
+        attributes: [
+          { trait_type: "Schema", value: "fantasy:5" },
+          { trait_type: "damage_die", value: 8 },
+        ],
+      }),
+    );
+    expect(isClearReceiptMetadata(uri)).toBe(false);
+  });
+
+  it("returns false for a malformed / non-renderer URI", () => {
+    expect(isClearReceiptMetadata("https://cdn.example/x.png")).toBe(false);
   });
 });

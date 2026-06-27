@@ -24,39 +24,26 @@
  *     (`EmissionController.isPreseed(tokenId)`) isn't wired yet.
  */
 
-import type { AssetCard, Preset } from "@/lib/engine/types";
-import { buildAssetCardFromMetadata } from "@/lib/metadata/asset-card";
-import { getSeededSchemaIds } from "@/lib/contracts/seeded-realms";
+import type { AssetCard } from "@/lib/engine/types";
+import {
+  buildAssetCardFromMetadata,
+  isClearReceiptMetadata,
+} from "@/lib/metadata/asset-card";
 import { fetchInventory } from "./inventory";
 import { fetchAssetSummary } from "./provenance";
 
 /**
- * Build the set of clearReceipt schemaIds across every seeded preset.
- * clearReceipts have no slot/stats, so `buildAssetCardFromMetadata` falls
- * back to the schemaId-parity heuristic and routes them into weapon/armor —
- * surfacing them as phantom "d0 / +0 attack" entries in the drawer.
- *
- * Player-made realms reuse the starter preset's clearReceipt schemaId, so
- * filtering by schemaId alone (not realm+schemaId) correctly drops receipts
- * from both starter and player realms. The receipt tokens are already tracked
- * separately via `useBossClears`.
- */
-function buildClearReceiptSchemaIds(): ReadonlySet<string> {
-  const ids = new Set<string>();
-  const presets: readonly Preset[] = ["fantasy", "scifi", "cyberpunk"];
-  for (const preset of presets) {
-    const schemaId = getSeededSchemaIds(preset).clearReceipt;
-    if (schemaId === 0n) continue;
-    ids.add(schemaId.toString());
-  }
-  return ids;
-}
-
-/**
  * Hydrates the player's inventory into engine-shaped cards. Skips
  * accessory-slot assets — the PoC engine equips weapon/armor only, and
- * the drawer's tabbed UI doesn't have a third slot anyway. Also drops
- * clearReceipts (see `buildClearReceiptSchemaIds`).
+ * the drawer's tabbed UI doesn't have a third slot anyway.
+ *
+ * Also drops clearReceipts (boss-clear proofs). They have no slot/stats, so
+ * `buildAssetCardFromMetadata` would fall back to the schemaId-parity heuristic
+ * and route them into weapon/armor as phantom "d / +0 attack" entries. We
+ * filter by metadata content (`isClearReceiptMetadata`) rather than schemaId so
+ * receipts from *player-created* realms — which register their own clearReceipt
+ * schemaIds, not the seeded ones — are dropped too. The receipt tokens are
+ * still tracked separately via `useBossClears`.
  */
 export async function fetchInventoryCards(
   player: `0x${string}`,
@@ -68,11 +55,9 @@ export async function fetchInventoryCards(
     balances.map((b) => fetchAssetSummary(b.tokenId)),
   );
 
-  const receiptSchemaIds = buildClearReceiptSchemaIds();
-
   const cards: AssetCard[] = [];
   for (const summary of summaries) {
-    if (receiptSchemaIds.has(summary.schemaId.toString())) continue;
+    if (isClearReceiptMetadata(summary.metadataURI)) continue;
     const card = buildAssetCardFromMetadata({
       tokenId: summary.tokenId,
       tier: summary.tier,
