@@ -206,9 +206,8 @@ export function GenesisLedger({
               </Button>
               {!progress.eligibleForSeed && (
                 <p className="text-xs opacity-65">
-                  {allShardsRecovered
-                    ? "All three shards are in hand. If they won't fuse yet, a community realm clear may still be required (min 3, or however many exist)."
-                    : "Recover all three shards — clear all three founding realms — before they can be pressed whole."}
+                  Recover all three shards — clear all three founding realms —
+                  before they can be pressed whole.
                 </p>
               )}
               {error && (

@@ -5,10 +5,8 @@
  * their first runs: cold-open Book → fantasy (door I) → cyberpunk
  * (door II) → sci-fi (door III). Once those three starters are
  * cleared, the protocol surfaces (bazaar, create, Genesis claim) light
- * up — but the Seed itself is gated on a *second* tier: clearing
- * `min(3, communityRealmCount)` community-built realms on top of the
- * three starters. The first pilgrim, with no community realms yet,
- * gets the Seed immediately on the third starter clear.
+ * up and the Seed becomes claimable — clearing all three starters (and
+ * not already holding a Seed) is the whole requirement.
  *
  * Source of truth is on-chain: each per-realm `EcosystemTemplate` emits
  * `BossCleared(player, finalHp, turns)` on its boss room clear. The
@@ -48,8 +46,7 @@ export type TutorialProgress = {
   /** Tutorial act 1..5; 5 == post-Seed normal play. */
   act: 1 | 2 | 3 | 4 | 5;
   /**
-   * True once the player has cleared all three starters AND
-   * `min(3, communityRealmCount)` community realms, and they don't
+   * True once the player has cleared all three starters and they don't
    * already own a Seed.
    */
   eligibleForSeed: boolean;
@@ -103,14 +100,10 @@ export function deriveTutorialProgress(args: {
   } else if (starterClears === 2) {
     act = 3;
   } else {
-    act = 4; // 3 starters down — awaiting (possibly two-tier) Seed claim
+    act = 4; // 3 starters down — awaiting Seed claim
   }
 
-  const communityRequirement = Math.min(3, communityRealmCount);
-  const eligibleForSeed =
-    !hasSeed &&
-    starterClears >= 3 &&
-    communityClearsCapped >= communityRequirement;
+  const eligibleForSeed = !hasSeed && starterClears >= 3;
 
   return {
     hasSeed,

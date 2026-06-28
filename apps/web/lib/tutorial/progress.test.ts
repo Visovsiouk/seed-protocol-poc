@@ -10,8 +10,8 @@ const REALM_E = "0x000000000000000000000000000000000000000e" as `0x${string}`;
 const REALM_F = "0x000000000000000000000000000000000000000f" as `0x${string}`;
 const REALM_G = "0x0000000000000000000000000000000000000010" as `0x${string}`;
 
-// The three starters used by most cases. Tests for the second-tier
-// gate add community-realm clears on top.
+// The three starters used by most cases. Community-realm clears are
+// tracked for display but no longer gate the Seed.
 const STARTERS = new Set([REALM_A, REALM_B, REALM_C].map((a) => a.toLowerCase()));
 
 function ev(realm: `0x${string}`, ts: number, blockNumber = 1n): BossClearEvent {
@@ -114,8 +114,8 @@ describe("deriveTutorialProgress — first tier (starter clears)", () => {
   });
 });
 
-describe("deriveTutorialProgress — second tier (community-realm gate)", () => {
-  it("3 starters + 1 community realm exists + 0 community clears → not eligible", () => {
+describe("deriveTutorialProgress — community realms no longer gate the Seed", () => {
+  it("3 starters + 1 community realm exists + 0 community clears → eligible", () => {
     const p = deriveTutorialProgress({
       hasSeed: false,
       events: [ev(REALM_A, 100), ev(REALM_B, 200), ev(REALM_C, 300)],
@@ -123,7 +123,7 @@ describe("deriveTutorialProgress — second tier (community-realm gate)", () => 
       communityRealmCount: 1,
     });
     expect(p.act).toBe(4);
-    expect(p.eligibleForSeed).toBe(false);
+    expect(p.eligibleForSeed).toBe(true);
     expect(p.communityClears).toBe(0);
     expect(p.communityRealmCount).toBe(1);
   });
@@ -144,7 +144,7 @@ describe("deriveTutorialProgress — second tier (community-realm gate)", () => 
     expect(p.communityClears).toBe(1);
   });
 
-  it("3 starters + 2 community realms + 1 community clear → not eligible (needs 2)", () => {
+  it("3 starters + 2 community realms + 1 community clear → eligible", () => {
     const p = deriveTutorialProgress({
       hasSeed: false,
       events: [
@@ -156,61 +156,10 @@ describe("deriveTutorialProgress — second tier (community-realm gate)", () => 
       starterRealmAddresses: STARTERS,
       communityRealmCount: 2,
     });
-    expect(p.eligibleForSeed).toBe(false);
-  });
-
-  it("3 starters + 2 community realms + 2 community clears → eligible", () => {
-    const p = deriveTutorialProgress({
-      hasSeed: false,
-      events: [
-        ev(REALM_A, 100),
-        ev(REALM_B, 200),
-        ev(REALM_C, 300),
-        ev(REALM_D, 400),
-        ev(REALM_E, 500),
-      ],
-      starterRealmAddresses: STARTERS,
-      communityRealmCount: 2,
-    });
     expect(p.eligibleForSeed).toBe(true);
   });
 
-  it("3 starters + 3 community realms + 3 community clears → eligible at the cap", () => {
-    const p = deriveTutorialProgress({
-      hasSeed: false,
-      events: [
-        ev(REALM_A, 100),
-        ev(REALM_B, 200),
-        ev(REALM_C, 300),
-        ev(REALM_D, 400),
-        ev(REALM_E, 500),
-        ev(REALM_F, 600),
-      ],
-      starterRealmAddresses: STARTERS,
-      communityRealmCount: 3,
-    });
-    expect(p.eligibleForSeed).toBe(true);
-    expect(p.communityClears).toBe(3);
-  });
-
-  it("3 starters + 7 community realms + 3 community clears → still eligible (cap holds)", () => {
-    const p = deriveTutorialProgress({
-      hasSeed: false,
-      events: [
-        ev(REALM_A, 100),
-        ev(REALM_B, 200),
-        ev(REALM_C, 300),
-        ev(REALM_D, 400),
-        ev(REALM_E, 500),
-        ev(REALM_F, 600),
-      ],
-      starterRealmAddresses: STARTERS,
-      communityRealmCount: 7,
-    });
-    expect(p.eligibleForSeed).toBe(true);
-  });
-
-  it("3 starters + 7 community realms + 2 community clears → not eligible (cap is 3)", () => {
+  it("3 starters + 7 community realms + 2 community clears → eligible (count is ignored)", () => {
     const p = deriveTutorialProgress({
       hasSeed: false,
       events: [
@@ -223,7 +172,7 @@ describe("deriveTutorialProgress — second tier (community-realm gate)", () => 
       starterRealmAddresses: STARTERS,
       communityRealmCount: 7,
     });
-    expect(p.eligibleForSeed).toBe(false);
+    expect(p.eligibleForSeed).toBe(true);
     expect(p.communityClears).toBe(2);
   });
 
