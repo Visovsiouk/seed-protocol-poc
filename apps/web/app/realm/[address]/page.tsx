@@ -226,6 +226,30 @@ export default function RealmDashboardPage() {
         : null;
   useRealmTheme(themePreset, creatorMeta?.accent ?? null);
 
+  // Effective schema ids the stats/activity/asset readers classify against.
+  // Starter realms use the seeded per-preset pair; creator realms register
+  // their OWN pair on their clone (commit c90af90) and report it via meta.
+  // Threading these explicitly fixes player-realm dashboards that otherwise
+  // classified every mint against the wrong (seeded) preset ids.
+  // NOTE: must stay above the early returns below — hooks can't be conditional.
+  const { lootSchemaId, clearReceiptSchemaId } = useMemo<{
+    lootSchemaId: bigint | undefined;
+    clearReceiptSchemaId: bigint | undefined;
+  }>(() => {
+    if (detail?.kind === "starter") {
+      const ids = getSeededSchemaIds(detail.preset);
+      return { lootSchemaId: ids.loot, clearReceiptSchemaId: ids.clearReceipt };
+    }
+    return {
+      lootSchemaId: creatorMeta?.lootSchemaId
+        ? BigInt(creatorMeta.lootSchemaId)
+        : undefined,
+      clearReceiptSchemaId: creatorMeta?.clearReceiptSchemaId
+        ? BigInt(creatorMeta.clearReceiptSchemaId)
+        : undefined,
+    };
+  }, [detail, creatorMeta]);
+
   if (!validAddress) {
     return (
       <AppShell title="Realm" back={{ href: "/", label: "← Realms" }}>
@@ -261,29 +285,6 @@ export default function RealmDashboardPage() {
     detail?.kind === "starter"
       ? detail.preset
       : creatorPreset;
-
-  // Effective schema ids the stats/activity/asset readers classify against.
-  // Starter realms use the seeded per-preset pair; creator realms register
-  // their OWN pair on their clone (commit c90af90) and report it via meta.
-  // Threading these explicitly fixes player-realm dashboards that otherwise
-  // classified every mint against the wrong (seeded) preset ids.
-  const { lootSchemaId, clearReceiptSchemaId } = useMemo<{
-    lootSchemaId: bigint | undefined;
-    clearReceiptSchemaId: bigint | undefined;
-  }>(() => {
-    if (detail?.kind === "starter") {
-      const ids = getSeededSchemaIds(detail.preset);
-      return { lootSchemaId: ids.loot, clearReceiptSchemaId: ids.clearReceipt };
-    }
-    return {
-      lootSchemaId: creatorMeta?.lootSchemaId
-        ? BigInt(creatorMeta.lootSchemaId)
-        : undefined,
-      clearReceiptSchemaId: creatorMeta?.clearReceiptSchemaId
-        ? BigInt(creatorMeta.clearReceiptSchemaId)
-        : undefined,
-    };
-  }, [detail, creatorMeta]);
 
   const pageTitle =
     detail?.kind === "starter"
