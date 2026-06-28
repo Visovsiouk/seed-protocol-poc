@@ -15,7 +15,9 @@
     "bring-up": "bash scripts/bring-up.sh",
     "bring-up-clean": "bash scripts/bring-up.sh --clean",
     "demo-up": "bash scripts/bring-up.sh --demo",
-    "demo-up-clean": "bash scripts/bring-up.sh --clean --demo"
+    "demo-up-clean": "bash scripts/bring-up.sh --clean --demo",
+    "chain-up": "bash scripts/chain-up.sh",
+    "app-up": "bash scripts/app-up.sh"
   },
   "engines": {
     "node": ">=20"
