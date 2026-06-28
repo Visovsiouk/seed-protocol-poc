@@ -2,6 +2,7 @@
 
 import { ConnectButton as RKConnectButton } from "@rainbow-me/rainbowkit";
 import { Button } from "@/components/ui";
+import { AddNetworkButton } from "./AddNetworkButton";
 
 /**
  * Diegetic wallet trigger. Wraps RainbowKit's headless `ConnectButton.Custom`
@@ -50,9 +51,12 @@ export function ConnectButton() {
 
               if (chain.unsupported) {
                 return (
-                  <Button intent="danger" onClick={openChainModal}>
-                    Wrong network
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    <Button intent="danger" onClick={openChainModal}>
+                      Wrong network
+                    </Button>
+                    <AddNetworkButton />
+                  </div>
                 );
               }
 

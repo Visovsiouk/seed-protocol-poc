@@ -27,6 +27,11 @@ const publicSchema = z.object({
     .string()
     .regex(/^0x[0-9a-fA-F]{40}$/)
     .optional(),
+  // Faucet (anvil only). When "true", the wallet layer auto-funds a freshly
+  // connected real wallet via the `/api/faucet` route (anvil_setBalance) so a
+  // brand-new MetaMask account on the local chain has ETH to sign with. The
+  // `faucetEnabled` export below additionally gates this to NEXT_PUBLIC_CHAIN=anvil.
+  NEXT_PUBLIC_FAUCET_ENABLED: z.enum(["true", "false"]).optional(),
 });
 
 /**
@@ -44,6 +49,21 @@ const serverSchema = z.object({
   // invariant). See `lib/server/realm-signer.ts`.
   REALM_SIGNER_MNEMONIC: z.string().min(1),
   REALM_SIGNER_RPC_URL: z.string().url(),
+  // Faucet (anvil only). RPC the server uses to call the `anvil_setBalance`
+  // cheat method. Optional — falls back to REALM_SIGNER_RPC_URL at the call
+  // site so existing envs don't break. Can stay 127.0.0.1 even when the
+  // browser-facing NEXT_PUBLIC_RPC_URL is a LAN/public address.
+  FAUCET_RPC_URL: z.string().url().optional(),
+  // Target balance the faucet tops a wallet up to (wei). Default 10 ETH.
+  FAUCET_AMOUNT_WEI: z
+    .string()
+    .regex(/^\d+$/)
+    .default("10000000000000000000"),
+  FAUCET_RATE_LIMIT_PER_IP_PER_10MIN: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(5),
 });
 
 export const publicEnv = publicSchema.parse({
@@ -54,6 +74,7 @@ export const publicEnv = publicSchema.parse({
   NEXT_PUBLIC_PRESEED_SELLERS: process.env.NEXT_PUBLIC_PRESEED_SELLERS,
   NEXT_PUBLIC_DEMO_MODE: process.env.NEXT_PUBLIC_DEMO_MODE,
   NEXT_PUBLIC_DEMO_ADDRESS: process.env.NEXT_PUBLIC_DEMO_ADDRESS,
+  NEXT_PUBLIC_FAUCET_ENABLED: process.env.NEXT_PUBLIC_FAUCET_ENABLED,
 });
 
 /**
@@ -62,6 +83,15 @@ export const publicEnv = publicSchema.parse({
  */
 export const demoMode =
   publicEnv.NEXT_PUBLIC_DEMO_MODE === "true" &&
+  publicEnv.NEXT_PUBLIC_CHAIN === "anvil";
+
+/**
+ * True only when the faucet is explicitly enabled AND the active chain is
+ * anvil — guards against ever exposing the `anvil_setBalance` cheat on
+ * base-sepolia. Mirrors `demoMode`.
+ */
+export const faucetEnabled =
+  publicEnv.NEXT_PUBLIC_FAUCET_ENABLED === "true" &&
   publicEnv.NEXT_PUBLIC_CHAIN === "anvil";
 
 export type PublicEnv = z.infer<typeof publicSchema>;

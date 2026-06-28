@@ -15,9 +15,60 @@ import {
   coinbaseWallet,
   rainbowWallet,
 } from "@rainbow-me/rainbowkit/wallets";
+import { rainbowkitBurnerWallet } from "burner-connector";
 import { activeChain, anvil, rpcUrl } from "@/lib/chain";
-import { demoMode, publicEnv } from "@/lib/env";
+import { demoMode, faucetEnabled, publicEnv } from "@/lib/env";
 import { DemoAutoConnect } from "./DemoAutoConnect";
+import { AutoFaucet } from "./AutoFaucet";
+import { ConnectWizard } from "./ConnectWizard";
+import {
+  BURNER_ACTIVATED_KEY,
+  DisconnectGuard,
+  USER_DISCONNECTED_KEY,
+} from "./DisconnectGuard";
+
+/**
+ * The stock burner connector is `connected = true` at module-init and
+ * regenerates its key on demand, so `isAuthorized()` is always true — meaning
+ * wagmi's reconnect-on-mount would auto-connect a brand-new visitor before they
+ * ever see the ConnectWizard, and would silently undo a user's Disconnect.
+ *
+ * We wrap the wallet so its connector's `isAuthorized()` (which only governs
+ * reconnect-on-mount, NOT explicit `connect()`) returns false unless the user
+ * has opted into the burner:
+ *   - false while `wallet:userDisconnected` is set (Disconnect must stick); and
+ *   - false unless `wallet:burnerActivated` is set — the ConnectWizard sets this
+ *     only when the user clicks "Play instantly", so a first visit shows the
+ *     wizard instead of auto-connecting, while a returning user who already chose
+ *     reconnects straight into the app.
+ * An explicit wizard `connect()` is unaffected by this gate.
+ */
+const guardedBurnerWallet = () => {
+  const wallet = rainbowkitBurnerWallet();
+  return {
+    ...wallet,
+    createConnector: (walletDetails: Parameters<typeof wallet.createConnector>[0]) => {
+      const createConnectorFn = wallet.createConnector(walletDetails);
+      return (config: Parameters<typeof createConnectorFn>[0]) => {
+        const connector = createConnectorFn(config);
+        return {
+          ...connector,
+          async isAuthorized() {
+            if (typeof window !== "undefined") {
+              if (window.sessionStorage.getItem(USER_DISCONNECTED_KEY) === "1") {
+                return false;
+              }
+              if (window.localStorage.getItem(BURNER_ACTIVATED_KEY) !== "1") {
+                return false;
+              }
+            }
+            return connector.isAuthorized();
+          },
+        };
+      };
+    },
+  };
+};
 
 /**
  * Default demo player — anvil account #9. Chosen so it doesn't collide with
@@ -36,9 +87,16 @@ const DEFAULT_DEMO_ADDRESS = "0xa0Ee7A142d267C1f36714E4a8F75612F20a79720";
  *
  * Wallet list is registered through RainbowKit's `getDefaultConfig` — bare
  * wagmi connectors don't surface in the RK modal otherwise. MetaMask sits
- * at the top because that's what the local-dev flow uses; Coinbase Smart
- * Wallet remains for base-sepolia paymaster work. `injectedWallet` catches
- * Rabby / Frame / Brave Wallet etc.
+ * at the top because that's what the local-dev flow uses; `injectedWallet`
+ * catches Rabby / Frame / Brave Wallet etc.
+ *
+ * Coinbase Smart Wallet is offered ONLY off anvil (base-sepolia paymaster
+ * work). It's a hosted account-abstraction wallet (keys.coinbase.com) that
+ * signs/broadcasts through Coinbase's backend and only knows Coinbase-
+ * supported networks — it can't reach a local 127.0.0.1 anvil RPC or
+ * recognize chainId 31337, so a user-signed tx (e.g. realm `createEcosystem`)
+ * dies with a generic "Something went wrong". Gating it off anvil removes
+ * that footgun; on local dev use the burner or an injected wallet instead.
  *
  * WalletConnect is intentionally NOT included — its universal-provider
  * touches `indexedDB` at module-eval time and crashes Next.js SSR. Re-add
@@ -70,6 +128,34 @@ const demoConfig = createConfig({
   ssr: true,
 });
 
+// On the local anvil chain we lead with a one-click burner wallet so a brand-new
+// visitor can play instantly — no browser extension, no network-add dance. The
+// burner generates/persists a random key in localStorage, signs LOCALLY, and
+// sends raw txs through the chain's default RPC (anvil's rpcUrls.default, i.e.
+// NEXT_PUBLIC_RPC_URL — see lib/chain.ts), so unlike the demo `mock` connector
+// it can sign for its own fresh address. AutoFaucet funds it on connect.
+//
+// Burner is anvil-ONLY: an email/social or burner key is meaningless (and the
+// burner can't be funded) on base-sepolia, so off anvil we offer extension
+// wallets only.
+const burnerGroups =
+  activeChain.id === anvil.id
+    ? [
+        {
+          groupName: "Play instantly (no extension)",
+          wallets: [guardedBurnerWallet],
+        },
+      ]
+    : [];
+
+// Coinbase Smart Wallet is hosted and can't transact against local anvil
+// (see the module comment above), so on anvil we offer extension wallets
+// only; off anvil it rejoins the list for base-sepolia paymaster work.
+const ownWallets =
+  activeChain.id === anvil.id
+    ? [metaMaskWallet, rainbowWallet, injectedWallet]
+    : [metaMaskWallet, coinbaseWallet, rainbowWallet, injectedWallet];
+
 const defaultConfig = getDefaultConfig({
   appName: "Realms — Seed Protocol PoC",
   // projectId is only required when WalletConnect is enabled; pass a stub
@@ -77,9 +163,10 @@ const defaultConfig = getDefaultConfig({
   projectId: "realms-poc-anvil",
   chains: [activeChain],
   wallets: [
+    ...burnerGroups,
     {
-      groupName: "Recommended",
-      wallets: [metaMaskWallet, coinbaseWallet, rainbowWallet, injectedWallet],
+      groupName: "Use your own wallet",
+      wallets: ownWallets,
     },
   ],
   transports: {
@@ -107,6 +194,9 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         modalSize="compact"
       >
         {demoMode ? <DemoAutoConnect /> : null}
+        {faucetEnabled ? <AutoFaucet /> : null}
+        <DisconnectGuard />
+        {demoMode ? null : <ConnectWizard />}
         {children}
       </RainbowKitProvider>
     </WagmiProvider>
