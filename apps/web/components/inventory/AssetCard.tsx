@@ -64,6 +64,12 @@ type Props = {
    * across starter and player-made realms.
    */
   targetPreset?: Preset;
+  /**
+   * Hide the "Translated from …" original-stats strip. Used by the
+   * Gear Translation pair, where the native card is already shown
+   * side-by-side, so the strip would just duplicate it.
+   */
+  hideOriginal?: boolean;
 };
 
 /**
@@ -318,6 +324,7 @@ export function AssetCard({
   compact,
   targetRealm,
   targetPreset: targetPresetProp,
+  hideOriginal,
 }: Props) {
   const isWeapon = card.slot === "weapon";
   const reduced = useReducedMotion();
@@ -500,7 +507,7 @@ export function AssetCard({
       {displayCard.preseed && (
         <ProvenanceChip>Genesis liquidity</ProvenanceChip>
       )}
-      {isHop && (
+      {isHop && !hideOriginal && (
         <OriginalStrip
           card={card}
           sourcePreset={sourcePreset!}

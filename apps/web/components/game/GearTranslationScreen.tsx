@@ -138,7 +138,7 @@ function TranslationPair({
         >
           →
         </span>
-        <AssetCard card={card} compact targetRealm={toRealm} />
+        <AssetCard card={card} compact targetRealm={toRealm} hideOriginal />
       </div>
       {hasAdapter && (
         <AdapterStrip
