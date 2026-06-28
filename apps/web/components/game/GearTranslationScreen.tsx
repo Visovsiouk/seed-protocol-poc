@@ -30,6 +30,8 @@ import {
 import { getAdapterAddress } from "@/lib/contracts/seeded-adapters";
 import { shortAddress } from "@/lib/utils";
 import { Body, Button, Rule, Stamp } from "@/components/ui";
+import { KbdHint } from "@/components/game/ChoiceRow";
+import { useEnterToActivate } from "@/lib/ui/useEnterToActivate";
 import { warpCrossfade, withReducedMotion } from "@/lib/ui/motion";
 
 export function GearTranslationScreen({
@@ -44,6 +46,11 @@ export function GearTranslationScreen({
   onDescend: () => void;
 }) {
   const reduced = useReducedMotion();
+
+  // Enter descends into the run. This screen mounts straight after the
+  // loadout's router.push, so the shared gate disarms it on mount — a still
+  // -held Enter won't instantly fire onDescend.
+  useEnterToActivate({ onActivate: onDescend, sig: realm });
 
   return (
     <motion.section
@@ -87,7 +94,8 @@ export function GearTranslationScreen({
         </div>
 
         <Rule tone="muted" />
-        <footer className="flex items-center justify-end pt-1">
+        <footer className="flex items-center justify-between gap-3 pt-1">
+          <KbdHint multi={false} />
           <Button intent="primary" size="md" onClick={onDescend}>
             Descend →
           </Button>

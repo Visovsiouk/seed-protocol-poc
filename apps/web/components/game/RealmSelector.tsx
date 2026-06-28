@@ -23,9 +23,11 @@
  */
 
 import Link from "next/link";
-import { useMemo } from "react";
+import { Fragment, useMemo, type ReactNode } from "react";
 import { useAccount } from "wagmi";
 import type { Preset } from "@/lib/engine/types";
+import { useRovingGrid } from "@/lib/ui/useRovingGrid";
+import { KbdHint } from "@/components/game/ChoiceRow";
 import {
   useRealms,
   useTutorialProgress,
@@ -90,6 +92,8 @@ function StarterCard({
   card,
   lockState,
   onSelect,
+  cellRef,
+  tabIndex,
 }: {
   card: Extract<RealmDisplay, { kind: "starter" }>;
   lockState: RealmLockState;
@@ -99,6 +103,9 @@ function StarterCard({
    * mounts (tests) omit it and keep the link behaviour.
    */
   onSelect?: () => void;
+  /** Roving-focus wiring from the grid (RealmGrid). */
+  cellRef?: (el: HTMLElement | null) => void;
+  tabIndex?: number;
 }) {
   const chainReady = card.deployed && card.ready;
   const playable = isPlayable(lockState);
@@ -155,6 +162,8 @@ function StarterCard({
     // arc is done all three read as "cleared".)
     return (
       <div
+        ref={cellRef as React.Ref<HTMLDivElement>}
+        tabIndex={-1}
         aria-disabled="true"
         aria-label="Sealed realm"
         className="flex flex-col gap-3 p-5 rounded-md opacity-60"
@@ -190,6 +199,8 @@ function StarterCard({
   if (onSelect) {
     return (
       <button
+        ref={cellRef as React.Ref<HTMLButtonElement>}
+        tabIndex={tabIndex}
         key={card.preset}
         type="button"
         onClick={onSelect}
@@ -203,6 +214,8 @@ function StarterCard({
   }
   return (
     <Link
+      ref={cellRef as React.Ref<HTMLAnchorElement>}
+      tabIndex={tabIndex}
       key={card.preset}
       href={`/play/${card.preset}`}
       data-preset={card.preset}
@@ -218,6 +231,8 @@ function CreatorCard({
   card,
   meta,
   onSelect,
+  cellRef,
+  tabIndex,
 }: {
   card: Extract<RealmDisplay, { kind: "creator" }>;
   /** Sqlite metadata when the realm was registered via /create
@@ -226,6 +241,9 @@ function CreatorCard({
   meta?: PlayerRealmMeta;
   /** When provided, stage a loadout instead of navigating to play. */
   onSelect?: () => void;
+  /** Roving-focus wiring from the grid (RealmGrid). */
+  cellRef?: (el: HTMLElement | null) => void;
+  tabIndex?: number;
 }) {
   const isRegistered = !!meta;
   const title = meta?.name ?? `Realm ${shortAddress(card.address)}`;
@@ -321,6 +339,8 @@ function CreatorCard({
   if (onSelect) {
     return (
       <button
+        ref={cellRef as React.Ref<HTMLButtonElement>}
+        tabIndex={tabIndex}
         type="button"
         onClick={onSelect}
         data-realm={card.address}
@@ -334,6 +354,8 @@ function CreatorCard({
   }
   return (
     <Link
+      ref={cellRef as React.Ref<HTMLAnchorElement>}
+      tabIndex={tabIndex}
       href={`/play/realm/${card.address}`}
       data-realm={card.address}
       data-preset={meta?.preset}
@@ -342,6 +364,51 @@ function CreatorCard({
     >
       {inner}
     </Link>
+  );
+}
+
+/**
+ * A grid of realm cards with roving-focus keyboard navigation: the first
+ * enabled (playable) card is highlighted on load, arrow keys move across the
+ * grid skipping sealed realms, and Enter selects the highlighted realm via
+ * the card's native button/link. Used by both the pre-arc base and the
+ * post-Genesis open picker so keyboard selection reads identically.
+ */
+type RealmCell = {
+  key: string;
+  enabled: boolean;
+  render: (cellProps: {
+    cellRef: (el: HTMLElement | null) => void;
+    tabIndex: number;
+  }) => ReactNode;
+};
+
+function RealmGrid({ cells }: { cells: RealmCell[] }) {
+  const { containerProps, getCellProps } = useRovingGrid({
+    count: cells.length,
+    isEnabled: (i) => cells[i]?.enabled ?? false,
+    columns: 3,
+    sig: cells.map((c) => c.key).join("|"),
+  });
+  return (
+    <div className="flex flex-col gap-3">
+      <div
+        role="toolbar"
+        aria-label="Realm cards"
+        className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
+        {...containerProps}
+      >
+        {cells.map((c, i) => {
+          const cp = getCellProps(i);
+          return (
+            <Fragment key={c.key}>
+              {c.render({ cellRef: cp.ref, tabIndex: cp.tabIndex })}
+            </Fragment>
+          );
+        })}
+      </div>
+      {cells.length > 0 && <KbdHint multi />}
+    </div>
   );
 }
 
@@ -408,42 +475,61 @@ export function RealmSelector({
       className="flex flex-col gap-6 w-full max-w-5xl"
     >
       <OpenPickerHero progress={progress} />
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {display.map((card) =>
-          card.kind === "starter" ? (
-            <StarterCard
-              key={`starter:${card.preset}`}
-              card={card}
-              lockState={lockStateFor(card.preset, progress)}
-              onSelect={
-                onSelectRealm
-                  ? () => onSelectRealm({ kind: "starter", preset: card.preset })
-                  : undefined
+      <RealmGrid
+        cells={display.map((card): RealmCell =>
+          card.kind === "starter"
+            ? {
+                key: `starter:${card.preset}`,
+                enabled: isPlayable(lockStateFor(card.preset, progress)),
+                render: ({ cellRef, tabIndex }) => (
+                  <StarterCard
+                    card={card}
+                    lockState={lockStateFor(card.preset, progress)}
+                    cellRef={cellRef}
+                    tabIndex={tabIndex}
+                    onSelect={
+                      onSelectRealm
+                        ? () =>
+                            onSelectRealm({
+                              kind: "starter",
+                              preset: card.preset,
+                            })
+                        : undefined
+                    }
+                  />
+                ),
               }
-            />
-          ) : (
-            <CreatorCard
-              key={`creator:${card.address}`}
-              card={card}
-              meta={playerRealmMap.get(card.address.toLowerCase())}
-              onSelect={
-                onSelectRealm
-                  ? () =>
-                      onSelectRealm({ kind: "creator", address: card.address })
-                  : undefined
-              }
-            />
-          ),
+            : {
+                key: `creator:${card.address}`,
+                enabled: true,
+                render: ({ cellRef, tabIndex }) => (
+                  <CreatorCard
+                    card={card}
+                    meta={playerRealmMap.get(card.address.toLowerCase())}
+                    cellRef={cellRef}
+                    tabIndex={tabIndex}
+                    onSelect={
+                      onSelectRealm
+                        ? () =>
+                            onSelectRealm({
+                              kind: "creator",
+                              address: card.address,
+                            })
+                        : undefined
+                    }
+                  />
+                ),
+              },
         )}
-        {realms.isLoading && display.length === 0 && (
-          <p className="text-sm opacity-70">Loading realms…</p>
-        )}
-        {realms.isError && (
-          <p className="text-sm text-[var(--color-danger)]">
-            Failed to load realms from the registry. Check the dev server logs.
-          </p>
-        )}
-      </div>
+      />
+      {realms.isLoading && display.length === 0 && (
+        <p className="text-sm opacity-70">Loading realms…</p>
+      )}
+      {realms.isError && (
+        <p className="text-sm text-[var(--color-danger)]">
+          Failed to load realms from the registry. Check the dev server logs.
+        </p>
+      )}
     </section>
   );
 }
@@ -497,20 +583,26 @@ function PreArcBase({
         <Rule tone="muted" />
       </header>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {starterCards.map((card) => (
-          <StarterCard
-            key={`starter:${card.preset}`}
-            card={card}
-            lockState={lockStateFor(card.preset, progress)}
-            onSelect={
-              onSelectRealm
-                ? () => onSelectRealm({ kind: "starter", preset: card.preset })
-                : undefined
-            }
-          />
-        ))}
-      </div>
+      <RealmGrid
+        cells={starterCards.map((card): RealmCell => ({
+          key: `starter:${card.preset}`,
+          enabled: isPlayable(lockStateFor(card.preset, progress)),
+          render: ({ cellRef, tabIndex }) => (
+            <StarterCard
+              card={card}
+              lockState={lockStateFor(card.preset, progress)}
+              cellRef={cellRef}
+              tabIndex={tabIndex}
+              onSelect={
+                onSelectRealm
+                  ? () =>
+                      onSelectRealm({ kind: "starter", preset: card.preset })
+                  : undefined
+              }
+            />
+          ),
+        }))}
+      />
     </section>
   );
 }

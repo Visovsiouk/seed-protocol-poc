@@ -31,6 +31,8 @@ import { loadEquipped, saveEquipped } from "@/lib/persistence/equipped";
 import { useInventoryCards, usePlayerRealms } from "@/lib/reads/hooks";
 import { AssetCard } from "@/components/inventory/AssetCard";
 import { Panel, Button, Stamp, Rule } from "@/components/ui";
+import { KbdHint } from "@/components/game/ChoiceRow";
+import { useEnterToActivate } from "@/lib/ui/useEnterToActivate";
 import type { RealmSelection } from "@/components/game/RealmSelector";
 
 const STARTERS = listStarterRealms();
@@ -205,6 +207,15 @@ export function LoadoutStaging({
     };
   }, [selected, resolved, publicClient]);
 
+  // Enter descends from anywhere on the screen (the single forward action).
+  // `descend` is hoisted; the hook reads the latest closure via a ref. Gated
+  // so a held Enter from the realm pick doesn't auto-descend on mount.
+  useEnterToActivate({
+    onActivate: descend,
+    enabled: !!selected && !!resolved,
+    sig: resolved?.realm ?? "",
+  });
+
   if (!resolved || !starterGear || !selected) {
     return (
       <Panel
@@ -308,6 +319,7 @@ export function LoadoutStaging({
           <Button intent="primary" size="lg" block onClick={descend}>
             Descend into {resolved.name} →
           </Button>
+          <KbdHint multi={false} />
         </footer>
       </Panel>
     </section>

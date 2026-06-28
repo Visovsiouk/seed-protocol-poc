@@ -15,13 +15,18 @@
  * kept indices back up to `extract({ keep })`.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { motion, useReducedMotion } from "framer-motion";
 import type { EscrowEntry, Preset } from "@/lib/engine/types";
 import { lootRollToMockCard } from "@/lib/engine/runtime";
 import { AssetCard } from "@/components/inventory/AssetCard";
 import { Stamp } from "@/components/ui";
+import { KbdHint } from "@/components/game/ChoiceRow";
+import { useEnterToActivate } from "@/lib/ui/useEnterToActivate";
+
+const FOCUSABLE =
+  'a[href], button:not([disabled]), input:not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])';
 
 type Props = {
   escrow: readonly EscrowEntry[];
@@ -59,6 +64,46 @@ export function ExtractSelection({
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
+  const panelRef = useRef<HTMLDivElement>(null);
+  const restoreRef = useRef<HTMLElement | null>(null);
+
+  // Focus trap + Escape + restore, mirroring <Dialog/>. We focus the panel
+  // itself (tabIndex -1) rather than a button so a held Enter has no native
+  // target to fire — Enter→Bank goes solely through the gated hook above.
+  useEffect(() => {
+    if (!mounted) return;
+    restoreRef.current = document.activeElement as HTMLElement | null;
+    const panel = panelRef.current;
+    panel?.focus();
+
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        if (!allowCancel || busy) return;
+        e.preventDefault();
+        onCancel();
+        return;
+      }
+      if (e.key !== "Tab" || !panel) return;
+      const nodes = Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE));
+      if (nodes.length === 0) return;
+      const first = nodes[0]!;
+      const last = nodes[nodes.length - 1]!;
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      restoreRef.current?.focus?.();
+    };
+  }, [mounted, allowCancel, busy, onCancel]);
+
   // Default: bank everything. The player opts findings *out*, which is the
   // safer default — a stray confirm banks the whole run rather than losing it.
   const [kept, setKept] = useState<Set<number>>(
@@ -89,6 +134,16 @@ export function ExtractSelection({
     });
   }
 
+  function confirm() {
+    if (busy) return;
+    onConfirm([...kept].sort((a, b) => a - b));
+  }
+
+  // Enter banks (the modal's forward action). Gated by the shared activation
+  // gate so the held Enter that opened this modal (from the Extract choice)
+  // doesn't instantly bank. Space still toggles the focused card/button.
+  useEnterToActivate({ onActivate: confirm, enabled: !busy, sig: "extract" });
+
   const keepCount = kept.size;
   const discardCount = escrow.length - keepCount;
   const allKept = keepCount === escrow.length;
@@ -106,7 +161,9 @@ export function ExtractSelection({
       transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
     >
       <motion.div
-        className="flex max-h-[min(90vh,44rem)] w-full max-w-2xl flex-col gap-4 rounded-xl border p-6 bg-[var(--color-preset-bg)]"
+        ref={panelRef}
+        tabIndex={-1}
+        className="flex max-h-[min(90vh,44rem)] w-full max-w-2xl flex-col gap-4 rounded-xl border p-6 bg-[var(--color-preset-bg)] focus:outline-none"
         style={{
           borderColor:
             "color-mix(in oklab, var(--color-preset-accent) 45%, transparent)",
@@ -210,6 +267,9 @@ export function ExtractSelection({
         </ul>
 
         <footer className="flex flex-wrap items-center justify-end gap-2 pt-1">
+          <span className="mr-auto">
+            <KbdHint multi={false} />
+          </span>
           {allowCancel && (
             <button
               type="button"

@@ -32,45 +32,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-
-// --- Activation gate ----------------------------------------------------
-
-// Module-level state: is Enter or Space currently physically held?
-// Set on keydown (capture), cleared on keyup. Shared so a ChoiceRow that
-// just mounted can ask "was Enter already down when I appeared?".
-let activationKeyHeld = false;
-const releaseListeners = new Set<() => void>();
-let listenersInstalled = false;
-
-function ensureGlobalListeners() {
-  if (listenersInstalled || typeof window === "undefined") return;
-  listenersInstalled = true;
-  const isActivationKey = (e: KeyboardEvent) =>
-    e.key === "Enter" || e.key === " " || e.code === "Space";
-  window.addEventListener(
-    "keydown",
-    (e) => {
-      if (isActivationKey(e)) activationKeyHeld = true;
-    },
-    true,
-  );
-  window.addEventListener(
-    "keyup",
-    (e) => {
-      if (isActivationKey(e)) {
-        activationKeyHeld = false;
-        // Notify any disarmed rows so they can re-arm.
-        for (const cb of releaseListeners) cb();
-      }
-    },
-    true,
-  );
-  // Also clear when the window loses focus (alt-tab while holding key).
-  window.addEventListener("blur", () => {
-    activationKeyHeld = false;
-    for (const cb of releaseListeners) cb();
-  });
-}
+import { useActivationArmed } from "@/lib/ui/activation-gate";
 
 // --- Public types -------------------------------------------------------
 
@@ -123,34 +85,10 @@ export function ChoiceRow({
     setSelected(0);
   }, [sig]);
 
-  // Install global Enter-held tracker once.
-  useEffect(() => {
-    ensureGlobalListeners();
-  }, []);
-
-  // Activation gate. `armed=false` means an activation key is currently
-  // held from a prior context; we ignore activations until it is released.
-  // Lazy init checks the module-level flag synchronously so we never
-  // race the first autorepeat keydown after mount.
-  const [armed, setArmed] = useState(() => {
-    if (typeof window === "undefined") return true;
-    ensureGlobalListeners();
-    return !activationKeyHeld;
-  });
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (activationKeyHeld) {
-      // (Re-)mounted or sig changed while a key was held — disarm and
-      // wait for release.
-      setArmed(false);
-      const onRelease = () => setArmed(true);
-      releaseListeners.add(onRelease);
-      return () => {
-        releaseListeners.delete(onRelease);
-      };
-    }
-    setArmed(true);
-  }, [sig]);
+  // Activation gate. `armed=false` means an activation key is currently held
+  // from a prior context; we ignore activations until it is released. The
+  // shared gate disarms on mount / sig change while a key is held.
+  const armed = useActivationArmed(sig);
 
   // Re-evaluate focus whenever individual disabled states change (e.g. a
   // timed unlock like the Skip delay in LootMintPrompt).
