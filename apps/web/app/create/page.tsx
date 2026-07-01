@@ -57,6 +57,7 @@ import { RealmSpawnFeed, type SpawnPhase } from "@/components/create/RealmSpawnF
 import { AppShell, Panel, Button, Stamp, Rule, Chip } from "@/components/ui";
 import { effectMeta } from "@/lib/ui/loot-visuals";
 import { REALM_ACCENTS } from "@/lib/ui/accents";
+import { isCleanRealmName } from "@/lib/ui/realm-name";
 import { getFlavorBank } from "@/lib/flavor";
 import type { BossDef, Preset } from "@/lib/engine/types";
 
@@ -166,13 +167,16 @@ export default function CreatePage() {
     step.kind === "signing_minter" ||
     step.kind === "registering";
 
+  const realmNameClean = isCleanRealmName(realmName.trim());
+
   const canSubmit =
     !!address &&
     !seedGate &&
     !alreadyFounded &&
     !busy &&
     step.kind === "form" &&
-    realmName.trim().length > 0;
+    realmName.trim().length > 0 &&
+    realmNameClean;
 
   /**
    * Step 2 + 3, with race retry. Signing setMinter is signed by the
@@ -501,6 +505,11 @@ export default function CreatePage() {
                   Shown in the realm selector and on the play page. Up to 64
                   characters.
                 </p>
+                {realmName.trim().length > 0 && !realmNameClean && (
+                  <p className="text-[11px] text-[var(--color-danger)]">
+                    That name isn&apos;t allowed — try something else.
+                  </p>
+                )}
               </fieldset>
 
               <fieldset className="flex flex-col gap-3">

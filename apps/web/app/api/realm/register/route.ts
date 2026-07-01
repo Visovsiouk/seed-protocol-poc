@@ -17,6 +17,7 @@ import {
 import { playerRealmMaxTier } from "@/lib/reads/realm-tier";
 import { getFlavorBank } from "@/lib/flavor";
 import { isAllowedAccent } from "@/lib/ui/accents";
+import { isCleanRealmName } from "@/lib/ui/realm-name";
 import type { Preset, Tier } from "@/lib/engine/types";
 
 /**
@@ -60,7 +61,11 @@ const bodySchema = z.object({
   owner: addressSchema,
   preset: presetSchema,
   bossId: z.string().min(1).max(64),
-  name: z.string().min(1).max(64),
+  name: z
+    .string()
+    .min(1)
+    .max(64)
+    .refine(isCleanRealmName, "realm name contains prohibited language"),
   // Optional custom accent. Constrained to the curated allow-list so a
   // crafted POST can't inject arbitrary CSS into the accent cascade.
   // Absent/null → inherit the genre default.
