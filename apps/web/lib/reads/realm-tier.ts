@@ -43,18 +43,22 @@ export function realmTierProgress(distinctClearers: number): RealmTierProgress {
  * promptly, not after a long cache life.
  */
 const CLEARER_TTL_MS = 15_000;
-const clearerCache = new Map<string, { value: number; expiry: number }>();
+type RealmActivityCounts = { distinctClearers: number; totalMints: number };
+const clearerCache = new Map<
+  string,
+  { value: RealmActivityCounts; expiry: number }
+>();
 
 /**
- * Counts distinct wallets holding a clearReceipt for `realm`. Scans the
- * realm clone's full `AssetMinted` history (UNCAPPED — the loot cap must be
- * accurate; do not reuse realm-stats' `scanLimit` window) and hydrates each
- * token's schemaId to keep only clearReceipt mints.
+ * Scans the realm clone's full `AssetMinted` history (UNCAPPED — the loot
+ * cap must be accurate; do not reuse realm-stats' `scanLimit` window) once,
+ * yielding both the raw mint count and the distinct-clearer count (hydrating
+ * each token's schemaId to find clearReceipt mints) off the same scan.
  */
-export async function countDistinctClearers(args: {
+async function fetchRealmActivityCounts(args: {
   realm: `0x${string}`;
   clearReceiptSchemaId: bigint;
-}): Promise<number> {
+}): Promise<RealmActivityCounts> {
   const { realm, clearReceiptSchemaId } = args;
   const key = `${realm.toLowerCase()}:${clearReceiptSchemaId.toString()}`;
   const now = Date.now();
@@ -96,19 +100,33 @@ export async function countDistinctClearers(args: {
     }),
   );
 
-  const value = clearers.size;
+  const value: RealmActivityCounts = {
+    distinctClearers: clearers.size,
+    totalMints: events.length,
+  };
   clearerCache.set(key, { value, expiry: now + CLEARER_TTL_MS });
   return value;
 }
 
 /**
+ * Counts distinct wallets holding a clearReceipt for `realm`.
+ */
+export async function countDistinctClearers(args: {
+  realm: `0x${string}`;
+  clearReceiptSchemaId: bigint;
+}): Promise<number> {
+  return (await fetchRealmActivityCounts(args)).distinctClearers;
+}
+
+/**
  * Convenience: resolves a realm's earned tier in one call. Returns the
- * full progress shape so callers can surface "N / nextTierAt clearers".
+ * full progress shape so callers can surface "N / nextTierAt clearers",
+ * plus the realm's raw total mint count (popularity signal, e.g. Featured).
  */
 export async function fetchRealmTierProgress(args: {
   realm: `0x${string}`;
   clearReceiptSchemaId: bigint;
-}): Promise<RealmTierProgress> {
-  const distinctClearers = await countDistinctClearers(args);
-  return realmTierProgress(distinctClearers);
+}): Promise<RealmTierProgress & { totalMints: number }> {
+  const { distinctClearers, totalMints } = await fetchRealmActivityCounts(args);
+  return { ...realmTierProgress(distinctClearers), totalMints };
 }

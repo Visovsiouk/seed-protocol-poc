@@ -120,6 +120,8 @@ export type PlayerRealmMeta = {
   distinctClearers: number;
   /** Clearer count that unlocks the next tier, or null when at T5. */
   nextTierAt: number | null;
+  /** Raw `AssetMinted` count — popularity signal (e.g. Featured). */
+  totalMints: number;
   createdAt: number;
 };
 

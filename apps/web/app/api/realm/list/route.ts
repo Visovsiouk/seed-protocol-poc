@@ -32,7 +32,7 @@ export async function GET() {
       const clearReceiptSchemaId = r.clearReceiptSchemaId
         ? BigInt(r.clearReceiptSchemaId)
         : seeded.clearReceipt;
-      const { maxTier, distinctClearers, nextTierAt } =
+      const { maxTier, distinctClearers, nextTierAt, totalMints } =
         await fetchRealmTierProgress({
           realm: r.address,
           clearReceiptSchemaId,
@@ -47,6 +47,7 @@ export async function GET() {
         maxTier,
         distinctClearers,
         nextTierAt,
+        totalMints,
         createdAt: r.createdAt,
       };
     }),

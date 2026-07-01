@@ -466,62 +466,70 @@ export function RealmSelector({
     );
   }
 
-  // Post-Genesis: the open picker — starters + community realms. Cleared
-  // realms still render (the player can re-enter), and any non-genesis
-  // shard counts toward the Seed.
+  // Post-Genesis: the open picker. Once any player-made realm is
+  // registered, the picker shows *only* player-made realms — the three
+  // premade starters are the same for every player and have nothing left
+  // to offer here (all cleared by this point, per the arc-completion
+  // gate above). With no player realms yet, the starters still carry the
+  // picker exactly as before.
+  const starterCards = display.filter(
+    (c): c is Extract<RealmDisplay, { kind: "starter" }> => c.kind === "starter",
+  );
+  const creatorCards = display.filter(
+    (c): c is Extract<RealmDisplay, { kind: "creator" }> => c.kind === "creator",
+  );
+  const showCreators = creatorCards.length > 0;
+
+  const starterCells: RealmCell[] = starterCards.map((card) => ({
+    key: `starter:${card.preset}`,
+    enabled: isPlayable(lockStateFor(card.preset, progress)),
+    render: ({ cellRef, tabIndex }) => (
+      <StarterCard
+        card={card}
+        lockState={lockStateFor(card.preset, progress)}
+        cellRef={cellRef}
+        tabIndex={tabIndex}
+        onSelect={
+          onSelectRealm
+            ? () => onSelectRealm({ kind: "starter", preset: card.preset })
+            : undefined
+        }
+      />
+    ),
+  }));
+
+  const creatorCells: RealmCell[] = creatorCards.map((card) => ({
+    key: `creator:${card.address}`,
+    enabled: true,
+    render: ({ cellRef, tabIndex }) => (
+      <CreatorCard
+        card={card}
+        meta={playerRealmMap.get(card.address.toLowerCase())}
+        cellRef={cellRef}
+        tabIndex={tabIndex}
+        onSelect={
+          onSelectRealm
+            ? () => onSelectRealm({ kind: "creator", address: card.address })
+            : undefined
+        }
+      />
+    ),
+  }));
+
   return (
     <section
       aria-label="Choose a realm"
       className="flex flex-col gap-6 w-full max-w-5xl"
     >
       <OpenPickerHero progress={progress} />
-      <RealmGrid
-        cells={display.map((card): RealmCell =>
-          card.kind === "starter"
-            ? {
-                key: `starter:${card.preset}`,
-                enabled: isPlayable(lockStateFor(card.preset, progress)),
-                render: ({ cellRef, tabIndex }) => (
-                  <StarterCard
-                    card={card}
-                    lockState={lockStateFor(card.preset, progress)}
-                    cellRef={cellRef}
-                    tabIndex={tabIndex}
-                    onSelect={
-                      onSelectRealm
-                        ? () =>
-                            onSelectRealm({
-                              kind: "starter",
-                              preset: card.preset,
-                            })
-                        : undefined
-                    }
-                  />
-                ),
-              }
-            : {
-                key: `creator:${card.address}`,
-                enabled: true,
-                render: ({ cellRef, tabIndex }) => (
-                  <CreatorCard
-                    card={card}
-                    meta={playerRealmMap.get(card.address.toLowerCase())}
-                    cellRef={cellRef}
-                    tabIndex={tabIndex}
-                    onSelect={
-                      onSelectRealm
-                        ? () =>
-                            onSelectRealm({
-                              kind: "creator",
-                              address: card.address,
-                            })
-                        : undefined
-                    }
-                  />
-                ),
-              },
-        )}
-      />
+      {showCreators ? (
+        <div className="flex flex-col gap-3">
+          <Stamp>Player-made realms</Stamp>
+          <RealmGrid cells={creatorCells} />
+        </div>
+      ) : (
+        <RealmGrid cells={starterCells} />
+      )}
       {realms.isLoading && display.length === 0 && (
         <p className="text-sm opacity-70">Loading realms…</p>
       )}
