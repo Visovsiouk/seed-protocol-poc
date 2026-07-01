@@ -16,6 +16,7 @@
 import { useMemo } from "react";
 import type { EscrowEntry, Preset } from "@/lib/engine/types";
 import { lootRollToMockCard } from "@/lib/engine/runtime";
+import { PROVENANCE_MIN_TIER } from "@/lib/story/provenance";
 import { AssetCard } from "@/components/inventory/AssetCard";
 import { Panel, Stamp } from "@/components/ui";
 
@@ -70,20 +71,18 @@ export function EscrowTray({ escrow, preset, realm, realmName }: Props) {
         buttons + HUD down on every drop. Filling (not capping) keeps the
         tray the exact height of the slot the stage vacated, so swapping
         stage↔tray moves nothing below it.
-
-        Sparse runs (one or two findings) used to orphan a single narrow
-        card in the top-left of a tall, mostly-empty box. The scroll
-        container now `safe`-centres its content vertically — a lone card
-        sits in the middle of the slot, but the moment findings overflow
-        the height the keyword falls back to start so every card stays
-        reachable by scroll. `auto-fit` (not auto-fill) collapses the empty
-        column tracks so a single finding spans the full width instead of
-        hugging the left at 11rem.
       */}
       <ul className="grid min-h-0 flex-1 grid-cols-[repeat(auto-fill,minmax(13rem,1fr))] content-start gap-2 overflow-y-auto pr-1">
         {cards.map((card, i) => (
           <li key={`${card.tokenId.toString()}-${i}`}>
-            <AssetCard card={card} />
+            {/* The list leads with the highest-tier, newest find. Give only
+                that card the dramatic reveal, and only when it's deep enough
+                to carry a story (T4/T5) — a Legendary lands with weight while
+                commons stay quiet. */}
+            <AssetCard
+              card={card}
+              dramatic={i === 0 && card.tier >= PROVENANCE_MIN_TIER}
+            />
           </li>
         ))}
       </ul>

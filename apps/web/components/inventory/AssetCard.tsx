@@ -31,9 +31,15 @@ import { getAdapterAddress } from "@/lib/contracts/seeded-adapters";
 import { armorName, weaponName } from "@/lib/loot/names";
 import { cardDisplayName } from "@/lib/loot/card-name";
 import { tierColor } from "@/lib/ui/loot-visuals";
-import { fadeRise, withReducedMotion } from "@/lib/ui/motion";
+import { EASE_OUT, fadeRise, lineReveal, withReducedMotion } from "@/lib/ui/motion";
+import { provenanceFor } from "@/lib/story/provenance";
 import { ElementChip, EffectChip, ProvenanceChip } from "@/components/ui";
-import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import {
+  AnimatePresence,
+  motion,
+  useReducedMotion,
+  type Variants,
+} from "framer-motion";
 import {
   useLayoutEffect,
   useRef,
@@ -43,6 +49,29 @@ import {
 } from "react";
 
 const ZERO_ADDR = "0x0000000000000000000000000000000000000000" as const;
+
+// ── Dramatic high-tier reveal (the loot beat) ─────────────────────────────
+// Caller-owned, one-shot, keyframe-array variants — only ever mounted when
+// `dramatic && !reduced` (the parent gates on tier ≥ PROVENANCE_MIN_TIER), so
+// they never need an internal reduced-motion branch. Opacity/transform only:
+// no height or margin keyframe, so a dramatic card can't push the
+// Descend/Extract row the escrow tray sits above.
+
+/** One-shot rarity glow that swells off the card then settles to the card's
+ *  existing rest shadow (this layer fades back to 0). */
+const lootGlow: Variants = {
+  rest: { opacity: 0 },
+  bloom: {
+    opacity: [0, 0.85, 0],
+    transition: { duration: 1.5, ease: "easeOut", times: [0, 0.35, 1] },
+  },
+};
+
+/** Tier spine wiping down the left edge as the card lands. */
+const spineSweep: Variants = {
+  rest: { scaleY: 0 },
+  bloom: { scaleY: 1, transition: { duration: 0.5, ease: EASE_OUT } },
+};
 
 type Props = {
   card: AssetCardType;
@@ -70,6 +99,14 @@ type Props = {
    * side-by-side, so the strip would just duplicate it.
    */
   hideOriginal?: boolean;
+  /**
+   * Play the high-tier reveal beat: a tier-spine wipe, a one-shot rarity
+   * glow, the name rising in, and the kept-reader provenance line. Only takes
+   * effect on T4/T5 findings with motion enabled — the parent (`EscrowTray`)
+   * sets it on the newest highest-tier drop so a Legendary lands with weight
+   * while commons stay quiet. Inert at low tier / under reduced motion.
+   */
+  dramatic?: boolean;
 };
 
 /**
@@ -325,6 +362,7 @@ export function AssetCard({
   targetRealm,
   targetPreset: targetPresetProp,
   hideOriginal,
+  dramatic,
 }: Props) {
   const isWeapon = card.slot === "weapon";
   const reduced = useReducedMotion();
@@ -361,6 +399,13 @@ export function AssetCard({
   // current realm's language. Otherwise (no hop, fetching, or error)
   // fall back to the source card so the UI never shows empty stats.
   const displayCard: AssetCardType = hasTranslation ? translated! : card;
+
+  // The dramatic reveal only fires for deep findings with motion enabled; the
+  // provenance line rides the same gate (lower tiers belonged to readers who
+  // didn't get far enough to leave a story). `provenanceFor` itself returns
+  // null below PROVENANCE_MIN_TIER, so this stays null for commons.
+  const provenance = provenanceFor(displayCard);
+  const dramaticReveal = !!dramatic && !reduced && provenance !== null;
 
   // Vocabulary for the top element chips: target preset when we're
   // showing translated stats, otherwise the source preset (or canonical
@@ -420,6 +465,33 @@ export function AssetCard({
         cursor: onClick ? "pointer" : "default",
       }}
     >
+      {dramaticReveal && (
+        <>
+          {/* One-shot rarity glow blooming off the card, then settling to the
+              card's rest shadow. Opacity-only, so it can't shift layout. */}
+          <motion.span
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0 rounded-lg"
+            style={{
+              boxShadow: `inset 0 0 24px -4px ${tierColor(
+                displayCard.tier,
+              )}, 0 0 28px -6px ${tierColor(displayCard.tier)}`,
+            }}
+            variants={lootGlow}
+            initial="rest"
+            animate="bloom"
+          />
+          {/* Tier spine wiping down the left edge as the card lands. */}
+          <motion.span
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-y-0 left-0 w-1 origin-top rounded-l-lg"
+            style={{ background: tierColor(displayCard.tier) }}
+            variants={spineSweep}
+            initial="rest"
+            animate="bloom"
+          />
+        </>
+      )}
       <AnimatePresence>
         {selected && (
           <motion.span
@@ -454,14 +526,19 @@ export function AssetCard({
         )}
       </AnimatePresence>
       <header className="flex items-baseline justify-between gap-2">
-        <h4 className="font-semibold text-sm truncate">
+        <motion.h4
+          className="font-semibold text-sm truncate"
+          variants={dramaticReveal ? lineReveal : undefined}
+          initial={dramaticReveal ? "hidden" : false}
+          animate={dramaticReveal ? "visible" : false}
+        >
           {cardDisplayName(
             card,
             sourcePreset ?? "fantasy",
             displayCard,
             topLabelPreset,
           )}
-        </h4>
+        </motion.h4>
       </header>
       {!compact && (
         <p className="text-xs opacity-75 truncate">
@@ -506,6 +583,16 @@ export function AssetCard({
       </ChipRail>
       {displayCard.preseed && (
         <ProvenanceChip>Genesis liquidity</ProvenanceChip>
+      )}
+      {dramaticReveal && provenance && (
+        <motion.p
+          className="text-[11px] italic leading-relaxed opacity-70"
+          variants={withReducedMotion(fadeRise, reduced)}
+          initial="hidden"
+          animate="visible"
+        >
+          {provenance}
+        </motion.p>
       )}
       {isHop && !hideOriginal && (
         <OriginalStrip
