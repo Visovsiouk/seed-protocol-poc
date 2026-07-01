@@ -50,7 +50,6 @@ import {
 } from "@/lib/engine/runtime";
 import { EncounterFrame } from "@/components/game/EncounterFrame";
 import { RealmClearedInterstitial } from "@/components/game/RealmClearedInterstitial";
-import { TutorialOverlay } from "@/components/tutorial/TutorialOverlay";
 import { AppShell, Panel } from "@/components/ui";
 import { emptyTutorialProgress, type TutorialProgress } from "@/lib/tutorial/progress";
 import {
@@ -159,7 +158,6 @@ export default function PlayPage() {
     weapon?: AssetCardType;
     armor?: AssetCardType;
   } | null>(null);
-  const [tutorialDismissed, setTutorialDismissed] = useState(false);
 
   // Did the player carry gear from a *different* genre into this realm? If
   // so, the entry "your gear changes shape" beat plays once before the run
@@ -616,13 +614,6 @@ export default function PlayPage() {
       }
     >
       <section className="mx-auto flex max-w-4xl flex-col gap-4">
-        {!bossClearedThisRun && (
-          <TutorialOverlay
-            progress={tutorial}
-            dismissed={tutorialDismissed}
-            onDismiss={() => setTutorialDismissed((v) => !v)}
-          />
-        )}
         {showRealmNotDeployedNotice && (
           <Panel as="aside" tone="warn" aria-label="Realm not yet deployed" className="p-3 text-sm">
             <strong>Heads up:</strong>{" "}
