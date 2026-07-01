@@ -30,9 +30,11 @@
  *     no encounter is active (Extract only when `extractable` and the
  *     escrow is non-empty).
  *
- * Boss phase 1→2 transition is detected by diffing the previous and next
- * `combat.bossPhase` after each `step()`, and surfaced via
- * `<BossPhaseBanner/>` for ~4 seconds.
+ * The warden gets two felt beats via `<WardenConfrontation/>` (a floating,
+ * pointer-events-none overlay): a boss-start name reveal when the boss room's
+ * encounter first appears, and a phase 1→2 turn — detected by diffing the
+ * previous and next `combat.bossPhase` after each `step()` — which reuses the
+ * `<BossPhaseBanner/>` flourish and holds the warden's bound-aspirant line.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -55,7 +57,10 @@ import {
 } from "@/lib/engine";
 import { ActionChoices } from "./ActionChoices";
 import { ChoiceRow, type Choice } from "./ChoiceRow";
-import { BossPhaseBanner } from "./BossPhaseBanner";
+import {
+  WardenConfrontation,
+  type ConfrontationMoment,
+} from "./WardenConfrontation";
 import { CombatLog } from "./CombatLog";
 import { EscrowTray } from "./EscrowTray";
 import { ExtractSelection } from "./ExtractSelection";
@@ -244,7 +249,16 @@ export function EncounterFrame({
   const [feed, setFeed] = useState<readonly NarrationLine[]>(initialSplit.rest);
   const [busy, setBusy] = useState(false);
   const [bankStatus, setBankStatus] = useState<BankStatus>({ kind: "idle" });
-  const [phaseBanner, setPhaseBanner] = useState(false);
+  // The live warden-confrontation beat (boss-start name reveal or phase-2
+  // turn), or null when no beat is up. Floats over the focal slot,
+  // pointer-events-none, so combat input underneath stays live.
+  const [confrontation, setConfrontation] = useState<{
+    moment: ConfrontationMoment;
+    name: string;
+  } | null>(null);
+  // Monotonic nonce handed to the stage's kept-reader ghost: bumped on
+  // boss-start so the face suggestion blooms under the warden's name.
+  const [ghostReveal, setGhostReveal] = useState(0);
   // Open while the player is choosing which carried findings to bank vs
   // discard (the Extract & bank selection overlay). The actual extraction
   // only fires on confirm, with the kept indices.
@@ -254,10 +268,10 @@ export function EncounterFrame({
   // run is over either way, so the modal has no Back affordance.
   const [bossSelecting, setBossSelecting] = useState(false);
 
-  // Hold the bossName for the phase banner. Captured at the moment of
-  // transition so the banner doesn't blink if the parent advances rooms
-  // mid-fade.
-  const phaseBannerNameRef = useRef<string>("");
+  // Fire the boss-start confrontation exactly once when the boss room's
+  // encounter first appears. `announcedBossRef` guards against the effect
+  // re-running on every combat step (the encounter object changes each turn).
+  const announcedBossRef = useRef(false);
 
   // Gear is locked for the duration of a delve: the loadout is chosen in
   // the pocket-realm hub before descending and baked into `initialState`
@@ -266,6 +280,19 @@ export function EncounterFrame({
 
   const combat =
     state.encounter?.kind === "combat" ? state.encounter.combat : undefined;
+
+  // Boss-start beat: when the live encounter first becomes the boss (its
+  // monster carries `bakedEffects`), reveal the warden — name + held
+  // bound-aspirant line — and pulse the stage ghost so the face blooms under it.
+  useEffect(() => {
+    if (announcedBossRef.current) return;
+    if (state.encounter?.kind !== "combat") return;
+    const monster = state.encounter.combat.monster;
+    if (!("bakedEffects" in monster)) return;
+    announcedBossRef.current = true;
+    setConfrontation({ moment: "boss-start", name: monster.name });
+    setGhostReveal((n) => n + 1);
+  }, [state.encounter]);
 
   const appendLines = useCallback((lines: readonly NarrationLine[]) => {
     if (lines.length === 0) return;
@@ -286,8 +313,8 @@ export function EncounterFrame({
         for (const ev of result.events) {
           onEvent?.(ev);
           if (ev.type === "BossCleared") {
-            // Banner is implicitly retired by the run-over state.
-            setPhaseBanner(false);
+            // Confrontation beat is implicitly retired by the run-over state.
+            setConfrontation(null);
           }
         }
         const nextPhase =
@@ -295,8 +322,10 @@ export function EncounterFrame({
             ? result.state.encounter.combat.bossPhase
             : undefined;
         if (prevPhase === 1 && nextPhase === 2 && combat) {
-          phaseBannerNameRef.current = combat.monster.name;
-          setPhaseBanner(true);
+          // The warden turns: reuse the phase-2 flourish + hold the warden's
+          // bound-aspirant `turn` line. The stage re-blooms its ghost on the
+          // phase change on its own (keyed on the phase), so no nonce bump.
+          setConfrontation({ moment: "phase2", name: combat.monster.name });
         }
         setState(result.state);
       } finally {
@@ -454,7 +483,7 @@ export function EncounterFrame({
       // Reset the combat log on a fresh room so the player isn't reading
       // last room's narration over the new monster's HP bar.
       setFeed(split.rest);
-      setPhaseBanner(false);
+      setConfrontation(null);
       setState(result.state);
     } finally {
       setBusy(false);
@@ -560,6 +589,7 @@ export function EncounterFrame({
             encounter={state.encounter}
             intro={intro}
             activePreset={activePreset}
+            ghostReveal={ghostReveal}
           />
         ) : atDecision ? (
           <EscrowTray
@@ -664,18 +694,21 @@ export function EncounterFrame({
         ) : null}
 
         {/*
-          Phase-2 banner is an OVERLAY pinned to the top of the focal slot, NOT
-          a flow element. Rendering it inline (between the stage and the log)
-          used to insert a box that shoved the combat log and the action
-          buttons down the instant it appeared — then snapped them back up when
-          it auto-faded. Absolutely positioned + pointer-events-none, it floats
-          over the stage and changes nothing below it: zero layout shift.
+          The warden confrontation is an OVERLAY pinned to the top of the focal
+          slot, NOT a flow element. Rendering a banner inline (between the stage
+          and the log) used to insert a box that shoved the combat log and the
+          action buttons down the instant it appeared — then snapped them back
+          up when it auto-faded. Absolutely positioned + pointer-events-none, it
+          floats over the stage and changes nothing below it: zero layout shift,
+          and combat input underneath stays fully live.
         */}
-        {phaseBanner && (
+        {confrontation && (
           <div className="pointer-events-none absolute inset-x-0 top-3 z-20 flex justify-center px-3">
-            <BossPhaseBanner
-              show={phaseBanner}
-              bossName={phaseBannerNameRef.current}
+            <WardenConfrontation
+              moment={confrontation.moment}
+              name={confrontation.name}
+              bossId={bossId}
+              onDone={() => setConfrontation(null)}
             />
           </div>
         )}
@@ -784,13 +817,13 @@ function DefeatOverlay({
           className="text-[11px] font-mono uppercase tracking-[0.4em] opacity-70"
           style={{ color: "var(--color-danger)" }}
         >
-          You died
+          You are bound
         </p>
         <h2
           className="text-3xl font-semibold leading-tight"
           style={{ color: "var(--color-danger)" }}
         >
-          The realm keeps you.
+          The world sets you into itself.
         </h2>
         {depth !== undefined && (
           <p className="text-xs uppercase tracking-widest opacity-70">
@@ -807,9 +840,11 @@ function DefeatOverlay({
           </p>
         )}
         <p className="text-sm opacity-90 leading-relaxed">
-          The protocol writes you in where you fell — another face for the next
-          reader to find. No clear receipt is minted and the realm chain stays
-          unchanged; your owned, equipped gear is untouched, but
+          You reached for a name and the world bound you where you fell — one
+          more aspirant set into the door to hold it against whoever comes next.
+          That is what a warden is: someone who came this far and could not carry
+          themselves out. No name is carved and the realm chain stays unchanged;
+          your owned, equipped gear is untouched, but
           {escrowLost > 0 ? (
             <>
               {" "}the{" "}
@@ -817,10 +852,11 @@ function DefeatOverlay({
                 {escrowLost} unminted finding
                 {escrowLost === 1 ? "" : "s"}
               </strong>{" "}
-              you carried are gone. Carry them out next time.
+              you carried down go into the dark with you. Carry yourself out next
+              time.
             </>
           ) : (
-            <> you carried nothing out to lose.</>
+            <> you carried nothing down to lose. Carry yourself out next time.</>
           )}
         </p>
         <button

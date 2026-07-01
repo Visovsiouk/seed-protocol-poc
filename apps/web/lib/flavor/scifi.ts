@@ -11,7 +11,11 @@
  *
  * Authoring note: motifs intentionally repeat (vacuum, frost, salvage
  * tape, dead crew chatter) so individual lines vary while the world
- * stays coherent.
+ * stays coherent. Finishing motif: sci-fi is the most
+ * "finished" of the three worlds and therefore the most dead — frozen,
+ * sealed, sterile. Its traces are the archaeology of bound aspirants:
+ * the Half-made at the rim, the Set written into the station's keeping,
+ * the Near-gods wearing the Core's ending nature near the boss.
  */
 
 import type { FlavorBank } from "./types";
@@ -40,7 +44,7 @@ const monsters = {
     attackVerbs: [
       "swings a torque-wrench for {dmg}",
       "lashes out with a sparking grip for {dmg}",
-      "shoves a cargo claw into your side for {dmg}",
+      "strips you for parts the way it was stripped, clawing you for {dmg}",
     ],
   },
   drifter: {
@@ -129,7 +133,7 @@ const monsters = {
     ac: 14,
     attackVerbs: [
       "drags rime across your suit seals for {dmg}",
-      "grips your wrist and frost cracks your gauntlet for {dmg}",
+      "grips your wrist with a bound aspirant's frozen certainty and cracks your gauntlet for {dmg}",
     ],
     element: "cryo",
     weakTo: "plasma",
@@ -253,63 +257,70 @@ const bosses = {
 export const scifiBank: FlavorBank = {
   presetDisplayName: "Sci-Fi",
   rooms: {
+    // Depth 1 — the Half-made. Aspirants barely set into the station, out at
+    // the frozen rim of a world someone tried to finish and seal shut.
     docking_bay: [
-      "Decommissioned. Half the lights are out, the rest failing in private.",
-      "Hull plates breathe with the pressure cycle. Frost rides every seam.",
-      "Cargo nets sway in a draft that can't exist out here.",
+      "Decommissioned. Half the lights are out, the rest failing in private. A name is stencilled on a locker and frosted half-away — an aspirant the world only started to bind before the cold sealed over them.",
+      "Hull plates breathe with the pressure cycle. Frost rides every seam. This is the finished edge of a world — sealed, sterile, barely holding a shape at all.",
+      "Cargo nets sway in a draft that can't exist out here. Something thin drifts the bay, too lightly bound to remember it once had a name and a way out.",
     ],
     server_farm: [
-      "Stacks humming. A few have gone quiet, frozen mid-thought.",
-      "Status LEDs blink red as one. The cold has gotten into the logic.",
-      "An emergency log scrolls past, every name scratched out.",
+      "Stacks humming. A few have gone quiet, frozen mid-thought — aspirants filed and shelved, the descent they never finished still open and going cold.",
+      "Status LEDs blink red as one. The cold has gotten into the logic the way it got into everyone who came this far.",
+      "An emergency log scrolls past, every name scratched out by a hand that was trying to end the list rather than climb off it.",
     ],
+    // Depth 2 — the Set. Aspirants bound fully into the station's keeping:
+    // its repair gangs, its sentries, its cold.
     derelict_corridor: [
-      "The lights flicker. Between flickers, something is further along than it was.",
-      "Frost furs the bulkheads. The seals gave out a long time ago.",
-      "Bootprints in the dust lead away from a door sealed on your side.",
+      "The lights flicker. Between flickers, something is further along than it was — an aspirant still walking a patrol the world set them to and never released.",
+      "Frost furs the bulkheads; the seals gave out a long time ago. Whoever came to fix them is part of the cold now, bound to the leak.",
+      "Bootprints in the dust lead away from a door sealed on your side — sealed by someone who decided nothing else should make it this far, including themselves.",
     ],
     cargo_hold: [
-      "Containers stacked to the ceiling, most of them open and emptied.",
-      "Mag-boots clamp loud here; whatever's listening already knows.",
-      "What was loaded last was taken out fast, and not by hand.",
+      "Containers stacked to the ceiling, most open and emptied by hands the world kept working past their last breath.",
+      "Mag-boots clamp loud here; whatever's listening already knows. It was a loadmaster once; it answers to the hold now.",
+      "What was carried in last was taken back out fast, and not by hand — by an aspirant the world re-tasked and never let leave.",
     ],
     reactor_room: [
-      "The reactor pulses behind shielding — the only warm thing left, and barely.",
-      "Coolant weeps to the deck and freezes there. The steam won't rise.",
-      "A klaxon repeats one word. The cold has worn it down to nothing.",
+      "The reactor pulses behind shielding — the only warm thing left, and barely. An aspirant fed the last of a dying world to it for heat, and the fire she set became her cage.",
+      "Coolant weeps to the deck and freezes there; the steam won't rise. Whoever the world bound to this deep heat stopped trying to leave a long time ago.",
+      "A klaxon repeats one word the cold has worn down to nothing — a name, maybe, of whoever the world set to keep the burn going.",
     ],
+    // Near-boss — the Near-gods wear the Core's nature; a world sealed dead.
     bridge: [
-      "Consoles dead. One chair turned to face the door, waiting.",
-      "The viewport holds a planet that isn't on any chart.",
+      "Consoles dead. One chair turned to face the door, waiting — an aspirant who read ahead to how the world ends and could not look away long enough to climb back and name themselves.",
+      "The viewport holds a planet that isn't on any chart, only in the last line someone tried to write and freeze. The near-gods up here half-remember reaching for it.",
     ],
     cryo_vault: [
-      "Pods frosted opaque. A few have cracked open from the inside.",
-      "The vault smells of ozone and something older than the ship's first log.",
+      "Pods frosted opaque; a few have cracked open from the inside. What climbed out got near the Core's depth and came back wearing its certainty, half-ended and half-afraid.",
+      "The vault smells of ozone and something older than the station's first log — the finished, frozen edge of the world itself, where an aspirant once tried to declare creation complete.",
     ],
   },
   bossPhases: {
+    // III · end — the aspirant who tried to finish the Work surfaces.
     ai_core_phase2: [
-      "The Core reroutes. Its voice sharpens.",
-      "Auxiliary lights snap on. The Core has been waiting for this.",
-      "It speaks a name that should be impossible for it to know.",
-      "Between reroutes it loops one old log — a crew voice reading something aloud, the instant before the Core kept them.",
+      "The Core reroutes; its voice sharpens. It earned a name once, finished its world, and then tried to write the last line of the Work itself and freeze creation dead.",
+      "Auxiliary lights snap on. The Core has been waiting for this — patient as the cold that took its hands at the finished edge of the world.",
+      "It speaks your name before you have carved it, then shows you the last line it was writing: it just stops. This is where someone tried to end the making for everyone.",
+      "Between reroutes it loops one old log — a crew voice, alive, the instant before the one who would seal the world held them in it.",
     ],
+    // Community wardens — bound aspirants, same three ruins in station dialect.
     hive_queen_phase2: [
-      "The Queen molts. Her new carapace is harder.",
-      "She calls. Something deep in the station answers.",
+      "The Queen molts; her new carapace is harder. She reached the sealed silence, could not bear it, and filled it with copies of herself until none could climb out alone.",
+      "She calls, and something deep in the station answers in her own voice, multiplied. She made nothing — she only multiplied being held.",
     ],
     void_prince_phase2: [
-      "The Prince's silhouette flickers — phasing.",
-      "Reality strains around him.",
-      "He smiles in a direction you can't look.",
+      "The Prince's silhouette flickers — phasing at the cold, finished edge he chose over turning back to name himself.",
+      "Reality strains around him; he crowned himself over the sealed silence rather than climb back and carve a name.",
+      "He smiles in a direction you can't look — an aspirant who mistook the end of the making for a throne.",
     ],
     reactor_wyrm_phase2: [
-      "The Wyrm's plating glows white. The deck buckles beneath it.",
-      "Coolant lines rupture in a spray; the Wyrm drinks the steam.",
+      "The Wyrm's plating glows white; the deck buckles beneath it. It tried to burn a dying world for warmth out at the frozen edge, and the fire is the cage now.",
+      "Coolant lines rupture; the Wyrm drinks the steam. There is nothing left out here to feed it but the aspirant it used to be.",
     ],
     oracle_phase2: [
-      "The Oracle's eyes go matte. It has stopped pretending to be uncertain.",
-      "A second voice joins its first. They harmonize.",
+      "The Oracle's eyes go matte; it has stopped pretending to be uncertain. It read ahead to how the world ends and never climbed back to the Altar to name itself.",
+      "A second voice joins its first; they harmonize, reading you the ending it could not stop reading. Knowing the last line is not the same as carving your own name.",
     ],
   },
   roomTemplates: [

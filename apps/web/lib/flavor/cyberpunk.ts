@@ -11,7 +11,10 @@
  *
  * Authoring note: the room narration leans hard on neon-vs-shadow,
  * surveillance, and signs of corporate decay so the world stays
- * coherent across runs.
+ * coherent across runs. Cyberpunk sits at the *half-set* middle of the
+ * finishing motif — rain on setting concrete, neon hardening toward
+ * frost — and its archaeology is of the bound aspirants (runners) who
+ * came down before you.
  */
 
 import type { FlavorBank } from "./types";
@@ -26,7 +29,7 @@ const monsters = {
     attackVerbs: [
       "swings a length of chain for {dmg}",
       "stabs with a sharpened bolt for {dmg}",
-      "smashes a bottle on your visor for {dmg}",
+      "checks your face against a count it can't stop running, then cracks you for {dmg}",
     ],
   },
   fixer: {
@@ -137,7 +140,7 @@ const monsters = {
     attackDie: 6,
     ac: 15,
     attackVerbs: [
-      "scans you; a numeric lash flays your nerves for {dmg}",
+      "renders a runner's face for a frame, then flays your nerves for {dmg}",
       "throws a packet that detonates between your eyes for {dmg}",
     ],
     element: "cryogenic",
@@ -246,63 +249,70 @@ const bosses = {
 export const cyberpunkBank: FlavorBank = {
   presetDisplayName: "Cyberpunk",
   rooms: {
+    // Depth 1 — the Half-made. Barely-made runners, light enough that the
+    // district's count of them is still warm and shallow.
     neon_alley: [
-      "Rain through the neon, warm as breath. The alley loops a cheap synth hook.",
-      "An ad-strip stutters a half-dead come-on at no one.",
-      "Steam off a grate carries a voice — yours, running a half-second behind you.",
+      "Rain through the neon, warm as breath, already cooling. The alley loops a cheap synth hook over a chalk outline nobody washed off — a runner who got exactly this far.",
+      "An ad-strip stutters a half-dead come-on at no one. The district counts everything that watches, and everything down here that watches is also being counted.",
+      "Steam off a grate carries a voice — yours, running a half-second behind you, the way the last one's voice still runs in the pipes, too thinly made to climb back out.",
     ],
     rooftop: [
-      "The skyline is a wall of wet light. Below, sirens, always.",
-      "Wind drags across the antenna array. Up here you read as a target.",
-      "A drone passes twice. The third time it stops to look.",
+      "The skyline is a wall of wet light. Below, sirens, always. Someone scratched a tally into the parapet and stopped at a number, mid-stroke.",
+      "Wind drags across the antenna array. Up here you read as a target — and as a count the city has already started keeping on you.",
+      "A drone passes twice. The third time it stops to look, the way it once stopped to look at whoever left that jacket snagged on the rebar.",
     ],
+    // Depth 2 — the Set. Runners set fully into the district's service:
+    // its security, its staff, its ICE.
     underground: [
-      "The tunnel smells of ozone and old rain. The walls sweat.",
-      "Trains roar past close enough to feel in your teeth.",
-      "The graffiti glows and breathes — the paint is running someone's code.",
+      "The tunnel smells of ozone and old rain. The walls sweat. Down here the maintenance crews don't clock out anymore; the district set them into the job.",
+      "Trains roar past close enough to feel in your teeth. A face in every window is the same face, bound to the route, riding it forever.",
+      "The graffiti glows and breathes — the paint is running someone's code, a runner who tried to make herself into the wall and got set there instead.",
     ],
     server_den: [
-      "Grey hardware in stacks, fans screaming, condensation pooling underneath.",
-      "A wall of monitors loops the alley you just left — you're still in frame.",
-      "Someone's taped a prayer over an open chassis. It didn't take.",
+      "Grey hardware in stacks, fans screaming, condensation pooling underneath. The racks are staffed by what used to be runners, now indexed and humming.",
+      "A wall of monitors loops the alley you just left — you're still in frame, already filed, already counted toward whatever the door is owed.",
+      "Someone taped a prayer over an open chassis. It didn't take. The hands that taped it are part of the cooling loop now.",
     ],
     arcology_atrium: [
-      "Corporate green-glass, slick with engineered rain. The floor is selling you something.",
-      "Three cameras pivot to follow you, perfectly in unison.",
-      "A water feature runs an algorithm you can taste at the back of your teeth.",
+      "Corporate green-glass, slick with engineered rain that's begun to set like resin. The floor is selling you something, in a voice a runner recorded before the district bound her to the lobby.",
+      "Three cameras pivot to follow you, perfectly in unison — three angles on a count that only ever goes up.",
+      "A water feature runs an algorithm you can taste at the back of your teeth. The runner who coded it never left the building; the building makes with her now.",
     ],
+    // Near-boss — the Near-gods wear the ICE's nature; the neon sets toward frost.
     night_market: [
-      "Stalls and steam. A vendor watches you and forgets to blink.",
-      "Counterfeit chrome under counterfeit lanterns, all of it wet.",
+      "Stalls and steam. A vendor watches you and forgets to blink — a runner who got near the warden's depth and came back wearing a little of her ICE.",
+      "Counterfeit chrome under counterfeit lanterns, all of it wet, all of it hardening. Every reflection is somebody who tried to copy their way out of here.",
     ],
     pirate_clinic: [
-      "Surgical lamps over plastic sheeting, everything beaded with runoff.",
-      "Old transplant labels peel off mismatched tile. One matches your blood type.",
+      "Surgical lamps over plastic sheeting, everything beaded with runoff that's gone cold and tacky. Old transplant labels peel off mismatched tile — one matches your blood type, filed before you arrived.",
+      "The instruments still run a script in a dead runner's hand. She almost reached the ICE; the clinic kept the part of her that knew how, and let the rest go.",
     ],
   },
   bossPhases: {
+    // II · steal — the runner who tried to take a name surfaces.
     black_ice_phase2: [
-      "Black ICE roots deeper. The firewall fails behind you.",
-      "ICE responds in patterns you don't recognize.",
-      "Your HUD ghosts a second feed — it's been watching you for a while.",
-      "For a frame the ICE renders a face: a runner who came this far once, and never logged out.",
+      "Black ICE roots deeper. The firewall fails behind you. There is no shortcut down here; there is only being bound.",
+      "ICE responds in patterns you don't recognize — the patterns of someone forking herself, the way she once forked herself to skip the climb.",
+      "Your HUD ghosts a second feed — it's been watching you for a while, the way she watched for a name she could copy without earning it.",
+      "For a frame the ICE renders a face: a runner who came this far once, tried to take a name she hadn't earned, and never logged out. None of her copies was the one that got away.",
     ],
+    // Community wardens — bound aspirants, same three ruins in district dialect.
     ceo_phase2: [
-      "The CEO loosens their tie. Their security detail multiplies.",
-      "The CEO's smile sharpens. They've stopped pretending.",
+      "The CEO loosens their tie. Their security detail multiplies — an aspirant who tried to own the gate instead of climbing through it, charging toll on a world that was never hers to sell.",
+      "The CEO's smile sharpens; they've stopped pretending. Still counting a fortune they can't carry up the stairs.",
     ],
     ghost_phase2: [
-      "The Ghost flickers — three of them now, only one is real.",
-      "The Ghost smiles. You realize you've been bleeding.",
-      "Your gun goes cold; the Ghost has already reached you.",
+      "The Ghost flickers — three of them now, only one is real, and even she isn't sure which. She tried to erase her own name to beat the count.",
+      "The Ghost smiles; you realize you've been bleeding. You cannot unmake yourself — you can only leave a hole the district fills.",
+      "Your gun goes cold; the Ghost has already reached you, patrolling the shape of the name she scrubbed out.",
     ],
     rogue_god_phase2: [
-      "The Rogue God laughs — every screen in the city laughs back.",
-      "Reality reskins around it. Your name updates in someone else's database.",
+      "The Rogue God laughs — every screen in the city laughs back, every screen a copy he forked to send up in his place.",
+      "Reality reskins around it; your name updates in someone else's database. Every instance swears it's the original. None of them remembers the way out.",
     ],
     matron_phase2: [
-      "The Matron's voice steadies. The clinic instruments answer to her now.",
-      "A circle of doctors stands up at once, faces wrong.",
+      "The Matron's voice steadies; the clinic instruments answer to her now. She could not leave the others behind, so she kept them — and called it mercy.",
+      "A circle of doctors stands up at once, faces wrong. The mercy curdled into the thing that holds the door shut. She is binding you the way she was bound.",
     ],
   },
   roomTemplates: [

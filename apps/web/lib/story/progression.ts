@@ -18,11 +18,11 @@ import type { TutorialProgress } from "@/lib/tutorial/progress";
 /**
  * Canonical play order for the three starters. Each realm requires
  * every prior realm cleared before it unlocks. fantasy (index 0) is the
- * forced entry point after the cold-open Book scene.
+ * forced entry point after the cold-open branding scene.
  *
- * Order: fantasy → cyberpunk → sci-fi. The cyberpunk middle step is
- * the deliberate tonal pivot — neon over wet stone — and sci-fi caps
- * the arc with the longest tonal stretch from the start.
+ * Order: fantasy → cyberpunk → sci-fi. This is also the finishing
+ * gradient — wet, least-finished, most alive → hardening, half-set →
+ * frozen, finished, dead — so the arc caps at the coldest world.
  */
 export const REALM_ORDER: readonly Preset[] = ["fantasy", "cyberpunk", "scifi"];
 
@@ -69,10 +69,10 @@ export function nextStarterFor(starterClears: number): Preset | null {
  */
 export function lockTeaseFor(preset: Preset): string {
   if (preset === "cyberpunk") {
-    return "Rain on neon, behind a door that opens only after the Reach falls.";
+    return "Rain on setting neon, a world half-hardened. Someone down here tried to take a name that wasn't hers instead of earning one, and the gate she tried to crack is the gate she became.";
   }
   if (preset === "scifi") {
-    return "A signal threading toward something that hasn't begun yet.";
+    return "Frost over a world sealed perfect and dead. Someone out here finished their making and tried to finish all of it — the cold is where that ambition stopped.";
   }
   return "";
 }
@@ -85,24 +85,29 @@ export function lockTeaseFor(preset: Preset): string {
  */
 export function stakesNoteFor(preset: Preset): string {
   if (preset === "fantasy") {
-    return "Death here is final. The wet earth keeps you, and keeps what you hadn't carried out.";
+    return "Fall here and the Reach binds you — sets you into its wet wood to hold the door, the way it bound the one laughing ahead. What you hadn't carried out stays down with you.";
   }
   if (preset === "cyberpunk") {
-    return "Death here is final. The district keeps you, and everything you hadn't carried out stays in the dark.";
+    return "Fall here and the district binds you — sets your face into its ICE to guard the next runner from the same shortcut. Everything you hadn't carried out stays in the dark.";
   }
   if (preset === "scifi") {
-    return "Death here is final. The station keeps you, and vents everything still in hand.";
+    return "Fall here and the station binds you — sets you into the cold to wait out the next climber. It vents everything still in your hands into the vacuum.";
   }
   return "";
 }
 
 export const STORY_HERO_OPEN = {
   eyebrow: "The doors stand open",
-  title: "Three doors closed behind you. The rest are up to you.",
+  title: "You named yourself where they could not. Now keep the Work open.",
   body:
-    "The founding doors stay walkable, the market shows goods it kept hidden before, and " +
-    "the registry fills with doors other hands have raised. You read your way this far; " +
-    "what comes next, you write.",
+    "You went down three worlds and carried yourself back out all three times — and at the " +
+    "Altar you cut your own name into the roll, in the place where the bound aspirants' names " +
+    "trail off unfinished. That name is a maker's power. It buys no rest: a world stays alive " +
+    "only while climbers keep attempting it, and a world no one attempts hardens and cools " +
+    "toward the finished, dead edge. Raise a world of your own and you take on the same charge " +
+    "the wardens broke under — keep it attempted, or watch your making dim. The registry fills " +
+    "with worlds other hands have raised, each one a mortal who chose to make instead of be " +
+    "bound. Add yours.",
 } as const;
 
 /**
@@ -132,48 +137,58 @@ export function interstitialFor(args: {
   const { justCleared, progress } = args;
   const starterClears = progress.starterClears;
 
-  // First door (fantasy) → warp to cyberpunk.
+  // First door (fantasy) → warp to cyberpunk. Ruin: the one who CLUNG.
   if (justCleared === "fantasy" && starterClears === 1) {
     return {
-      eyebrow: "Door I · the Reach falls",
-      title: "Her laughter splinters into static.",
+      eyebrow: "Door I · the Reach falls · the one who clung",
+      title: "She goes down without a fight she believes in.",
       body:
-        "The Hag drops to one knee, and for a breath her face is only a face — someone " +
-        "who walked this far and was kept. Then the Reach drops with her. The wet wood " +
-        "thins; beneath it is rain on concrete. A shard settles warm against the mark on " +
-        "your hand: the first third of something. Two doors down to go. Carry what's yours.",
+        "For one breath the Reach lets her be a woman again — an aspirant who finished this " +
+        "world and could not bear to leave it, who stayed to tend it until it wore her like " +
+        "a face. I only wanted to keep it, the wet wood says, in her voice. Then the Reach " +
+        "takes her back, and the world begins to harden: under the moss is rain on setting " +
+        "concrete. A spark kindles against the mark on your hand — the first of three, and " +
+        "the mark burns a little less unfinished. One ruin read. Two to go. Carry out " +
+        "what's yours; she is the proof of what it costs to love the made thing more than " +
+        "the making.",
       cta: { kind: "warp-next", label: "Go down", nextPreset: "cyberpunk" },
     };
   }
 
-  // Second door (cyberpunk) → warp to sci-fi.
+  // Second door (cyberpunk) → warp to sci-fi. Ruin: the one who STOLE.
   if (justCleared === "cyberpunk" && starterClears === 2) {
     return {
-      eyebrow: "Door II · the ICE shatters",
-      title: "Blue smoke peels back from a longer corridor.",
+      eyebrow: "Door II · the ICE shatters · the one who stole",
+      title: "The last of her forks goes dark mid-handshake.",
       body:
-        "Black ICE goes dark, and in the last of its light it almost wears a face you " +
-        "could have worn. A second shard finds the mark, warmer than the first — two " +
-        "thirds now, and the cold ahead is older than either. One more door down. What " +
-        "you carry will travel; the protocol sees to that.",
+        "Where the Hag clung, this one reached. A runner who tried to take a name that " +
+        "wasn't hers — to copy a maker's power and skip the climb. A true-name can't be " +
+        "taken; it knew her by the soul and bound her as the lock on the world's own gate. " +
+        "Every copy she split off wore a face you could have worn, and not one of them was " +
+        "the one that carried itself out. A second spark finds the mark, and the neon " +
+        "hardens toward frost. Two of three now. She is the proof a name can't be stolen — " +
+        "one more world, where someone tried to end it instead.",
       cta: { kind: "warp-next", label: "Go down", nextPreset: "scifi" },
     };
   }
 
-  // Third door (sci-fi) → end of arc. Whether the Seed claim actually
-  // lights up is decided by the gate at the caller; this just hands
-  // off the right shape and lets the parent gate the button.
+  // Third door (sci-fi) → end of arc. Ruin: the one who tried to END the Work.
+  // Whether the Name claim actually lights up is decided by the gate at the
+  // caller; this just hands off the right shape and lets the parent gate it.
   if (justCleared === "scifi" && starterClears >= 3) {
     return {
-      eyebrow: "Door III · the Core goes quiet",
-      title: "Three doors closed behind you.",
+      eyebrow: "Door III · the Core goes quiet · the one who would end it",
+      title: "It shows you the last line it was writing, and the line just stops.",
       body:
-        "The Core's whisper drops below hearing, and the last thing it shows you is a " +
-        "reader's face — the one it used to be, kept here to keep the door. The third " +
-        "shard settles warm against the mark; you carry all three up now. They are not " +
-        "the Seed yet — only the Seed in pieces. The base has an Altar where shards are " +
-        "pressed whole, and it will weigh whether the three you've brought are enough. " +
-        "Climb. Let it weigh you.",
+        "The oldest bound aspirant, and the only one who ever earned its name before you. " +
+        "It made. It finished its world. And then it tried to finish the Work itself — to " +
+        "write the last line and hold all of creation still and perfect and dead, so no new " +
+        "maker could ever add to it. The cold took it here, at the finished edge, where its " +
+        "ambition ran out. Its whisper drops below hearing and the third spark settles " +
+        "against the mark. You carry all three up now — not a Name yet, only the sparks that " +
+        "kindle it. Three ruins read: one who clung, one who stole, one who would have ended " +
+        "it. The base has an Altar where the three sparks kindle whole. Climb. You already " +
+        "know what the wardens did wrong.",
       cta: { kind: "claim-seed", label: "Climb to the Altar" },
     };
   }
@@ -181,11 +196,14 @@ export function interstitialFor(args: {
   // Any community-realm clear, or out-of-band starter clears post-arc.
   return {
     eyebrow: "Realm cleared",
-    title: "Another door walked, another dialect read.",
+    title: "Another world mastered, another bound aspirant laid down.",
     body:
-      "The warden falls and the world thins behind you. This door was raised by a hand " +
-      "like yours — read clean now, its findings yours to carry up. The base is still " +
-      "above; the registry still has doors you haven't opened.",
+      "The warden falls and for a breath wears a mortal's face — someone who came this far, " +
+      "reached for a name, and was bound into the world instead of carrying themselves out. " +
+      "This world was raised by a hand like yours and stays alive only while hands like yours " +
+      "keep attempting it; you just kept it alive a little longer. Its findings are yours to " +
+      "carry up. The base is still above; the registry still has worlds no one has gone down " +
+      "to the warden of yet.",
     cta: { kind: "open-picker", label: "Climb back to the base" },
   };
 }

@@ -1,13 +1,14 @@
 /**
  * The Pilgrim's Brand — fantasy starter story object.
  *
- * Long before the player, a fire-mage walked the Reach and burned. She
- * was a reader too, marked as the player is; the Reach kept her, the way
- * it keeps everyone it can. Her
- * blade — or one of its sisters — is buried in the second clearing. The
- * Hag is `weakTo: fire` for a reason. **Fantasy-only**: the brand is
- * tied to `forcedFirstWeaponElement: "fire"` on the fantasy starter, so
- * the first weapon drop reads as a found relic rather than a coincidence.
+ * Long before the player, a fire-mage came to the Reach reaching for a
+ * name, and burned. She was an aspirant too, marked as the player is; the
+ * Reach bound her, the way it binds everyone it can (bosses
+ * are bound aspirants). Her blade — or one of its sisters — is buried in
+ * the second clearing. The Hag is `weakTo: fire` for a reason.
+ * **Fantasy-only**: the brand is tied to `forcedFirstWeaponElement: "fire"`
+ * on the fantasy starter, so the first weapon drop reads as a found relic
+ * rather than a coincidence.
  *
  * Pure data + selector functions. No engine state, no chain reads.
  * Imported by `lib/engine/index.ts` (brand drops on the forced first
@@ -20,7 +21,7 @@
  * (a uint32 derived from the loot rng) so the same run always reads the
  * same story.
  *
- * The brand is the same idea every time — a pilgrim died, her blade
+ * The brand is the same idea every time — a pilgrim fell, her blade
  * remained — but the framing varies so consecutive runs don't read
  * identically when the player finds another one.
  *
@@ -29,16 +30,17 @@
  */
 const PILGRIM_BRAND_DROPS: readonly string[] = [
   "Under the moss, a blade wrapped in burnt cloth. The hilt is still warm. " +
-    "Someone walked these rooms before you, marked the way you are marked. " +
-    "They didn't walk back — the Reach kept them.",
+    "Someone came down here before you, marked the way you are marked, " +
+    "reaching for the same thing. She didn't carry herself out — the Reach " +
+    "bound her.",
   "A sword has been driven into the dirt to mark a grave. The wood around " +
     "it is charred. The name on the hilt is too faded to read; the Reach " +
-    "has already started writing its own name over hers.",
+    "set its own shape over hers before she could finish it.",
   "A scorched scabbard. The runes have melted into each other. Inside, the " +
     "blade is still hungry.",
   "A pilgrim's body kneels at the foot of an oak, long since dried to leather. " +
-    "Her hand is wrapped around the grip. It opens for you — one pilgrim handing " +
-    "the next what the deeper dark already took her for.",
+    "Her hand is wrapped around the grip. It opens for you — one climber handing " +
+    "the next what the deeper dark already bound her for.",
 ];
 
 /**

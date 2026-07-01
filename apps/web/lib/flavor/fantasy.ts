@@ -11,7 +11,10 @@
  *
  * Authoring note: the room narration variants intentionally repeat motifs
  * (cold wind, dripping water, broken stones) so the bank reads as the
- * same world even when individual lines vary.
+ * same world even when individual lines vary. Fantasy sits at the *alive*
+ * end of the finishing motif — wet, green, least-finished — and its
+ * archaeology is of the bound aspirants who came down before you (see
+ *  taxonomy / history).
  */
 
 import type { FlavorBank } from "./types";
@@ -26,7 +29,7 @@ const monsters = {
     attackVerbs: [
       "snarls and stabs you for {dmg}",
       "darts in low and pricks you for {dmg}",
-      "spits and slashes for {dmg}",
+      "half-remembers walking in on two feet, forgets, and slashes for {dmg}",
     ],
   },
   giant_rat: {
@@ -49,7 +52,7 @@ const monsters = {
     attackVerbs: [
       "slashes with a notched blade for {dmg}",
       "feints and stabs for {dmg}",
-      "snarls a curse and swings for {dmg}",
+      "rifles your pack for a way out it forgot it had, then swings for {dmg}",
     ],
   },
   skeleton: {
@@ -85,7 +88,7 @@ const monsters = {
     ac: 14,
     attackVerbs: [
       "rakes you with rotting claws for {dmg}",
-      "shrieks and lunges for {dmg}",
+      "tries to say a name — its own — gives up, and lunges for {dmg}",
     ],
     element: "unholy",
     weakTo: "holy",
@@ -123,7 +126,7 @@ const monsters = {
     ac: 14,
     attackVerbs: [
       "drifts through your guard and chills you for {dmg}",
-      "whispers your name and burns you for {dmg}",
+      "whispers your name in a voice that was a mortal's, and burns you for {dmg}",
     ],
     element: "ice",
     weakTo: "holy",
@@ -253,61 +256,69 @@ const bosses = {
 export const fantasyBank: FlavorBank = {
   presetDisplayName: "Fantasy",
   rooms: {
+    // Depth 1 — the Half-made. Barely-made climbers, shapes with intent; the
+    // world's traces of them are fresh and shallow.
     woodland_clearing: [
-      "Wet light through black trunks. The moss gives like something only just made.",
-      "Standing water, turned earth, the smell of rain that hasn't fallen. Birds won't come this deep.",
-      "The ground takes the shape of your step, holds it a moment, then smooths over.",
+      "Wet light through black trunks. The moss gives like something only just made — and bears one bootprint, half-formed, pressed by someone the Reach had only started to bind.",
+      "Standing water, turned earth, the smell of rain that hasn't fallen. Birds won't come this deep. A climber sat against that trunk once; the bark still holds the dent of a shoulder that stopped leaning.",
+      "The ground takes the shape of your step, holds it a moment, then smooths over — practising you, the way it practised the faint figures that wander the shallows here, too thinly made to remember their own names.",
     ],
     dark_grove: [
-      "The trees lean in as if reading you.",
-      "Water beads black at the foot of every trunk and refuses to fall.",
-      "Something has carved the same rune into the bark over and over, getting it wrong each time.",
+      "The trees lean in as if weighing you, the way they weighed the last one through — whose coat still hangs on a low branch, grown over.",
+      "Water beads black at the foot of every trunk and refuses to fall. Something the world half-made keeps circling these roots, looking for the way it came in.",
+      "Someone carved the same mark into the bark over and over, getting it wrong each time — a climber trying to name themselves down here, before they understood a name is only cut at the top.",
     ],
+    // Depth 2 — the Set. Aspirants fully set into the world's service; its
+    // wildlife, its dead, its keepers.
     stone_ruin: [
-      "Toppled columns, and the smell of rain on stone that was never outdoors.",
-      "Lichen-furred steps go down into half-light. The walls weep.",
-      "A broken altar, dark with stains that haven't finished drying.",
+      "Toppled columns, and the smell of rain on stone that was never outdoors. A door at the far end is barred — from your side, by a hand that wanted nothing else to follow it down.",
+      "Lichen-furred steps go down into half-light. The walls weep. Marks are scratched at shoulder height, each lower than the last, as one climber after another cut how far they got.",
+      "A broken altar, dark with stains still wet. Whoever knelt here is part of the floor now, set into the world's keeping.",
     ],
     crypt_hall: [
-      "A hall of dry air and chiselled names — more than one wall has run out of room.",
-      "Sarcophagi line both walls. One stands open, and clean inside.",
-      "Cold climbs from the flagstones like it's looking for you.",
+      "A hall of dry air and chiselled names — more than one wall has run out of room. These are not the world's dead. They are its staff: aspirants it bound to tend the door.",
+      "Sarcophagi line both walls. One stands open and clean inside, waiting — the world keeps a place ready for whoever it sets in next.",
+      "Cold climbs from the flagstones like it's looking for you. The Set used to be warm too, once, before the Reach gave them their work.",
     ],
     cavern: [
-      "Water drips somewhere out of sight, keeping a count.",
-      "The walls shimmer with damp; the rock is softer than rock should be.",
-      "Your torch hisses in air thick enough to drink.",
+      "Water drips somewhere out of sight, keeping a count — one for every climber the dark has taken in and set to work.",
+      "The walls shimmer with damp; the rock is softer than rock should be, worked smooth by hands the world no longer lets leave.",
+      "Your torch hisses in air thick enough to drink. Something set into this deep place breathes back, in time with you.",
     ],
     bone_pit: [
-      "Bones crunch underfoot. Too many are the wrong shape for animals.",
-      "A pit worn smooth by what's fallen in. The dark at the bottom is still wet.",
+      "Bones crunch underfoot. Too many are the wrong shape for animals — these were climbers, near enough the warden's depth to start wearing her nature.",
+      "A pit worn smooth by what's fallen in. The dark at the bottom is still wet, and what climbs from it half-remembers being someone who came down to try.",
     ],
+    // Near-boss — the Near-gods wear the warden's nature; the wet wood pulls tight.
     inner_sanctum: [
-      "The chamber holds its breath. Whatever the Reach kept here is waiting for you.",
-      "Tall windows, no light through them. The air in here was written wrong.",
+      "The chamber holds its breath. Whatever the Reach bound here is waiting for you — and so are the last climbers who got this far, grown into near-gods of her, half her thorns and half their own fear.",
+      "Tall windows, no light through them. The air in here was made wrong, the way the Hag was made wrong: an aspirant who stayed too long, worked into the room around her.",
     ],
   },
   bossPhases: {
+    // I · cling — the aspirant surfaces; the ruin names itself.
     forest_hag_phase2: [
-      "The Hag laughs through broken teeth. Her thorns sharpen.",
-      "Bramble erupts from the ground. She walks lighter now.",
-      "For a breath her eyes hold a reader's fear — then the Reach pours back in, and she is only the Hag again.",
+      "The Hag laughs through broken teeth, and her thorns sharpen — the Reach defending what it made of her.",
+      "Bramble erupts from the ground. She walks lighter now, the way someone walks who has decided never to climb back out.",
+      "For a breath her eyes hold a mortal's fear — I only wanted to keep it, the wet wood says, in her voice — then the Reach pours back in, and she is only the Hag again.",
     ],
+    // Community wardens — bound aspirants in the same dialect, each a variation
+    // on the same three ruins (cling / hoard / linger).
     lich_phase2: [
-      "The Lich raises both hands; the air grows colder.",
-      "Black light blooms behind the Lich's ribs.",
+      "The Lich raises both hands; the air grows colder, the way a mortal goes cold who hoarded years instead of a name.",
+      "Black light blooms behind the Lich's ribs — and for a breath, the terror of an aspirant who has outlasted everything but the door he won't walk.",
     ],
     dragon_phase2: [
-      "The Dragon's scales darken. It draws a deep, slow breath.",
-      "Its wings unfurl. The room shrinks.",
+      "The Dragon's scales darken. It draws a deep, slow breath over the pile it could not bear to leave.",
+      "Its wings unfurl and the room shrinks. The greed remembers it was once only fear — fear of climbing out empty-handed.",
     ],
     warden_phase2: [
-      "Stone scrapes on stone. The Warden's body knits itself thicker.",
-      "Cracks bloom across its surface — then close again.",
+      "Stone scrapes on stone. The Stone Warden knits itself thicker, a climber who stood at the last door so long the door took the offer literally.",
+      "Cracks bloom across its surface, then close again — something in there only meant to wait until the next one came, and waited past himself.",
     ],
     vampire_phase2: [
-      "The Vampire smiles. Its eyes are no longer red.",
-      "It steps through its own shadow, faster than it should be.",
+      "The Vampire smiles. Its eyes are no longer red — only a mortal's, bargaining for one more warm night not ending.",
+      "It steps through its own shadow, faster than it should be. The thirst was always just the fear of going cold and being bound.",
     ],
   },
   roomTemplates: [

@@ -33,7 +33,20 @@ import type {
 } from "@/lib/engine/types";
 import { useElementLabel } from "@/lib/contracts/adapters";
 import { elementColor } from "@/lib/ui/loot-visuals";
+import { faceGhost, holdPulse, washShift, withReducedMotion } from "@/lib/ui/motion";
 import { Chip } from "@/components/ui";
+
+/**
+ * How charged the stage is right now, derived from the live encounter. Drives
+ * the reactive backdrop layers in `StageReactions` (all aria-hidden, behind
+ * the centred content — never the content box itself, so the fixed-height
+ * zero-jump guarantee holds).
+ *   - calm   — no active combat (between rooms / aftermath)
+ *   - engaged— a fight underway, the enemy still healthy
+ *   - lowhp  — the enemy is nearly down (a kill is close); danger breathes
+ *   - phase2 — a boss has turned; the kept reader surfaces, the wash shifts
+ */
+type Intensity = "calm" | "engaged" | "lowhp" | "phase2";
 
 type DamageFloat = { id: number; text: string; color: string };
 
@@ -216,6 +229,95 @@ function CombatStage({
   );
 }
 
+/**
+ * A face suggested out of pure light — four stacked radial-gradients in the
+ * realm's foreground ink (two eyes, a mouth, a soft skull halo) at low alpha.
+ * NOT art: it reads as a presence half-surfacing through the wash, the kept
+ * reader buried in the warden. Always behind the content, always aria-hidden.
+ */
+const GHOST_FACE = [
+  "radial-gradient(7% 4.5% at 43% 41%, color-mix(in oklab, var(--color-preset-fg) 13%, transparent), transparent 70%)",
+  "radial-gradient(7% 4.5% at 57% 41%, color-mix(in oklab, var(--color-preset-fg) 13%, transparent), transparent 70%)",
+  "radial-gradient(15% 3.5% at 50% 57%, color-mix(in oklab, var(--color-preset-fg) 10%, transparent), transparent 75%)",
+  "radial-gradient(34% 44% at 50% 47%, color-mix(in oklab, var(--color-preset-fg) 6%, transparent), transparent 72%)",
+].join(",");
+
+/**
+ * The reactive backdrop. Every layer is an aria-hidden, -z-10 absolute sibling
+ * sitting BEHIND the centred content box, so the stage's outer geometry never
+ * shifts — the zero-jump guarantee survives every transition. Nothing here is
+ * interactive or readable; it only makes the screen *feel* the fight escalate.
+ */
+function StageReactions({
+  intensity,
+  reduced,
+  ghostReveal,
+  showGhost,
+}: {
+  intensity: Intensity;
+  reduced: boolean | null;
+  ghostReveal: number;
+  showGhost: boolean;
+}) {
+  const danger = intensity === "lowhp" || intensity === "phase2";
+  return (
+    <>
+      {/* Wash shift: a hostile danger tint cross-fades up as the fight turns
+          dire (low HP) or the warden turns (phase 2). Opacity-only fade so we
+          never interpolate a `background` string. */}
+      <AnimatePresence>
+        {danger && (
+          <motion.div
+            key="danger-wash"
+            aria-hidden
+            className="absolute inset-0 -z-10"
+            style={{
+              background:
+                "radial-gradient(120% 95% at 50% 0%, color-mix(in oklab, var(--color-danger) 30%, transparent) 0%, transparent 58%)",
+            }}
+            variants={withReducedMotion(washShift, reduced)}
+            initial="out"
+            animate="in"
+            exit="out"
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Low-HP danger pulse: a vignette breathing up from the floor as the
+          kill nears. Keyframe variant → guarded by !reduced. */}
+      {danger && !reduced && (
+        <motion.div
+          aria-hidden
+          className="absolute inset-0 -z-10"
+          style={{
+            background:
+              "radial-gradient(100% 80% at 50% 100%, color-mix(in oklab, var(--color-danger) 24%, transparent) 0%, transparent 55%)",
+          }}
+          variants={holdPulse}
+          initial="rest"
+          animate="pulse"
+        />
+      )}
+
+      {/* Kept-reader ghost: the face half-surfaces under the warden. Re-keyed
+          on the reveal nonce and on the phase turn so it blooms again on
+          boss-start and when the warden flips. Suppressed under reduced
+          motion. */}
+      {showGhost && !reduced && (
+        <motion.div
+          key={`ghost:${ghostReveal}:${intensity === "phase2" ? "p2" : "p1"}`}
+          aria-hidden
+          className="absolute inset-0 -z-10"
+          style={{ background: GHOST_FACE }}
+          variants={faceGhost}
+          initial="hidden"
+          animate="bloom"
+        />
+      )}
+    </>
+  );
+}
+
 const KIND_LABEL: Record<NonNullable<EncounterState>["kind"], string> = {
   combat: "Encounter",
 };
@@ -233,15 +335,38 @@ export function EncounterStage({
   encounter,
   intro,
   activePreset = null,
+  ghostReveal = 0,
 }: {
   encounter: EncounterState | null;
   /** Narration line emitted when the room was generated. */
   intro: string;
   /** Active realm preset, for element-label vocabulary. */
   activePreset?: Preset | null;
+  /**
+   * A monotonically-bumped nonce. When it changes the kept-reader ghost blooms
+   * again — the caller pulses it on boss-start so the face surfaces under the
+   * warden's name. `0` (the default) means "never pulsed".
+   */
+  ghostReveal?: number;
 }) {
+  const reduced = useReducedMotion();
   const isCombat = encounter?.kind === "combat";
   const kindLabel = encounter ? KIND_LABEL[encounter.kind] : "Aftermath";
+
+  // Read the live fight to pick the stage's emotional charge. `calm` between
+  // rooms; otherwise the enemy's HP and a boss's phase decide whether the
+  // backdrop merely simmers (engaged), breathes danger (lowhp), or turns
+  // (phase2). The ghost only belongs to bosses.
+  const combat = encounter?.kind === "combat" ? encounter.combat : null;
+  const monster = combat?.monster;
+  const isBoss = !!monster && "bakedEffects" in monster;
+  let intensity: Intensity = "calm";
+  if (combat && monster) {
+    const maxHp = isBoss ? monster.baseHp : monster.hp;
+    const pct = maxHp <= 0 ? 0 : (combat.monsterHp / maxHp) * 100;
+    const phase2 = isBoss && (combat.bossPhase ?? 0) >= 2;
+    intensity = phase2 ? "phase2" : pct <= 25 ? "lowhp" : "engaged";
+  }
 
   // Combat runs hot (danger-tinted vignette); everything else takes a calm
   // accent wash so the stage still reads as "in the world" between fights.
@@ -260,6 +385,12 @@ export function EncounterStage({
         aria-hidden
         className="absolute inset-0 -z-10 opacity-40"
         style={{ backgroundImage: "var(--preset-texture)" }}
+      />
+      <StageReactions
+        intensity={intensity}
+        reduced={reduced}
+        ghostReveal={ghostReveal}
+        showGhost={isBoss}
       />
 
       {/*
