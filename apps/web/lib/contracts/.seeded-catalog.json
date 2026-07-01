@@ -15,7 +15,7 @@
         "dodge_chance"
       ]
     },
-    "seededAt": "2026-06-27T09:32:09.283Z"
+    "seededAt": "2026-07-01T19:49:51.316Z"
   },
   "$schema": "Per-chainId map of the deployed CatalogEffectRegistry address + per-schema effect lists, written by `pnpm seed:catalog`. Placeholder zeros until the seeder runs."
 }
