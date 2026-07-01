@@ -10,11 +10,13 @@
  * Pure presentation — beats live in `lib/story/coldOpen.ts`.
  */
 
-import { useCallback, useState } from "react";
+import { useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { Panel, Button, Body, Footnote, Rule, Stamp } from "@/components/ui";
-import { warpCrossfade, withReducedMotion } from "@/lib/ui/motion";
+import { Panel, Button, Footnote, Rule, Stamp } from "@/components/ui";
+import {
+  CinematicBeatPlayer,
+  type RenderFrameArgs,
+} from "@/components/story/CinematicBeatPlayer";
 import {
   COLD_OPEN_BOOK,
   COLD_OPEN_STORAGE_KEY,
@@ -40,53 +42,42 @@ export function ColdOpenBook({
   onWake?: () => void;
 }) {
   const router = useRouter();
-  const reduced = useReducedMotion();
-  const [pageIdx, setPageIdx] = useState(0);
-  const isLast = pageIdx === COLD_OPEN_BOOK.length - 1;
-  const beat = COLD_OPEN_BOOK[pageIdx]!;
 
-  const advance = useCallback(() => {
-    if (isLast) {
-      try {
-        window.localStorage.setItem(COLD_OPEN_STORAGE_KEY, "1");
-      } catch {
-        // localStorage unavailable (private mode / SSR) — proceed anyway.
-      }
-      if (onWake) onWake();
-      else router.push(wakeHref);
-      return;
+  // Walking past the final page is the only place the cold-open is "consumed":
+  // flip the localStorage gate so returning visitors don't re-read the Book,
+  // then hand off (in-place reveal via `onWake`, or a route push as fallback).
+  const handleComplete = useCallback(() => {
+    try {
+      window.localStorage.setItem(COLD_OPEN_STORAGE_KEY, "1");
+    } catch {
+      // localStorage unavailable (private mode / SSR) — proceed anyway.
     }
-    setPageIdx((i) => i + 1);
-  }, [isLast, onWake, router, wakeHref]);
+    if (onWake) onWake();
+    else router.push(wakeHref);
+  }, [onWake, router, wakeHref]);
 
   return (
-    <Panel
-      as="article"
-      tone="parchment"
-      aria-label="Cold open"
-      className="mx-auto flex w-full max-w-2xl flex-col gap-5 p-8"
-    >
-      <header className="flex items-center justify-between gap-3">
-        <Stamp>{beat.stamp}</Stamp>
-        <span className="font-mono text-[10px] uppercase tracking-[0.3em] opacity-60">
-          {String(pageIdx + 1).padStart(2, "0")} / {String(COLD_OPEN_BOOK.length).padStart(2, "0")}
-        </span>
-      </header>
-
-      <Rule />
-
-      <AnimatePresence mode="wait">
-        <motion.div
-          key={pageIdx}
-          variants={withReducedMotion(warpCrossfade, reduced)}
-          initial="enter"
-          animate="center"
-          exit="exit"
-          className="flex flex-col gap-3"
+    <CinematicBeatPlayer
+      beats={COLD_OPEN_BOOK}
+      onComplete={handleComplete}
+      sigPrefix="cold-open"
+      renderFrame={({ beat, index, total, isLast, children, advance }: RenderFrameArgs) => (
+        <Panel
+          as="article"
+          tone="parchment"
+          aria-label="Cold open"
+          className="mx-auto flex w-full max-w-2xl flex-col gap-5 p-8"
         >
-          {beat.body.map((line, i) => (
-            <Body key={i}>{line}</Body>
-          ))}
+          <header className="flex items-center justify-between gap-3">
+            <Stamp>{beat.stamp}</Stamp>
+            <span className="font-mono text-[10px] uppercase tracking-[0.3em] opacity-60">
+              {String(index + 1).padStart(2, "0")} / {String(total).padStart(2, "0")}
+            </span>
+          </header>
+
+          <Rule />
+
+          {children}
 
           {beat.footnote && (
             <>
@@ -94,19 +85,15 @@ export function ColdOpenBook({
               <Footnote>{beat.footnote}</Footnote>
             </>
           )}
-        </motion.div>
-      </AnimatePresence>
 
-      <footer className="flex items-center justify-end pt-1">
-        <Button
-          intent="primary"
-          size={isLast ? "lg" : "md"}
-          onClick={advance}
-        >
-          {beat.cta} →
-        </Button>
-      </footer>
-    </Panel>
+          <footer className="flex items-center justify-end pt-1">
+            <Button intent="primary" size={isLast ? "lg" : "md"} onClick={advance}>
+              {beat.cta} →
+            </Button>
+          </footer>
+        </Panel>
+      )}
+    />
   );
 }
 

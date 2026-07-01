@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { COLD_OPEN_BOOK, COLD_OPEN_STORAGE_KEY } from "./coldOpen";
 
-describe("cold-open Book", () => {
-  it("has five beats walking page-found → wake", () => {
+describe("cold-open — the branding at the threshold", () => {
+  it("has five beats walking arrival → wake", () => {
     expect(COLD_OPEN_BOOK).toHaveLength(5);
   });
 
@@ -22,8 +22,8 @@ describe("cold-open Book", () => {
     expect(last.cta).toBe("Wake");
   });
 
-  it("storage key is versioned so a future rewrite can re-introduce the Book", () => {
-    expect(COLD_OPEN_STORAGE_KEY).toBe("seed-protocol:cold-open-consumed.v2");
+  it("storage key is versioned so a future rewrite can re-introduce the opening", () => {
+    expect(COLD_OPEN_STORAGE_KEY).toBe("seed-protocol:cold-open-consumed.v3");
     expect(COLD_OPEN_STORAGE_KEY).toMatch(/\.v\d+$/);
   });
 });

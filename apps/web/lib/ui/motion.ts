@@ -50,6 +50,64 @@ export const escrowFly: Variants = {
   lost: { opacity: 0, scale: 0.9, filter: "blur(4px)", transition: transitionSlow },
 };
 
+// ── Cinematic vocabulary (story beats) ────────────────────────────────────
+// Used by `CinematicBeatPlayer` and the warden/loot reveals. Scalar-opacity
+// variants flatten correctly through `withReducedMotion`; the keyframe-array
+// ones (holdPulse/faceGhost/lootGlow) do NOT — guard those with an explicit
+// `!reduced` check on the `animate` prop, the way EncounterStage/AssetCard do.
+
+/** Per-line dramatic rise — a body line lifting into place. Lives inside a
+ *  `lineStagger` container so a beat reveals one line at a time. */
+export const lineReveal: Variants = {
+  hidden: { opacity: 0, y: 10 },
+  visible: { opacity: 1, y: 0, transition: transitionSlow },
+};
+
+/** Slow stagger container for the dramatic per-line reveal (~0.5s apart). */
+export const lineStagger: Variants = {
+  hidden: {},
+  visible: { transition: { staggerChildren: 0.5, delayChildren: 0.12 } },
+};
+
+/** A black layer blooming over the frame for a scene cut, then clearing. */
+export const fadeToBlack: Variants = {
+  clear: { opacity: 0 },
+  black: { opacity: 1, transition: transitionSlow },
+};
+
+/** Cross-fade a stacked backdrop wash layer in. Opacity only — never
+ *  interpolate `background` strings (Framer can't tween gradient stops). */
+export const washShift: Variants = {
+  out: { opacity: 0 },
+  in: { opacity: 1, transition: transitionSlow },
+};
+
+/** Slow breathing emphasis on a held line. Keyframe array — `!reduced` only. */
+export const holdPulse: Variants = {
+  rest: { opacity: 1 },
+  pulse: {
+    opacity: [1, 0.7, 1],
+    transition: { duration: 2.4, ease: "easeInOut", repeat: Infinity },
+  },
+};
+
+/** Momentary kept-reader face bloom — swells, then settles to a faint trace.
+ *  Keyframe array — `!reduced` only. */
+export const faceGhost: Variants = {
+  hidden: { opacity: 0 },
+  bloom: {
+    opacity: [0, 0.16, 0.05],
+    transition: { duration: 2.8, ease: "easeOut", times: [0, 0.4, 1] },
+  },
+};
+
+/** Dramatic high-tier loot card entrance — rises and settles. Pair with a
+ *  caller-owned one-shot glow keyframe (guarded by `!reduced`). */
+export const lootReveal: Variants = {
+  hidden: { opacity: 0, y: 14, scale: 0.96 },
+  visible: { opacity: 1, y: 0, scale: 1, transition: transitionSlow },
+};
+
 /**
  * Collapse any preset to an instant fade when the user prefers reduced
  * motion. Pass the boolean from framer-motion's `useReducedMotion()`.
