@@ -98,7 +98,7 @@ export function GenesisLedger({
                 ? "There was never a Name to be given. Carve it."
                 : "Three sparks, one Name"}
           </h2>
-          <p className="max-w-[58ch] text-sm leading-relaxed opacity-75">
+          <p className="text-sm leading-relaxed opacity-75">
             {progress.hasSeed
               ? "Your name sits on the roll where three aspirants' names trail off unfinished — the ones who clung, who stole, who tried to end the Work. You did none of those. The Name is soulbound: it cannot be forked, bought, or forged, because it is not a thing you hold. It is the proof that you carved yourself out."
               : allShardsRecovered

@@ -98,7 +98,7 @@ function ForgeRoom() {
         <h3 className="font-mono text-xl font-medium tracking-[-0.015em]">
           The forge
         </h3>
-        <p className="max-w-[58ch] text-sm leading-relaxed opacity-75">
+        <p className="text-sm leading-relaxed opacity-75">
           You have a name now, and a name is what it takes to finish a world of
           your own. Raise one from the unfinished — name it, pick its substance
           and the warden that holds its heart, and set it turning for the next

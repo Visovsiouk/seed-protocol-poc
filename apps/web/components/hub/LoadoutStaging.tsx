@@ -283,7 +283,7 @@ export function LoadoutStaging({
           <h2 className="font-mono text-2xl font-medium tracking-[-0.015em]">
             {resolved.name}
           </h2>
-          <p className="max-w-[58ch] text-sm leading-relaxed opacity-75">
+          <p className="text-sm leading-relaxed opacity-75">
             Choose what crosses with you. Once you step through, the loadout
             is sealed for the whole delve — there is no changing gear in the
             dark.
