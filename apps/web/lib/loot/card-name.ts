@@ -55,14 +55,20 @@ export function cardDisplayName(
     source.element ?? source.resistElement,
   );
   const isOverride = source.name !== sourceEvocative;
-  const evocative = isOverride
-    ? display.name
-    : evocativeName(
-        preset,
-        display.tokenId,
-        display.tier,
-        display.element ?? display.resistElement,
-      );
+  // Overrides (story-objects, hand-authored starter gear) are already a
+  // complete headline — appending the TYPE label on top would double up
+  // names like starter gear's "Rusted Shortsword" + "Shortsword". Pass
+  // the override through verbatim, in every realm (see module docstring).
+  if (isOverride) {
+    return display.name;
+  }
+
+  const evocative = evocativeName(
+    preset,
+    display.tokenId,
+    display.tier,
+    display.element ?? display.resistElement,
+  );
 
   const typeLabel =
     display.slot === "weapon"
