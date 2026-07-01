@@ -4,9 +4,9 @@
  * The pocket realm — the hideout the player wakes into, and the base/HQ the
  * whole pre-descent game runs out of (poc rework).
  *
- * Pre-arc it stays a *narrow door*: the cold-open Book / single Continue card
- * (owned by `RealmSelector`), with loadout staging taking over once a door is
- * picked. The world is deliberately small until the three founding doors are
+ * Pre-arc it stays a *narrow door*: the cold-open branding / single Continue
+ * card (owned by `RealmSelector`), with loadout staging taking over once a door
+ * is picked. The world is deliberately small until the three founding doors are
  * walked.
  *
  * Post-arc it opens into the **HQ shell** — a titled base with a status strip
@@ -15,7 +15,7 @@
  *
  *   - **Doors**  — the realm picker (`RealmSelector`) → `LoadoutStaging`.
  *   - **Market** — the bazaar surface (listings + sales + leaderboards).
- *   - **Altar**  — the Seed-claim credential ledger (when eligible / held).
+ *   - **Altar**  — the Name credential ledger (when eligible / carved).
  *   - **Forge**  — a workshop room that opens the realm-creation ceremony.
  *
  * Stations cross-fade with the realm-warp motion so moving between rooms reads
@@ -55,11 +55,11 @@ const STATIONS: { id: Station; label: string }[] = [
   { id: "forge", label: "The Forge" },
 ];
 
-/** Three diamond glyphs marking shards recovered (mirrors RealmSelector). */
+/** Three diamond glyphs marking sparks kindled (mirrors RealmSelector). */
 function ShardTrack({ shards }: { shards: number }) {
   return (
     <div
-      aria-label={`Shards recovered: ${shards} of 3`}
+      aria-label={`Sparks kindled: ${shards} of 3`}
       className="flex items-center gap-1.5"
     >
       {[0, 1, 2].map((i) => {
@@ -99,9 +99,10 @@ function ForgeRoom() {
           The forge
         </h3>
         <p className="max-w-[58ch] text-sm leading-relaxed opacity-75">
-          You&apos;ve seen enough doors to build one. Stand up your own realm —
-          name it, pick its genre and final boss, and seed it into the
-          protocol. Step through to the forge floor.
+          You have a name now, and a name is what it takes to finish a world of
+          your own. Raise one from the unfinished — name it, pick its substance
+          and the warden that holds its heart, and set it turning for the next
+          aspirant to descend. Step through to the forge floor.
         </p>
       </header>
       <Link href="/create" prefetch className="self-start">
@@ -145,7 +146,7 @@ function HideoutHeader({
           <span className="uppercase tracking-widest opacity-60">Cleared</span>
           <ShardTrack shards={progress.distinctClears} />
         </div>
-        {progress.hasSeed && <Chip color="var(--color-ok)" label="Seed held" />}
+        {progress.hasSeed && <Chip color="var(--color-ok)" label="Name carved" />}
         <span className="tabular-nums opacity-70">{ownedCount} owned</span>
       </div>
     </Panel>
@@ -158,10 +159,10 @@ export function PocketRealmHub() {
     useTutorialProgress(address).data ?? emptyTutorialProgress();
   const inventory = useInventoryCards(address).data ?? [];
   const arcCompleted = progress.starterClears >= 3 || progress.hasSeed;
-  // The chest (Altar) is browsable the moment the first key turns — keys
+  // The Altar is browsable the moment the first spark kindles — sparks
   // accumulate visibly across the arc, and the arc-completing clear deep-links
-  // here via `/?station=altar`. Eligibility to *claim* is still gated inside
-  // GenesisLedger; this only decides whether the station is reachable.
+  // here via `/?station=altar`. Eligibility to carve the Name is still gated
+  // inside GenesisLedger; this only decides whether the station is reachable.
   const altarOpen = progress.starterClears > 0 || progress.hasSeed;
 
   const [selected, setSelected] = useState<RealmSelection | null>(null);
@@ -223,8 +224,8 @@ export function PocketRealmHub() {
         ) : (
           <div className="flex w-full flex-col items-center gap-6">
             <RealmSelector onSelectRealm={setSelected} />
-            {/* Once the first key turns, the chest surfaces under the picker so
-                the player watches their keys accumulate between descents. */}
+            {/* Once the first spark kindles, the Altar surfaces under the picker
+                so the player watches their sparks accumulate between descents. */}
             {progress.starterClears > 0 && <GenesisLedger />}
           </div>
         )}

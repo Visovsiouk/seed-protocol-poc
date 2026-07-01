@@ -67,13 +67,15 @@ export function GearTranslationScreen({
         </header>
         <Rule />
         <h3 className="font-mono text-lg leading-snug font-medium text-[var(--color-preset-accent)]">
-          What you carried changes shape.
+          The world re-makes what you carried.
         </h3>
         <Body size="sm">
-          The same blade, the same coat, the same token in the same wallet —
-          the same self, only the dialect changes. The ground beneath you
-          speaks differently here, so the protocol translates what you carry.
-          Watch.
+          These were a fallen aspirant&apos;s tools before they were yours —
+          things carried as far as their last hand could carry them. This world
+          is made of a different substance than the one that forged them, so a
+          true tool re-makes itself to the new world&apos;s law as you cross: the
+          same token in the same wallet, the same scar, re-shaped to what holds
+          here. Nothing is added and nothing is lost — only re-made. Watch.
         </Body>
 
         <div className="flex flex-col gap-4">

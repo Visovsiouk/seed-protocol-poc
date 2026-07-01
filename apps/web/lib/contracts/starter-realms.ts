@@ -79,17 +79,17 @@ const STARTER_DISPLAY_BY_PRESET: Record<Preset, { name: string; tagline: string 
   fantasy: {
     name: "The Hollow Reach",
     tagline:
-      "Wet stone, oil-rust banners, and the Forest Hag's wet laughter from somewhere ahead.",
+      "An unfinished world still wet and growing, wild at the least-made edge of creation. Somewhere ahead, the Forest Hag laughs — an aspirant who loved it too much to leave, and wears it now as a face.",
   },
   scifi: {
     name: "Drift Station Ker-7",
     tagline:
-      "A dead colony ship on a long elliptical, frost creeping across the inside of the hull. Something rebooted the core last cycle.",
+      "A world finished into silence, frost sealing the inside of the hull. Something at the core tried to write the last line of creation — and is still holding it shut.",
   },
   cyberpunk: {
     name: "Black Ice District",
     tagline:
-      "Neon bleeds on wet concrete. The ICE knows your name before you give it. Everything down here that watches is also counting.",
+      "A world half-set, neon curing on wet concrete. The ICE at its heart knows your name before you give it — it wears a name it tried to steal, and could not.",
   },
 };
 

@@ -567,7 +567,7 @@ function PreArcBase({
       aria-label="The base"
       className="flex flex-col gap-6 w-full max-w-5xl"
     >
-      <header className="flex flex-col gap-4 max-w-2xl">
+      <header className="flex flex-col gap-4">
         <Rule />
         <Stamp>{first ? "The base" : "Between descents"}</Stamp>
         <h2 className="font-mono text-xl leading-snug font-medium tracking-[-0.015em]">
@@ -577,8 +577,8 @@ function PreArcBase({
         </h2>
         <Body size="sm">
           {first
-            ? "The fall just stops, and the floor is under you — a small dry room drawn close as a held breath, the gap the protocol keeps between its worlds. This is where it sets you down between descents to weigh what you're becoming before it lets you go deeper. The mark on your hand has gone quiet here: not cold, only waiting. It does its counting below, never in this room. Three ways down lead off the walls. Two are sealed flat — no seam, no handle, no name — and stay that way until you've gone deep enough to earn the breaking of them. The nearest already stands open. Go down."
-            : "The room draws close around you again, quiet as a held breath, and the mark warms the moment you turn to the wall — it remembers what it counted last time. One more seal has given way since you passed through; the rest keep their names a while longer. Go down."}
+            ? "The fall just stops, and the floor is under you — a small bare room at the foot of the worlds, drawn close as a held breath. This is where a mortal stands between descents to weigh what they're becoming: a maker who will carry themselves back up and carve a name, or one more the worlds set into themselves as a guardian. The brand on your hand has gone quiet here — not cold, only waiting; it is half a name, and it knows it. It does its counting below, never in this room. Three ways down lead off the walls, one to each unfinished world. Two are sealed flat — no seam, no handle, no name — and stay that way until you've gone deep enough to earn the breaking of them. The nearest already stands open. Go down."
+            : "The room draws close around you again, quiet as a held breath, and the brand warms the moment you turn to the wall — it remembers what it counted last time. One more seal has given way since you passed through; the rest keep their worlds a while longer. Go down."}
         </Body>
         <Rule tone="muted" />
       </header>
@@ -627,7 +627,7 @@ function OpenPickerHero({ progress }: { progress: TutorialProgress }) {
 function ShardTrack({ shards }: { shards: number }) {
   return (
     <div
-      aria-label={`Shards recovered: ${shards} of 3`}
+      aria-label={`Sparks kindled: ${shards} of 3`}
       className="flex items-center gap-1.5"
     >
       {[0, 1, 2].map((i) => {

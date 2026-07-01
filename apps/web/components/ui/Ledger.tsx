@@ -69,7 +69,7 @@ export function Stamp({
 // reads as a written page note, not UI text. `sm` tightens it for cards.
 
 const body = tv({
-  base: "font-mono italic leading-[1.75] tracking-[-0.005em] opacity-85 max-w-[62ch]",
+  base: "font-mono italic leading-[1.75] tracking-[-0.005em] opacity-85",
   variants: {
     size: { sm: "text-[13px]", md: "text-[14.5px]" },
   },

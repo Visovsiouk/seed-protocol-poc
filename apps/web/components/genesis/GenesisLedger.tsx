@@ -1,14 +1,14 @@
 "use client";
 
 /**
- * The Seed-claim credential, presented as the *three shards and the Seed
- * they complete*. Each founding realm gives up one
- * shard when its boss falls; the Altar is where the shards are pressed
- * whole — the fusion that is the real on-chain SeedSBT mint. A realm still
- * below stays *unnamed* — "?????" — to preserve the next-realm surprise,
- * exactly like the base picker. A recovered shard lights its plate with the
- * realm's own accent and reveals its name. When all three are in hand the
- * luminous "Claim my Seed" CTA unseals.
+ * The Name credential, presented as the *three sparks that kindle your
+ * true-name*. Each founding world gives up one spark
+ * when its warden falls; the Altar is where the three sparks kindle the
+ * Name — the self-naming that is the real on-chain SeedSBT mint. A world
+ * still below stays *unnamed* — "?????" — to preserve the next-realm
+ * surprise, exactly like the base picker. A kindled spark lights its plate
+ * with the world's own accent and reveals its name. When all three are in
+ * hand the luminous "Speak your Name" CTA unseals.
  *
  * Reconstructed honestly from chain: it reads the player's per-realm
  * `BossCleared` history via `useTutorialProgress` and posts to
@@ -66,7 +66,7 @@ export function GenesisLedger({
     try {
       const r = await claimSeed();
       setResult(r);
-      // The Seed is what lets a reader write — send the player to the Forge.
+      // The Name is what lets a maker finish worlds — send them to the Forge.
       if (onClaimed) onClaimed();
       else router.push("/?station=forge");
     } catch {
@@ -85,34 +85,34 @@ export function GenesisLedger({
       >
         <header className="flex flex-col gap-3">
           <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <Stamp>Seed credential</Stamp>
+            <Stamp>The makers&apos;-roll</Stamp>
             <span className="font-mono text-[10px] uppercase tracking-widest opacity-65">
-              {shardsRecovered} / {STARTERS.length} shards
+              {shardsRecovered} / {STARTERS.length} sparks
             </span>
           </div>
           <Rule />
           <h2 className="font-mono text-2xl font-medium tracking-[-0.015em]">
             {progress.hasSeed
-              ? "The Seed is yours"
+              ? "Your name is on the roll now"
               : allShardsRecovered
-                ? "Press the three shards whole"
-                : "Three shards, one Seed"}
+                ? "There was never a Name to be given. Carve it."
+                : "Three sparks, one Name"}
           </h2>
           <p className="max-w-[58ch] text-sm leading-relaxed opacity-75">
             {progress.hasSeed
-              ? "The three shards are pressed whole, and the Seed travels with you now — fused on-chain from the same receipts that earned it."
+              ? "Your name sits on the roll where three aspirants' names trail off unfinished — the ones who clung, who stole, who tried to end the Work. You did none of those. The Name is soulbound: it cannot be forked, bought, or forged, because it is not a thing you hold. It is the proof that you carved yourself out."
               : allShardsRecovered
-                ? "All three shards rest on the Altar. Press them together — the server rebuilds your proof from the same on-chain receipts and fuses the Seed into your wallet."
-                : "Each founding realm gives up one shard when its warden falls. The realms still below keep their shards — and their names — until you go down to them."}
+                ? "Here is what the wardens never understood: no one hands down a Name. The Altar is the makers'-roll from the threshold, and the three sparks are the fire. Bring them together and you are not claiming anything — you are carving your own name into the last empty place on the roll, where the bound aspirants could not reach. The brand on your hand has been a half-finished name since the first door. Finish it."
+                : "Each founding world gives up a spark when its warden falls. The worlds still below keep their sparks — and their names — until you go down to them. Kindle all three at the Altar and you will learn what the sparks are really for."}
           </p>
         </header>
 
-        {/* The Seed in pieces: three shard plates, one per founding realm. A
-            recovered shard lights its plate with the realm's accent and reveals
-            the name; a shard still below stays dim and unnamed to preserve the
+        {/* The Name in kindling: three spark plates, one per founding world. A
+            kindled spark lights its plate with the world's accent and reveals
+            the name; a spark still below stays dim and unnamed to preserve the
             surprise. */}
         <div
-          aria-label="The three shards of the Seed"
+          aria-label="The three sparks of your Name"
           className="grid grid-cols-1 gap-3 sm:grid-cols-3"
         >
           {STARTERS.map((s) => {
@@ -121,7 +121,7 @@ export function GenesisLedger({
               <div
                 key={s.realm}
                 data-preset={s.preset}
-                aria-label={recovered ? `${s.name} — shard recovered` : "Shard still below"}
+                aria-label={recovered ? `${s.name} — spark kindled` : "Spark still below"}
                 className="flex flex-col items-center gap-2 rounded-md p-4 text-center transition"
                 style={{
                   border: recovered
@@ -162,7 +162,7 @@ export function GenesisLedger({
                 </span>
                 <Chip
                   color={recovered ? "var(--color-preset-accent)" : "var(--border-2)"}
-                  label={recovered ? "Shard recovered" : "Still below"}
+                  label={recovered ? "Spark kindled" : "Still below"}
                 />
               </div>
             );
@@ -171,10 +171,10 @@ export function GenesisLedger({
 
         <footer className="flex flex-col gap-3 pt-1">
           {progress.hasSeed ? (
-            <Chip color="var(--color-ok)" label="Seed claimed" />
+            <Chip color="var(--color-ok)" label="Name carved" />
           ) : !walletConnected ? (
             <p className="text-sm opacity-70">
-              Connect your wallet to claim the Seed bound to your clears.
+              Connect your wallet to carve the Name your clears have earned.
             </p>
           ) : result ? (
             <Panel
@@ -186,7 +186,7 @@ export function GenesisLedger({
               }}
             >
               <span className="text-sm font-medium text-[var(--color-ok)]">
-                Seed minted to your wallet
+                The name takes. It is yours, and only yours.
               </span>
               <span className="font-mono text-[11px] opacity-70">
                 via {shortAddr(result.realm)} · tx{" "}
@@ -202,12 +202,12 @@ export function GenesisLedger({
                 onClick={handleClaim}
                 disabled={!progress.eligibleForSeed || isPending}
               >
-                {isPending ? "Minting your Seed…" : "Claim my Seed"}
+                {isPending ? "Carving your Name…" : "Speak your Name"}
               </Button>
               {!progress.eligibleForSeed && (
                 <p className="text-xs opacity-65">
-                  Recover all three shards — clear all three founding realms —
-                  before they can be pressed whole.
+                  Kindle all three sparks — clear all three founding worlds —
+                  before the Name can be carved.
                 </p>
               )}
               {error && (
