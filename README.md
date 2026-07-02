@@ -239,6 +239,11 @@ For a public-ish deployment where users connect their **own** wallets from other
 devices against a shared local anvil, use the two-layer scripts. The chain layer
 is long-lived and owns all on-chain state; the app layer is freely restartable.
 
+> **Internet-facing demo?** Use the full kit in [`deploy/`](deploy/README.md)
+> instead: TLS via Caddy, a JSON-RPC allowlist proxy that hides anvil's cheat
+> methods, fresh (non-public) chain keys, systemd units, and nightly state
+> snapshots. The notes below cover a trusted-LAN setup only.
+
 ### Prerequisites
 
 - A Linux host with Node ≥ 20, pnpm 11, Foundry (`anvil` + `forge`)

@@ -1,0 +1,8 @@
+[Unit]
+Description=Snapshot Realms demo chain state + realm registry
+
+[Service]
+Type=oneshot
+User=realms
+WorkingDirectory=/home/realms/seed-protocol-poc
+ExecStart=/usr/bin/bash -c 'ts=$(date +%%Y%%m%%d-%%H%%M); mkdir -p /home/realms/backups; cp apps/web/data/anvil-state.json /home/realms/backups/anvil-state-$ts.json 2>/dev/null || true; sqlite3 apps/web/data/realms.db ".backup /home/realms/backups/realms-$ts.db" 2>/dev/null || cp apps/web/data/realms.db /home/realms/backups/realms-$ts.db; ls -t /home/realms/backups/anvil-state-*.json 2>/dev/null | tail -n +15 | xargs -r rm; ls -t /home/realms/backups/realms-*.db 2>/dev/null | tail -n +15 | xargs -r rm'

@@ -1,0 +1,15 @@
+[Unit]
+Description=Realms public RPC allowlist proxy (eth_/net_/web3_ only)
+After=realms-chain.service
+Wants=realms-chain.service
+
+[Service]
+Type=simple
+User=realms
+WorkingDirectory=/home/realms/seed-protocol-poc
+ExecStart=/usr/bin/node deploy/rpc-guard.mjs
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

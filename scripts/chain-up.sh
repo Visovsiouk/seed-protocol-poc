@@ -19,8 +19,13 @@
 # Anvil runs in the foreground; Ctrl+C dumps state to the state file and exits.
 #
 # Env overrides:
-#   SISTER_REPO  path to the seed-protocol contracts repo (default ../seed-protocol)
-#   ANVIL_HOST   anvil bind host (default 0.0.0.0)
+#   SISTER_REPO     path to the seed-protocol contracts repo (default ../seed-protocol)
+#   ANVIL_HOST      anvil bind host (default 0.0.0.0; use 127.0.0.1 behind
+#                   deploy/rpc-guard.mjs for anything internet-reachable)
+#   ANVIL_MNEMONIC  custom mnemonic for anvil's funded accounts (public deploys
+#                   MUST set this — the default anvil keys are public knowledge)
+#   ADMIN / TREASURY / EMERGENCY_MULTISIG / DEPLOYER_PK
+#                   deploy roles; default to anvil dev accounts 0/1/2
 #
 # See scripts/app-up.sh for the restartable app layer.
 
@@ -83,11 +88,19 @@ if $FRESH; then
 fi
 
 # Deploy.s.sol PoC-mode env (mirrors the sister repo's deploy-local.sh).
-export ADMIN=0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266
-export TREASURY=0x70997970C51812dc3A010C7d01b50e0d17dc79C8
-export EMERGENCY_MULTISIG=0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC
-export DEPLOYER_PK=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
-export AUTO_AUTHORIZE_SEED_MINTING=true
+# Every value is overridable so a public deploy can use fresh keys — the
+# defaults are anvil's WELL-KNOWN dev accounts, which anyone can sign for.
+# See deploy/README.md: for anything reachable from the internet, generate a
+# fresh mnemonic, pass it as ANVIL_MNEMONIC (so anvil funds its accounts), and
+# derive ADMIN/DEPLOYER_PK from index 0.
+export ADMIN="${ADMIN:-0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266}"
+export TREASURY="${TREASURY:-0x70997970C51812dc3A010C7d01b50e0d17dc79C8}"
+export EMERGENCY_MULTISIG="${EMERGENCY_MULTISIG:-0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC}"
+export DEPLOYER_PK="${DEPLOYER_PK:-0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80}"
+export AUTO_AUTHORIZE_SEED_MINTING="${AUTO_AUTHORIZE_SEED_MINTING:-true}"
+# Optional custom account set: when set, anvil derives + funds its unlocked
+# accounts from THIS mnemonic instead of the public test mnemonic.
+ANVIL_MNEMONIC="${ANVIL_MNEMONIC:-}"
 
 ANVIL_LOG="$(mktemp -t anvil.XXXXXX.log)"
 cleanup() {
@@ -123,7 +136,9 @@ if curl -s -X POST "$RPC_URL" \
 fi
 
 echo "==> starting anvil (host $ANVIL_HOST, state $STATE_FILE, logs $ANVIL_LOG)"
-anvil --host "$ANVIL_HOST" --state "$STATE_FILE" > "$ANVIL_LOG" 2>&1 &
+ANVIL_ARGS=(--host "$ANVIL_HOST" --state "$STATE_FILE")
+[[ -n "$ANVIL_MNEMONIC" ]] && ANVIL_ARGS+=(--mnemonic "$ANVIL_MNEMONIC")
+anvil "${ANVIL_ARGS[@]}" > "$ANVIL_LOG" 2>&1 &
 ANVIL_PID=$!
 
 echo "==> waiting for anvil RPC at $RPC_URL ..."

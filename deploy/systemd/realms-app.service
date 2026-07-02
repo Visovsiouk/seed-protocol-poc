@@ -1,0 +1,18 @@
+[Unit]
+Description=Realms web app (Next.js production)
+After=realms-chain.service
+Wants=realms-chain.service
+
+[Service]
+Type=simple
+User=realms
+WorkingDirectory=/home/realms/seed-protocol-poc
+Environment=APP_HOST=127.0.0.1
+Environment=APP_PORT=3000
+Environment=PATH=/home/realms/.local/share/pnpm:/usr/local/bin:/usr/bin:/bin
+ExecStart=/usr/bin/bash scripts/app-up.sh
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

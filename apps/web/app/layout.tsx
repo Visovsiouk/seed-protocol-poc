@@ -72,6 +72,28 @@ export default function RootLayout({
           via `useRealmTheme` and restore it on exit. */}
       <body data-preset="fantasy">
         <Providers>{children}</Providers>
+        {process.env.NEXT_PUBLIC_DEMO_BANNER === "true" && (
+          <div
+            style={{
+              position: "fixed",
+              bottom: 0,
+              left: 0,
+              right: 0,
+              zIndex: 9999,
+              padding: "4px 12px",
+              textAlign: "center",
+              fontSize: "12px",
+              lineHeight: "18px",
+              fontFamily: "var(--font-plex-mono, monospace)",
+              color: "rgba(255,255,255,0.85)",
+              background: "rgba(10,10,20,0.92)",
+              borderTop: "1px solid rgba(255,255,255,0.15)",
+            }}
+          >
+            Public demo chain — assets have no monetary value and state may be
+            reset. Gameplay transactions are signed by the demo server.
+          </div>
+        )}
       </body>
     </html>
   );

@@ -1,0 +1,25 @@
+[Unit]
+Description=Realms demo chain (anvil + one-time deploy/seed)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=realms
+WorkingDirectory=/home/realms/seed-protocol-poc
+Environment=ANVIL_HOST=127.0.0.1
+Environment=SISTER_REPO=/home/realms/seed-protocol
+# Holds ANVIL_MNEMONIC, ADMIN, TREASURY, EMERGENCY_MULTISIG, DEPLOYER_PK for
+# the fresh (non-public) demo keys. chmod 600, owned by root.
+EnvironmentFile=-/etc/realms/chain.env
+# Foundry + node toolchain live in the service user's home
+Environment=PATH=/home/realms/.foundry/bin:/home/realms/.local/share/pnpm:/usr/local/bin:/usr/bin:/bin
+ExecStart=/usr/bin/bash scripts/chain-up.sh
+# Ctrl+C semantics: SIGINT makes chain-up.sh dump anvil state before exit
+KillSignal=SIGINT
+TimeoutStopSec=60
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,11 @@
+# Public demo reverse proxy. Replace the domains with yours; Caddy provisions
+# TLS automatically. anvil itself must stay bound to 127.0.0.1 — only the
+# rpc-guard allowlist proxy is exposed.
+
+play.example.com {
+	reverse_proxy 127.0.0.1:3000
+}
+
+rpc.example.com {
+	reverse_proxy 127.0.0.1:8546
+}
