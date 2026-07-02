@@ -30,6 +30,7 @@ import { translateCardForRealm } from "@/lib/contracts/adapters";
 import { loadEquipped, saveEquipped } from "@/lib/persistence/equipped";
 import { useInventoryCards, usePlayerRealms } from "@/lib/reads/hooks";
 import { AssetCard } from "@/components/inventory/AssetCard";
+import { BossIntelStrip } from "@/components/hub/BossIntelStrip";
 import { Panel, Button, Stamp, Rule } from "@/components/ui";
 import { KbdHint } from "@/components/game/ChoiceRow";
 import { useEnterToActivate } from "@/lib/ui/useEnterToActivate";
@@ -104,6 +105,14 @@ export function LoadoutStaging({
   const publicClient = usePublicClient();
   const onchain = useInventoryCards(address);
   const playerRealms = usePlayerRealms();
+
+  const realmMeta = useMemo(
+    () =>
+      selection.kind === "creator"
+        ? playerRealms.data?.get(selection.address.toLowerCase()) ?? null
+        : null,
+    [selection, playerRealms.data],
+  );
 
   const resolved: Resolved | null = useMemo(() => {
     if (selection.kind === "starter") {
@@ -300,6 +309,16 @@ export function LoadoutStaging({
               <span className="font-medium">{stats.ac}</span>
             </span>
           </div>
+          {/* Warden intel — player realms only. Starter wardens stay part of
+              the tutorial arc's discovery; creator realms are where counter-
+              picking (and the bazaar pull) is meant to matter. */}
+          {selection.kind === "creator" && realmMeta && (
+            <BossIntelStrip
+              realmPreset={realmMeta.preset}
+              bossId={realmMeta.bossId}
+              weapon={selected.weapon}
+            />
+          )}
         </header>
 
         <Slot

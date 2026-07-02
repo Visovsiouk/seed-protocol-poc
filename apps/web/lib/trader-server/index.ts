@@ -2,7 +2,14 @@ import "server-only";
 
 import { z } from "zod";
 import { NextResponse } from "next/server";
-import { decodeEventLog } from "viem";
+import { decodeEventLog, formatEther } from "viem";
+import {
+  appraiseCapWei,
+  traderAlreadyDealtWith,
+  userTierFromOnChain,
+  type ListedEventArgs,
+  type PurchasedEventArgs,
+} from "./hail-guards";
 import {
   protocolExchangeAbi,
   universalAssetAbi,
@@ -28,10 +35,27 @@ export type TraderResponse =
         | "rate_limited"
         | "float_low"
         | "invalid"
+        | "overpriced"
+        | "already_traded"
         | "tx_reverted"
         | "internal";
       message: string;
     };
+
+/**
+ * Typed refusal thrown by trader actions when the trader declines a deal on
+ * its own terms (not an infra failure). `withTraderGuards` maps it to a 400
+ * with the specific reason so the UI can render it in-world.
+ */
+export class TraderRefusalError extends Error {
+  constructor(
+    public readonly reason: "overpriced" | "already_traded",
+    message: string,
+  ) {
+    super(message);
+    this.name = "TraderRefusalError";
+  }
+}
 
 function reply(status: number, body: TraderResponse) {
   return NextResponse.json(body, { status });
@@ -97,6 +121,9 @@ export function withTraderGuards<T extends z.ZodTypeAny>(
         extra: result.extra,
       });
     } catch (e) {
+      if (e instanceof TraderRefusalError) {
+        return reply(400, { ok: false, reason: e.reason, message: e.message });
+      }
       const message = e instanceof Error ? e.message : String(e);
       // viem's tx errors expose a `shortMessage` we could surface; for now
       // just classify revert vs internal heuristically.
@@ -258,6 +285,108 @@ export async function doTraderCancel(
   });
   await publicClient.waitForTransactionReceipt({ hash: txHash });
   return { txHash };
+}
+
+export const hailBodySchema = z.object({
+  listingId: z.string().regex(/^\d+$/),
+});
+
+/**
+ * "Hail the Wandering Trader" — the player invites the trader to buy their
+ * OWN listing, making the sell/royalty side of the loop completable solo.
+ * Two extra guards beyond the plain buy path keep it honest and finite:
+ *
+ *   1. Fair price. The trader appraises the item by its on-chain tier and
+ *      refuses anything above the per-tier cap (a listing priced at a
+ *      billion ETH gets scoffed at, not bought). TRADER_MAX_BUY_WEI remains
+ *      the absolute ceiling on top.
+ *   2. One deal per seller, ever. Derived from chain history (any past
+ *      `Purchased` by the trader on any of this seller's listings), so it
+ *      survives server restarts and can't be reset by clearing a DB.
+ *
+ * Guard math lives in ./hail-guards.ts (pure, unit-tested).
+ */
+export async function doTraderHail(body: z.infer<typeof hailBodySchema>) {
+  const { wallet, publicClient, account } = loadTraderClient();
+  const env = getServerEnv();
+  const listingId = BigInt(body.listingId);
+
+  const listing = (await publicClient.readContract({
+    address: EXCHANGE(),
+    abi: protocolExchangeAbi,
+    functionName: "listings",
+    args: [listingId],
+  })) as readonly [
+    `0x${string}`, // seller
+    bigint, // tokenId
+    bigint, // amount
+    bigint, // price
+    boolean, // active
+  ];
+
+  const [seller, tokenId, , price, active] = listing;
+  if (!active) throw new Error("Listing is not active");
+  if (seller.toLowerCase() === account.address.toLowerCase()) {
+    throw new Error("The trader does not hail itself");
+  }
+
+  // --- Guard 1: fair price by on-chain tier -------------------------------
+  const attrs = (await publicClient.readContract({
+    address: ASSET(),
+    abi: universalAssetAbi,
+    functionName: "tokenAttributes",
+    args: [tokenId],
+  })) as readonly [number, bigint, string];
+  const tier = userTierFromOnChain(attrs[0]);
+  const cap = appraiseCapWei(tier, BigInt(env.TRADER_MAX_BUY_WEI));
+  if (price > cap) {
+    throw new TraderRefusalError(
+      "overpriced",
+      `The trader appraises this T${tier} relic at no more than ${formatEther(cap)} ETH — reprice and hail again`,
+    );
+  }
+
+  // --- Guard 2: one deal per seller, ever (derived from chain) ------------
+  const [listedEvents, purchasedEvents] = await Promise.all([
+    publicClient.getContractEvents({
+      address: EXCHANGE(),
+      abi: protocolExchangeAbi,
+      eventName: "Listed",
+      fromBlock: 0n,
+      toBlock: "latest",
+    }),
+    publicClient.getContractEvents({
+      address: EXCHANGE(),
+      abi: protocolExchangeAbi,
+      eventName: "Purchased",
+      fromBlock: 0n,
+      toBlock: "latest",
+    }),
+  ]);
+  const alreadyTraded = traderAlreadyDealtWith(
+    listedEvents as readonly { args: ListedEventArgs }[],
+    purchasedEvents as readonly { args: PurchasedEventArgs }[],
+    seller,
+    account.address,
+  );
+  if (alreadyTraded) {
+    throw new TraderRefusalError(
+      "already_traded",
+      "The Wandering Trader has already struck a deal with you — one per wanderer",
+    );
+  }
+
+  const txHash = await wallet.writeContract({
+    address: EXCHANGE(),
+    abi: protocolExchangeAbi,
+    functionName: "purchase",
+    args: [listingId],
+    value: price,
+    account,
+    chain: wallet.chain,
+  });
+  await publicClient.waitForTransactionReceipt({ hash: txHash });
+  return { txHash, extra: { price: price.toString(), tier } };
 }
 
 function parseListedEvent(

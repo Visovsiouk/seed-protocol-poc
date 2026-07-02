@@ -16,7 +16,14 @@ export type TraderOk = {
 
 export type TraderError = {
   ok: false;
-  reason: "rate_limited" | "float_low" | "invalid" | "tx_reverted" | "internal";
+  reason:
+    | "rate_limited"
+    | "float_low"
+    | "invalid"
+    | "overpriced"
+    | "already_traded"
+    | "tx_reverted"
+    | "internal";
   message: string;
 };
 
@@ -42,6 +49,15 @@ async function call(route: string, body: unknown): Promise<TraderResponse> {
 
 export function traderBuy(listingId: bigint): Promise<TraderResponse> {
   return call("/api/trader/buy", { listingId: listingId.toString() });
+}
+
+/**
+ * "Hail the Wandering Trader" — invite the trader to buy the caller's own
+ * listing. The server appraises the item by tier (refuses overpriced
+ * listings) and deals at most once per seller, ever.
+ */
+export function traderHail(listingId: bigint): Promise<TraderResponse> {
+  return call("/api/trader/hail", { listingId: listingId.toString() });
 }
 
 export function traderList(

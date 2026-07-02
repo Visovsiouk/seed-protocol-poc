@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { useAccount } from "wagmi";
 import { PreseedBadge } from "./PreseedBadge";
 import { AssetCard } from "@/components/inventory/AssetCard";
 import { Button, Panel } from "@/components/ui";
@@ -11,7 +12,8 @@ import {
   computeFeeBreakdown,
   type FeeBreakdown,
 } from "@/lib/contracts/exchange";
-import { traderBuy } from "@/lib/trader-client";
+import { traderHail } from "@/lib/trader-client";
+import { setCodexFlag } from "@/lib/codex/local";
 import { buildAssetCardFromMetadata } from "@/lib/metadata/asset-card";
 import { queryKeys } from "@/lib/reads/cache";
 import type { AssetSummary, ListingSummary } from "@/lib/reads/types";
@@ -33,9 +35,19 @@ export function ListingCard({
   onPurchased: (payload: PurchasedPayload) => void;
 }) {
   const qc = useQueryClient();
+  const { address } = useAccount();
   const { purchase, isPending } = usePurchase();
-  const [demoStatus, setDemoStatus] = useState<"idle" | "running" | "error">("idle");
-  const [demoError, setDemoError] = useState<string | null>(null);
+  const [hailStatus, setHailStatus] = useState<
+    "idle" | "running" | "refused" | "error"
+  >("idle");
+  const [hailError, setHailError] = useState<string | null>(null);
+
+  // The Wandering Trader is hailed by the SELLER, on their own listing —
+  // that keeps the demo counterparty honest (player-initiated, labeled) and
+  // finite (the server refuses overpriced listings and deals once per
+  // seller, ever — derived from chain history, so it survives restarts).
+  const isOwnListing =
+    !!address && listing.seller.toLowerCase() === address.toLowerCase();
 
   const card = useMemo(() => {
     if (!asset) return null;
@@ -75,13 +87,14 @@ export function ListingCard({
     }
   };
 
-  const onDemo = async () => {
+  const onHail = async () => {
     if (!asset) return;
-    setDemoStatus("running");
-    setDemoError(null);
+    setHailStatus("running");
+    setHailError(null);
     try {
-      const result = await traderBuy(listing.id);
+      const result = await traderHail(listing.id);
       if (result.ok) {
+        setCodexFlag(address, "traderHailed");
         onPurchased({
           fees: computeFeeBreakdown(listing.price),
           txHash: result.txHash,
@@ -89,14 +102,18 @@ export function ListingCard({
           realm: asset.mintedByRealm,
         });
         refetchAfterPurchase();
-        setDemoStatus("idle");
+        setHailStatus("idle");
       } else {
-        setDemoStatus("error");
-        setDemoError(result.message);
+        setHailStatus(
+          result.reason === "overpriced" || result.reason === "already_traded"
+            ? "refused"
+            : "error",
+        );
+        setHailError(result.message);
       }
     } catch (e) {
-      setDemoStatus("error");
-      setDemoError(e instanceof Error ? e.message : String(e));
+      setHailStatus("error");
+      setHailError(e instanceof Error ? e.message : String(e));
     }
   };
 
@@ -138,26 +155,41 @@ export function ListingCard({
 
       <footer className="flex flex-col gap-1 pt-1">
         <div className="flex gap-2">
-          <Button
-            intent="primary"
-            onClick={onBuy}
-            disabled={isPending || !asset}
-            className="flex-1"
-          >
-            {isPending ? "Buying…" : "Buy"}
-          </Button>
-          <Button
-            intent="ghost"
-            onClick={onDemo}
-            disabled={demoStatus === "running" || !asset}
-            title="Buy via the Wandering Trader (server-side EOA)"
-          >
-            {demoStatus === "running" ? "Trader…" : "Value-flow demo"}
-          </Button>
+          {!isOwnListing && (
+            <Button
+              intent="primary"
+              onClick={onBuy}
+              disabled={isPending || !asset}
+              className="flex-1"
+            >
+              {isPending ? "Buying…" : "Buy"}
+            </Button>
+          )}
+          {isOwnListing && (
+            <Button
+              intent="ghost"
+              onClick={onHail}
+              disabled={hailStatus === "running" || !asset}
+              className="flex-1"
+              title="Invite the Wandering Trader (the demo counterparty) to buy this listing — fair prices only, one deal per wanderer"
+            >
+              {hailStatus === "running"
+                ? "The trader considers…"
+                : "Hail the Wandering Trader"}
+            </Button>
+          )}
         </div>
-        {demoError && (
-          <p className="text-[11px] text-[var(--color-danger)]">
-            {demoError}
+        {hailError && (
+          <p
+            className="text-[11px]"
+            style={{
+              color:
+                hailStatus === "refused"
+                  ? "var(--color-preset-accent)"
+                  : "var(--color-danger)",
+            }}
+          >
+            {hailError}
           </p>
         )}
       </footer>

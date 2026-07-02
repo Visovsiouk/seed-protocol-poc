@@ -30,6 +30,17 @@ royalties, and translated across presets by adapters.
   then mint the `SeedSBT` (server reconstructs the proof from on-chain receipts). _Done._
 - **Per-realm tiers** — earned `maxTier` from distinct clearers (T3 base, T4 @20,
   T5 @50); see [`apps/web/lib/reads/realm-tier.ts`](apps/web/lib/reads/realm-tier.ts). _Done._
+- **Protocol Codex** — a journey checklist (5th hub station) mapping every play
+  step to the white-paper feature it proves, derived from on-chain reads
+  ([`apps/web/lib/codex/`](apps/web/lib/codex)). _Done._
+- **Warden intel + counter-picks** — player-realm loadouts surface the boss's
+  elemental weakness and deep-link to matching bazaar listings (only when one
+  exists); adapters' index mapping mirrored client-side in
+  [`apps/web/lib/engine/boss-intel.ts`](apps/web/lib/engine/boss-intel.ts). _Done._
+- **Hail the Wandering Trader** — sellers invite the demo trader to buy their
+  own listing; the server appraises by tier (refuses overpriced listings) and
+  deals once per seller, derived from chain history
+  ([`apps/web/lib/trader-server/hail-guards.ts`](apps/web/lib/trader-server/hail-guards.ts)). _Done._
 
 ## Stack
 
@@ -82,6 +93,7 @@ and broadcast real transactions themselves.
 | `SeedSBT` mint (Seed claim) | realm-signer keyring (server) | `POST /api/realm/claim-seed` |
 | Realm registration (off-chain index) | server | `POST /api/realm/register` |
 | Wandering Trader buy/list/cancel | trader burner EOA (server) | `POST /api/trader/*` |
+| Hail the Trader (one fair-priced buy per seller) | trader burner EOA (server) | `POST /api/trader/hail` |
 | Faucet top-up (`anvil_setBalance`) | server cheat call | `POST /api/faucet` |
 | **Realm creation (Founding Rite)** | **the user's own wallet** | `/create` page (4 txs) |
 

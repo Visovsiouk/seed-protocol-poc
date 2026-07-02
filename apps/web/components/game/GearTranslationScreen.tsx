@@ -19,7 +19,9 @@
  * which used to play this beat at the exit hand-off between starter realms.
  */
 
+import { useEffect } from "react";
 import { motion, useReducedMotion } from "framer-motion";
+import { useAccount } from "wagmi";
 import type { AssetCard as AssetCardType, Preset } from "@/lib/engine/types";
 import { AssetCard } from "@/components/inventory/AssetCard";
 import {
@@ -27,6 +29,7 @@ import {
   useElementLabel,
   useTranslatedCard,
 } from "@/lib/contracts/adapters";
+import { setCodexFlag } from "@/lib/codex/local";
 import { getAdapterAddress } from "@/lib/contracts/seeded-adapters";
 import { shortAddress } from "@/lib/utils";
 import { Body, Button, Rule, Stamp } from "@/components/ui";
@@ -46,11 +49,25 @@ export function GearTranslationScreen({
   onDescend: () => void;
 }) {
   const reduced = useReducedMotion();
+  const { address } = useAccount();
 
   // Enter descends into the run. This screen mounts straight after the
   // loadout's router.push, so the shared gate disarms it on mount — a still
   // -held Enter won't instantly fire onDescend.
   useEnterToActivate({ onActivate: onDescend, sig: realm });
+
+  // Codex: the chain has no "equipped" concept, so THIS render — foreign
+  // gear meeting a cross-preset adapter at the descent threshold — is the
+  // moment the "carry gear across worlds" step is witnessed.
+  useEffect(() => {
+    const toPreset = presetForRealm(realm) ?? preset;
+    const crossed = [equipped.weapon, equipped.armor].some((card) => {
+      if (!card) return false;
+      const from = card.realmPreset ?? presetForRealm(card.realm);
+      return !!from && !!toPreset && from !== toPreset;
+    });
+    if (crossed) setCodexFlag(address, "crossRealmCarry");
+  }, [address, realm, preset, equipped.weapon, equipped.armor]);
 
   return (
     <motion.section

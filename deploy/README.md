@@ -158,3 +158,7 @@ intact (your Seed and realm still exist).
 - **Known trust assumption.** Boss clears, loot mints, and Seed mints are
   signed by the demo server (that is the PoC's gasless design). The demo
   banner discloses this.
+- **Trader float.** "Hail the Wandering Trader" purchases spend the trader
+  account's ETH (bounded: tier-appraised prices, one deal per seller, ever).
+  If the float-low error appears, top the trader account up — on the demo
+  chain the faucet route or a direct transfer from a funded account works.

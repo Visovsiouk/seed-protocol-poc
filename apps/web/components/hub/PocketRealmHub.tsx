@@ -44,15 +44,18 @@ import {
 } from "@/lib/tutorial/progress";
 import { warpCrossfade, withReducedMotion } from "@/lib/ui/motion";
 import { Panel, Button, Chip, Stamp, Rule } from "@/components/ui";
+import { CodexPanel } from "@/components/codex/CodexPanel";
+import { useCodexStatus } from "@/lib/codex/use-codex";
 import { LoadoutStaging } from "./LoadoutStaging";
 
-type Station = "doors" | "market" | "altar" | "forge";
+type Station = "doors" | "market" | "altar" | "forge" | "codex";
 
 const STATIONS: { id: Station; label: string }[] = [
   { id: "doors", label: "The Doors" },
   { id: "market", label: "The Market" },
   { id: "altar", label: "The Altar" },
   { id: "forge", label: "The Forge" },
+  { id: "codex", label: "The Codex" },
 ];
 
 /** Three diamond glyphs marking sparks kindled (mirrors RealmSelector). */
@@ -123,9 +126,11 @@ function ForgeRoom() {
 function HideoutHeader({
   progress,
   ownedCount,
+  codex,
 }: {
   progress: TutorialProgress;
   ownedCount: number;
+  codex?: { completed: number; total: number };
 }) {
   return (
     <Panel
@@ -147,6 +152,12 @@ function HideoutHeader({
           <ShardTrack shards={progress.distinctClears} />
         </div>
         {progress.hasSeed && <Chip color="var(--color-ok)" label="Name carved" />}
+        {codex && (
+          <Chip
+            color="var(--color-preset-accent)"
+            label={`Codex ${codex.completed}/${codex.total}`}
+          />
+        )}
         <span className="tabular-nums opacity-70">{ownedCount} owned</span>
       </div>
     </Panel>
@@ -158,6 +169,7 @@ export function PocketRealmHub() {
   const progress =
     useTutorialProgress(address).data ?? emptyTutorialProgress();
   const inventory = useInventoryCards(address).data ?? [];
+  const codex = useCodexStatus(address).status;
   const arcCompleted = progress.starterClears >= 3 || progress.hasSeed;
   // The Altar is browsable the moment the first spark kindles — sparks
   // accumulate visibly across the arc, and the arc-completing clear deep-links
@@ -215,7 +227,11 @@ export function PocketRealmHub() {
     }
     return (
       <div className="flex w-full flex-col gap-5">
-        <HideoutHeader progress={progress} ownedCount={inventory.length} />
+        <HideoutHeader
+          progress={progress}
+          ownedCount={inventory.length}
+          codex={codex}
+        />
         {selected ? (
           <LoadoutStaging
             selection={selected}
@@ -227,6 +243,10 @@ export function PocketRealmHub() {
             {/* Once the first spark kindles, the Altar surfaces under the picker
                 so the player watches their sparks accumulate between descents. */}
             {progress.starterClears > 0 && <GenesisLedger />}
+            {/* The Codex is readable from the very first wake — it is the
+                journey's map, and each stamped row explains what the previous
+                action proved on-chain. */}
+            <CodexPanel />
           </div>
         )}
       </div>
@@ -238,7 +258,11 @@ export function PocketRealmHub() {
   return (
     <div className="flex w-full flex-col gap-5">
       {/* HQ header band + status strip */}
-      <HideoutHeader progress={progress} ownedCount={inventory.length} />
+      <HideoutHeader
+        progress={progress}
+        ownedCount={inventory.length}
+        codex={codex}
+      />
 
       {/* Station rail — in-world wayfinding (replaces the top-nav) */}
       <nav
@@ -304,6 +328,14 @@ export function PocketRealmHub() {
             <GenesisLedger onClaimed={() => setStation("forge")} />
           )}
           {station === "forge" && <ForgeRoom />}
+          {station === "codex" && (
+            <CodexPanel
+              onNavigate={(s) => {
+                setSelected(null);
+                setStation(s);
+              }}
+            />
+          )}
         </motion.section>
       </AnimatePresence>
     </div>
