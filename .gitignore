@@ -33,8 +33,8 @@ pnpm-debug.log*
 .DS_Store
 Thumbs.db
 
-# generated abis (regenerated via wagmi cli)
-packages/abis/generated/
+# generated abis are committed so a fresh clone can typecheck/build without a
+# deployed chain; regenerate with `pnpm wagmi:gen` after contract changes
 
 # test artifacts
 coverage/
@@ -43,6 +43,3 @@ test-results/
 
 # sqlite (player-realm metadata)
 apps/web/data/
-
-# reference docs
-docs/

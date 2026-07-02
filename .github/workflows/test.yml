@@ -1,0 +1,65 @@
+name: CI
+
+permissions: {}
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  adapters:
+    name: Foundry adapters
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: contracts
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Install forge-std
+        run: forge install foundry-rs/forge-std
+
+      - name: Run Forge build
+        run: forge build --sizes
+
+      - name: Run Forge tests
+        run: forge test -vvv
+
+  web:
+    name: Web unit tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Configure env (dev defaults, no secrets)
+        run: cp apps/web/.env.example apps/web/.env.local
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Unit tests
+        run: pnpm test
