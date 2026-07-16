@@ -22,10 +22,9 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useAccount, usePublicClient } from "wagmi";
+import { useAccount } from "wagmi";
 import { useQuery } from "@tanstack/react-query";
 import type {
-  AssetCard as AssetCardType,
   EngineEvent,
   EscrowEntry,
   Preset,
@@ -45,11 +44,12 @@ import { AppShell, Panel } from "@/components/ui";
 import { useRealms } from "@/lib/reads/hooks";
 import { useMintLoot } from "@/lib/contracts/loot";
 import { useMintClearReceipt } from "@/lib/contracts/boss-cleared";
-import { presetForRealm, translateCardForRealm } from "@/lib/contracts/adapters";
 import {
-  type EquippedSnapshot,
-  loadEquipped,
-} from "@/lib/persistence/equipped";
+  useEquippedHydration,
+  useIsCrossGenre,
+} from "@/lib/persistence/use-equipped-hydration";
+import { shortAddress } from "@/lib/utils";
+import { isHexAddress } from "@/lib/validation/schemas";
 
 const TRIAL_PRESET: Preset = "fantasy";
 const TRIAL_BOSS_ID = "forest_hag";
@@ -69,14 +69,6 @@ type MetaReply =
   | { ok: true; realm: RealmMeta }
   | { ok: false; reason: string; message: string };
 
-function shortAddress(addr: `0x${string}`): string {
-  return `${addr.slice(0, 6)}…${addr.slice(-4)}`;
-}
-
-function isHexAddress(value: string): value is `0x${string}` {
-  return /^0x[0-9a-fA-F]{40}$/.test(value);
-}
-
 async function fetchRealmMeta(address: `0x${string}`): Promise<RealmMeta | null> {
   const res = await fetch(`/api/realm/${address}/meta`, { cache: "no-store" });
   if (res.status === 404) return null;
@@ -95,7 +87,6 @@ export default function CreatorRealmPlayPage() {
   const address = validAddress ? (raw.toLowerCase() as `0x${string}`) : null;
 
   const { address: walletAddress, isConnected: walletConnected } = useAccount();
-  const publicClient = usePublicClient();
   const realms = useRealms();
   const { mintLoot } = useMintLoot();
   const { mintClearReceipt } = useMintClearReceipt();
@@ -143,23 +134,13 @@ export default function CreatorRealmPlayPage() {
     [address, preset, realmName],
   );
 
-  // The loadout the player staged in the hub, captured once at hydration
-  // and frozen for the whole delve — gear is locked once you descend (there
-  // is no in-run equip path). Holds *translated* cards so the engine boots
-  // against this realm's numbers. Null until hydration resolves.
-  const [runStartEquipped, setRunStartEquipped] = useState<{
-    weapon?: AssetCardType;
-    armor?: AssetCardType;
-  } | null>(null);
-
-  // The *native* staged gear (pre-translation), captured at hydration. Drives
-  // the cross-genre entry beat below — we compare each card's origin preset to
-  // this realm's preset, so gear carried from another genre plays the "your
-  // gear changes shape" screen once before the run.
-  const [equippedNative, setEquippedNative] = useState<{
-    weapon?: AssetCardType;
-    armor?: AssetCardType;
-  } | null>(null);
+  // Persisted-gear hydration: `equippedNative` (pre-translation, drives the
+  // cross-genre entry beat) + `runStartEquipped` (translated, frozen for the
+  // whole delve). See `useEquippedHydration`.
+  const { equippedNative, runStartEquipped } = useEquippedHydration({
+    realm: address,
+    starterGear,
+  });
   const [entryAck, setEntryAck] = useState(false);
 
   const initial = useMemo(() => {
@@ -182,79 +163,12 @@ export default function CreatorRealmPlayPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [address, csprngSeed, preset, bossId, maxTier, runStartEquipped]);
 
-  // One-shot hydration: read the persisted loadout (native cards staged in
-  // the hub), translate each slot against this realm's adapter, then pin the
-  // frozen run-start snapshot. A *starter* card (tokenId === 0n) is realm-
-  // local, so a starter persisted from a different realm is discarded in
-  // favour of this realm's `starterGear`; real on-chain cards travel.
-  useEffect(() => {
-    if (!address || !starterGear) return;
-    if (runStartEquipped !== null) return;
-    let cancelled = false;
-    const stored = loadEquipped();
-    const keepIfNative = (
-      card: AssetCardType | undefined,
-      fallback: AssetCardType,
-    ): AssetCardType => {
-      if (!card) return fallback;
-      if (
-        card.tokenId === 0n &&
-        card.realm?.toLowerCase() !== address.toLowerCase()
-      ) {
-        return fallback;
-      }
-      return card;
-    };
-    const nativeBaseline: EquippedSnapshot = stored
-      ? {
-          weapon: keepIfNative(stored.weapon, starterGear.weapon),
-          armor: keepIfNative(stored.armor, starterGear.armor),
-        }
-      : { weapon: starterGear.weapon, armor: starterGear.armor };
-    setEquippedNative(nativeBaseline);
-
-    const translateOne = async (
-      card: AssetCardType | undefined,
-    ): Promise<AssetCardType | undefined> => {
-      if (!card || !publicClient) return card;
-      try {
-        return await translateCardForRealm({
-          card,
-          targetRealm: address,
-          publicClient,
-        });
-      } catch {
-        return card;
-      }
-    };
-
-    void Promise.all([
-      translateOne(nativeBaseline.weapon),
-      translateOne(nativeBaseline.armor),
-    ]).then(([w, a]) => {
-      if (cancelled) return;
-      setRunStartEquipped({ weapon: w, armor: a });
-    });
-
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [address, starterGear]);
-
   const seedReady = mounted && !!initial && !!address && metaQuery.isFetched;
 
   // Cross-genre entry beat: true iff staged gear came from a different genre
   // than this realm. Trial mode realms aren't in the starter set, so a card's
   // origin preset still resolves via `realmPreset`/`presetForRealm`.
-  const crossGenre = useMemo(() => {
-    if (!equippedNative) return false;
-    return [equippedNative.weapon, equippedNative.armor].some((c) => {
-      if (!c) return false;
-      const origin = c.realmPreset ?? presetForRealm(c.realm);
-      return !!origin && origin !== preset;
-    });
-  }, [equippedNative, preset]);
+  const crossGenre = useIsCrossGenre(equippedNative, preset);
 
   // clearReceipt mint state — pending/minted/failed/skipped, mirrors
   // the starter /play/[preset] page so the run-over panel can render

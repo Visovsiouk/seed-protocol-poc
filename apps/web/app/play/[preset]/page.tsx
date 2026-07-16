@@ -31,7 +31,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { notFound, useParams, useRouter } from "next/navigation";
-import { useAccount, usePublicClient } from "wagmi";
+import { useAccount } from "wagmi";
 import type {
   AssetCard as AssetCardType,
   EngineEvent,
@@ -61,13 +61,12 @@ import { useMintLoot } from "@/lib/contracts/loot";
 import { useMintClearReceipt } from "@/lib/contracts/boss-cleared";
 import { useRunSeedCommitment } from "@/lib/contracts/run-seed";
 import { getStarterRealm } from "@/lib/contracts/starter-realms";
-import { presetForRealm, translateCardForRealm } from "@/lib/contracts/adapters";
 import { GearTranslationScreen } from "@/components/game/GearTranslationScreen";
+import { saveEquipped } from "@/lib/persistence/equipped";
 import {
-  type EquippedSnapshot,
-  loadEquipped,
-  saveEquipped,
-} from "@/lib/persistence/equipped";
+  useEquippedHydration,
+  useIsCrossGenre,
+} from "@/lib/persistence/use-equipped-hydration";
 import {
   REALM_ORDER,
   isPlayable,
@@ -85,7 +84,6 @@ export default function PlayPage() {
   // from the on-chain registry via `useStarterRealm` below.
   const cfg = getStarterRealm(preset);
   const { address } = useAccount();
-  const publicClient = usePublicClient();
   const { mintLoot, walletConnected } = useMintLoot();
   const { mintClearReceipt } = useMintClearReceipt();
   const onchain = useInventoryCards(address);
@@ -138,41 +136,56 @@ export default function PlayPage() {
   // from the chain via `onchain.data`; keeping the local accumulator
   // around lets the player play offline without losing drops.
   const [localInventory, setLocalInventory] = useState<AssetCardType[]>([]);
-  // Equipped slots — *native* cards. Hydrated from localStorage on mount
-  // so gear earned in one realm carries into the next. This is the
-  // canonical, persisted shape: we always store the native card (source
-  // realm + native stats), never a translated copy. GearTranslationScreen
-  // and InventoryDrawer read this directly — their AssetCard renders use
-  // `targetRealm` to do the display-side translation, so they need the
-  // native source to start from.
-  const [equipped, setEquipped] = useState<{
-    weapon?: AssetCardType;
-    armor?: AssetCardType;
-  }>({ weapon: starterGear.weapon, armor: starterGear.armor });
-  // The equipped state used at run-start. Captured once at hydration time
-  // from the loadout the player staged in the hub, then frozen for the
-  // whole delve (gear is locked once you descend — there is no in-run
-  // equip path). Holds *translated* cards so the engine is initialised
-  // against the right numbers for this realm.
-  const [runStartEquipped, setRunStartEquipped] = useState<{
-    weapon?: AssetCardType;
-    armor?: AssetCardType;
-  } | null>(null);
 
-  // Did the player carry gear from a *different* genre into this realm? If
-  // so, the entry "your gear changes shape" beat plays once before the run
-  // (see render). Starter gear is realm-local (its origin preset === this
-  // realm's), so a first-ever descent with starter gear is native and shows
-  // nothing. We read the *native* `equipped` cards' origin preset, not the
-  // translated run-start snapshot.
+  // Lock verdict, hoisted up so the hydration + save effects below can
+  // bail before they ever persist a starter for a sealed preset. We
+  // treat the verdict as definitive once either (a) the player isn't
+  // connected (tutorial query is idle — falls back to empty progress
+  // and the first realm in `REALM_ORDER` is the only playable one) or
+  // (b) the tutorial query has resolved. Otherwise we wait — flashing
+  // a redirect mid-load would be worse than a one-frame stall.
+  // `tutorial` is shared with the overlay below — same fallback either
+  // way (empty progress while the query is mid-flight or the player is
+  // disconnected).
+  const tutorial = tutorialQuery.data ?? emptyTutorialProgress();
+  const lockState = lockStateFor(preset, tutorial);
+  const lockResolved = mounted && (!walletConnected || tutorialQuery.isSuccess);
+  const sealed = lockResolved && !isPlayable(lockState);
+
+  // Persisted-gear hydration + the frozen, translated run-start snapshot
+  // (see `useEquippedHydration`). While the translate calls are in
+  // flight, `seedReady` stays false (it gates on `initial`, which gates
+  // on `runStartEquipped`), so the player sees the "Pinning run seed…"
+  // placeholder instead of a half-equipped HUD. `ready` waits for the
+  // lock verdict: a locked preset must never run hydration — otherwise
+  // its starter would be set and then persisted by the save effect
+  // below, polluting the next playable realm's localStorage snapshot.
+  const {
+    equippedNative,
+    setEquippedNative,
+    runStartEquipped,
+    setRunStartEquipped,
+  } = useEquippedHydration({
+    realm: cfg.realm,
+    starterGear,
+    ready: lockResolved && !sealed,
+  });
+
+  // Native equipped slots for the drawer + warp interstitial — this
+  // realm's starter gear until hydration lands.
+  const equipped = useMemo(
+    () =>
+      equippedNative ?? {
+        weapon: starterGear.weapon,
+        armor: starterGear.armor,
+      },
+    [equippedNative, starterGear],
+  );
+
+  // Cross-genre descents play the "your gear changes shape" beat once
+  // before the run (see render); native descents skip straight to combat.
   const [entryAck, setEntryAck] = useState(false);
-  const crossGenre = useMemo(() => {
-    return [equipped.weapon, equipped.armor].some((c) => {
-      if (!c) return false;
-      const origin = c.realmPreset ?? presetForRealm(c.realm);
-      return !!origin && origin !== preset;
-    });
-  }, [equipped, preset]);
+  const crossGenre = useIsCrossGenre(equipped, preset);
 
   const initial = useMemo(() => {
     if (!rngSeed || !runStartEquipped) return null;
@@ -206,108 +219,6 @@ export default function PlayPage() {
   // SSR + first-paint inert so the hydration DOM matches.
   const seedReady =
     mounted && !!initial && (!walletConnected || !!commitment.data);
-
-  // Lock verdict, hoisted up so the hydration + save effects below can
-  // bail before they ever persist a starter for a sealed preset. We
-  // treat the verdict as definitive once either (a) the player isn't
-  // connected (tutorial query is idle — falls back to empty progress
-  // and the first realm in `REALM_ORDER` is the only playable one) or
-  // (b) the tutorial query has resolved. Otherwise we wait — flashing
-  // a redirect mid-load would be worse than a one-frame stall.
-  // `tutorial` is shared with the overlay below — same fallback either
-  // way (empty progress while the query is mid-flight or the player is
-  // disconnected).
-  const tutorial = tutorialQuery.data ?? emptyTutorialProgress();
-  const lockState = lockStateFor(preset, tutorial);
-  const lockResolved = mounted && (!walletConnected || tutorialQuery.isSuccess);
-  const sealed = lockResolved && !isPlayable(lockState);
-
-  // One-shot hydration: read the persisted snapshot (native cards),
-  // translate each slot against the active realm's adapter, then pin
-  // `equipped` (native), `equippedForEngine` (translated), and the
-  // run-start snapshot together. Guarded so it only fires on first mount
-  // — re-running would clobber drawer equip choices.
-  //
-  // We *await* the translations before pinning `runStartEquipped` so the
-  // engine never boots a run against native stats it'll then drift away
-  // from. While the translate calls are in flight, `seedReady` stays
-  // false (it gates on `initial`, which gates on `runStartEquipped`), so
-  // the player sees the "Pinning run seed…" placeholder instead of a
-  // half-equipped HUD.
-  //
-  // Gated on `!sealed`: a locked preset must never run hydration —
-  // otherwise its starter would be `setEquipped`'d and then persisted
-  // by the save effect below, polluting the next playable realm's
-  // localStorage snapshot.
-  useEffect(() => {
-    // Wait for the lock verdict before deciding to hydrate. Without
-    // this, the first mount-cycle (mounted=false, lockResolved=false,
-    // sealed=false) would fall through and persist starter gear for
-    // sealed presets.
-    if (!lockResolved) return;
-    if (sealed) return;
-    if (runStartEquipped !== null) return;
-    let cancelled = false;
-    const stored = loadEquipped();
-    // A *starter* card (tokenId === 0n) is realm-local — it represents
-    // the gear handed out by `makeStarterGear` for one specific preset.
-    // If the persisted slot is a starter from a different realm (e.g.
-    // the player loaded /play/cyberpunk first, which seeded its starter
-    // into localStorage, then now lands on /play/fantasy), we discard
-    // it and re-seed from this realm's `starterGear`. Real on-chain
-    // cards (tokenId > 0n) keep travelling across realms — that's the
-    // cross-preset translation story we want to preserve.
-    const keepIfNative = (
-      card: AssetCardType | undefined,
-      fallback: AssetCardType,
-    ): AssetCardType => {
-      if (!card) return fallback;
-      if (card.tokenId === 0n && card.realm?.toLowerCase() !== cfg.realm.toLowerCase()) {
-        return fallback;
-      }
-      return card;
-    };
-    const nativeBaseline: EquippedSnapshot = stored
-      ? {
-          weapon: keepIfNative(stored.weapon, starterGear.weapon),
-          armor: keepIfNative(stored.armor, starterGear.armor),
-        }
-      : { weapon: starterGear.weapon, armor: starterGear.armor };
-    // Native baseline goes into `equipped` immediately so the drawer +
-    // warp interstitial render against the right shape from frame one.
-    setEquipped(nativeBaseline);
-
-    const translateOne = async (
-      slot: "weapon" | "armor",
-      card: AssetCardType | undefined,
-    ): Promise<AssetCardType | undefined> => {
-      if (!card || !publicClient) return card;
-      try {
-        return await translateCardForRealm({
-          card,
-          targetRealm: cfg.realm,
-          publicClient,
-        });
-      } catch {
-        // Adapter missing / reverted — fall back to native stats. Same
-        // policy as `handleEquip`'s catch arm.
-        return card;
-      }
-    };
-
-    void Promise.all([
-      translateOne("weapon", nativeBaseline.weapon),
-      translateOne("armor", nativeBaseline.armor),
-    ]).then(([w, a]) => {
-      if (cancelled) return;
-      setRunStartEquipped({ weapon: w, armor: a });
-    });
-
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lockResolved, sealed]);
 
   // Persist every equip change so the next mount (same preset reload OR
   // navigation to a different /play/[preset]) picks the snapshot back up.
@@ -368,7 +279,7 @@ export default function PlayPage() {
       weapon: isStale(equipped.weapon) ? starterGear.weapon : equipped.weapon,
       armor: isStale(equipped.armor) ? starterGear.armor : equipped.armor,
     };
-    setEquipped(reconciled);
+    setEquippedNative(reconciled);
     setRunStartEquipped(reconciled);
   }, [
     walletConnected,
@@ -378,6 +289,8 @@ export default function PlayPage() {
     runStartEquipped,
     equipped,
     starterGear,
+    setEquippedNative,
+    setRunStartEquipped,
   ]);
 
   // Batch-bank the delve escrow at extraction or boss clear.

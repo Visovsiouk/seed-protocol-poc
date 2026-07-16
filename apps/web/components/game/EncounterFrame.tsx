@@ -30,17 +30,15 @@
  *     no encounter is active (Extract only when `extractable` and the
  *     escrow is non-empty).
  *
- * The warden gets two felt beats via `<WardenConfrontation/>` (a floating,
- * pointer-events-none overlay): a boss-start name reveal when the boss room's
- * encounter first appears, and a phase 1→2 turn — detected by diffing the
- * previous and next `combat.bossPhase` after each `step()` — which reuses the
- * `<BossPhaseBanner/>` flourish and holds the warden's bound-aspirant line.
+ * The warden's felt beats stay out of the stage's way: the boss room's first
+ * appearance pulses the stage's kept-reader ghost (face bloom behind the
+ * enemy), and the phase 1→2 turn — detected by diffing the previous and next
+ * `combat.bossPhase` after each `step()` — fires a danger toast through the
+ * global notification stack. No overlay ever covers the encounter text.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
-import { motion, useReducedMotion } from "framer-motion";
 import type {
   ActionChoice,
   EngineEvent,
@@ -56,17 +54,20 @@ import {
   step as engineStep,
 } from "@/lib/engine";
 import { ActionChoices } from "./ActionChoices";
+import { useBankEscrow } from "./BankStatus";
 import { ChoiceRow, type Choice } from "./ChoiceRow";
-import {
-  WardenConfrontation,
-  type ConfrontationMoment,
-} from "./WardenConfrontation";
+import { useNotify } from "@/components/ui/Toast";
 import { CombatLog } from "./CombatLog";
+import { DefeatOverlay } from "./DefeatOverlay";
 import { EscrowTray } from "./EscrowTray";
 import { ExtractSelection } from "./ExtractSelection";
 import { PlayerBar } from "./PlayerBar";
 import { EncounterStage } from "./EncounterStage";
-import { Panel } from "@/components/ui";
+import {
+  ExtractedPanel,
+  RunOverPanel,
+  type ClearReceiptStatus,
+} from "./RunOutcomePanels";
 
 /**
  * How long the run-over beat (clear narrative + bank/receipt status) dwells
@@ -74,13 +75,6 @@ import { Panel } from "@/components/ui";
  * Long enough to read the beat; short enough not to feel stuck.
  */
 const BOSS_RETURN_DELAY_MS = 3500;
-
-/** Status of the batched escrow mint at extraction / boss clear. */
-type BankStatus =
-  | { kind: "idle" }
-  | { kind: "pending" }
-  | { kind: "done"; count: number }
-  | { kind: "failed"; error: string };
 
 type Props = {
   /** Initial state from `startRun()`. */
@@ -97,11 +91,7 @@ type Props = {
    * `onEvent` and dispatches the on-chain mint. Undefined while the
    * boss is still alive.
    */
-  clearReceipt?:
-    | { status: "pending" }
-    | { status: "minted"; txHash: `0x${string}`; tokenId: bigint }
-    | { status: "failed"; error: string }
-    | { status: "skipped"; reason: string };
+  clearReceipt?: ClearReceiptStatus;
   /**
    * Fires once when the run banks its escrow — either the player pressed
    * Extract or the boss fell (an implicit extraction). The
@@ -177,56 +167,6 @@ function splitIntro(lines: readonly NarrationLine[]): {
   return { intro: head!.text, rest };
 }
 
-/**
- * Renders the state of the batched escrow mint. Shared by
- * the extraction-success panel and the boss-clear run-over panel — both
- * bank the escrow, the only difference is the trigger.
- */
-function BankStatusLine({
-  status,
-  onRetry,
-}: {
-  status: BankStatus;
-  onRetry: () => void;
-}) {
-  if (status.kind === "idle") return null;
-  if (status.kind === "pending") {
-    return (
-      <p className="text-sm opacity-80">Banking your findings on-chain…</p>
-    );
-  }
-  if (status.kind === "done") {
-    return (
-      <p className="text-sm opacity-90">
-        {status.count > 0
-          ? `${status.count} finding${status.count === 1 ? "" : "s"} banked to your wallet.`
-          : "Nothing carried — no findings to bank."}
-      </p>
-    );
-  }
-  return (
-    <div className="flex flex-col gap-2 text-sm">
-      <p className="text-[var(--color-danger)]">
-        Banking failed — your findings are safe.
-      </p>
-      <p className="opacity-70 text-[11px] break-all">{status.error}</p>
-      <ChoiceRow
-        ariaLabel="Retry bank"
-        choices={
-          [
-            {
-              key: "retry-bank",
-              label: "Retry bank",
-              variant: "primary",
-              onClick: onRetry,
-            },
-          ] satisfies Choice[]
-        }
-      />
-    </div>
-  );
-}
-
 export function EncounterFrame({
   initialState,
   initialLines,
@@ -248,17 +188,21 @@ export function EncounterFrame({
   const [intro, setIntro] = useState<string>(initialSplit.intro);
   const [feed, setFeed] = useState<readonly NarrationLine[]>(initialSplit.rest);
   const [busy, setBusy] = useState(false);
-  const [bankStatus, setBankStatus] = useState<BankStatus>({ kind: "idle" });
-  // The live warden-confrontation beat (boss-start name reveal or phase-2
-  // turn), or null when no beat is up. Floats over the focal slot,
-  // pointer-events-none, so combat input underneath stays live.
-  const [confrontation, setConfrontation] = useState<{
-    moment: ConfrontationMoment;
-    name: string;
-  } | null>(null);
+  // Batched escrow mint — status + the once-per-run `runBank` gate (see
+  // `useBankEscrow`). The engine-side extraction commits only after the
+  // batch mint settles, so a failed bank leaves the escrow intact.
+  const commitExtraction = useCallback(
+    () => setState((prev) => engineCommitExtraction(prev)),
+    [],
+  );
+  const { bankStatus, runBank } = useBankEscrow({
+    onBankEscrow,
+    onSettled: commitExtraction,
+  });
   // Monotonic nonce handed to the stage's kept-reader ghost: bumped on
-  // boss-start so the face suggestion blooms under the warden's name.
+  // boss-start so the face suggestion blooms behind the warden.
   const [ghostReveal, setGhostReveal] = useState(0);
+  const notify = useNotify();
   // Open while the player is choosing which carried findings to bank vs
   // discard (the Extract & bank selection overlay). The actual extraction
   // only fires on confirm, with the kept indices.
@@ -268,10 +212,10 @@ export function EncounterFrame({
   // run is over either way, so the modal has no Back affordance.
   const [bossSelecting, setBossSelecting] = useState(false);
 
-  // Fire the boss-start confrontation exactly once when the boss room's
-  // encounter first appears. `announcedBossRef` guards against the effect
-  // re-running on every combat step (the encounter object changes each turn).
-  const announcedBossRef = useRef(false);
+  // Pulse the stage ghost exactly once when the boss room's encounter first
+  // appears. `bossGhostFiredRef` guards against the effect re-running on
+  // every combat step (the encounter object changes each turn).
+  const bossGhostFiredRef = useRef(false);
 
   // Gear is locked for the duration of a delve: the loadout is chosen in
   // the pocket-realm hub before descending and baked into `initialState`
@@ -282,15 +226,15 @@ export function EncounterFrame({
     state.encounter?.kind === "combat" ? state.encounter.combat : undefined;
 
   // Boss-start beat: when the live encounter first becomes the boss (its
-  // monster carries `bakedEffects`), reveal the warden — name + held
-  // bound-aspirant line — and pulse the stage ghost so the face blooms under it.
+  // monster carries `bakedEffects`), pulse the stage ghost so the kept-reader
+  // face blooms behind the warden. The name/lore overlay is gone — it used to
+  // cover the encounter text; the combat log's intro line carries the moment.
   useEffect(() => {
-    if (announcedBossRef.current) return;
+    if (bossGhostFiredRef.current) return;
     if (state.encounter?.kind !== "combat") return;
     const monster = state.encounter.combat.monster;
     if (!("bakedEffects" in monster)) return;
-    announcedBossRef.current = true;
-    setConfrontation({ moment: "boss-start", name: monster.name });
+    bossGhostFiredRef.current = true;
     setGhostReveal((n) => n + 1);
   }, [state.encounter]);
 
@@ -312,68 +256,27 @@ export function EncounterFrame({
         appendLines(result.outcome);
         for (const ev of result.events) {
           onEvent?.(ev);
-          if (ev.type === "BossCleared") {
-            // Confrontation beat is implicitly retired by the run-over state.
-            setConfrontation(null);
-          }
         }
         const nextPhase =
           result.state.encounter?.kind === "combat"
             ? result.state.encounter.combat.bossPhase
             : undefined;
         if (prevPhase === 1 && nextPhase === 2 && combat) {
-          // The warden turns: reuse the phase-2 flourish + hold the warden's
-          // bound-aspirant `turn` line. The stage re-blooms its ghost on the
-          // phase change on its own (keyed on the phase), so no nonce bump.
-          setConfrontation({ moment: "phase2", name: combat.monster.name });
+          // The warden turns: a danger toast in the global stack, floating
+          // clear of the stage. The stage re-blooms its ghost on the phase
+          // change on its own (keyed on the phase), so no nonce bump.
+          notify({
+            tone: "danger",
+            title: "Phase 2",
+            description: `${combat.monster.name} stops holding back — whatever keeps it is done pretending.`,
+          });
         }
         setState(result.state);
       } finally {
         setBusy(false);
       }
     },
-    [appendLines, busy, combat, onEvent, state],
-  );
-
-  // Guards the batched escrow mint so it fires exactly once per run — both
-  // the Extract button and the boss-clear auto-bank effect funnel through
-  // `runBank`, and the effect can re-fire on every state change. Reset to
-  // false on a mint failure so the player can retry.
-  const bankRef = useRef(false);
-
-  const runBank = useCallback(
-    async (
-      bankState: RunState,
-      reason: "extract" | "boss",
-    ): Promise<boolean> => {
-      if (bankRef.current) return false;
-      bankRef.current = true;
-      const entries = bankState.escrow;
-      if (entries.length === 0) {
-        // Extracted empty-handed (or a boss room with nothing carried) —
-        // nothing to mint, but the run still resolved successfully.
-        setBankStatus({ kind: "done", count: 0 });
-        return true;
-      }
-      setBankStatus({ kind: "pending" });
-      try {
-        await onBankEscrow?.(entries, { reason });
-        // Clear the escrow only after the batch mint settles.
-        setState((prev) => engineCommitExtraction(prev));
-        setBankStatus({ kind: "done", count: entries.length });
-        return true;
-      } catch (err) {
-        // Leave the escrow intact and re-open the gate so the player can
-        // retry the bank without losing the findings.
-        bankRef.current = false;
-        setBankStatus({
-          kind: "failed",
-          error: (err as Error).message ?? "unknown error",
-        });
-        return false;
-      }
-    },
-    [onBankEscrow],
+    [appendLines, busy, combat, notify, onEvent, state],
   );
 
   // Confirm from the selection overlay: bank the kept findings, discard the
@@ -483,7 +386,6 @@ export function EncounterFrame({
       // Reset the combat log on a fresh room so the player isn't reading
       // last room's narration over the new monster's HP bar.
       setFeed(split.rest);
-      setConfrontation(null);
       setState(result.state);
     } finally {
       setBusy(false);
@@ -604,114 +506,28 @@ export function EncounterFrame({
             realmName={realmNameRevealed ? realmName : "???"}
           />
         ) : state.extracted ? (
-          // Extracted & banked: the focal slot holds the outcome where the
-          // enemy stood, instead of dropping it below the log over an empty
-          // void. Same terminal-state treatment as the boss clear.
-          <Panel
-            as="section"
-            tone="ok"
-            aria-label="Extracted from the delve"
-            className="flex flex-col gap-3 p-5"
-          >
-            <h2
-              className="text-base font-semibold"
-              style={{ color: "var(--color-ok)" }}
-            >
-              You surface, findings in hand
-            </h2>
-            <p className="text-sm opacity-90 leading-relaxed">
-              {chainReady ? (
-                <>
-                  You pulled out before the realm could take you. Everything you
-                  carried is banked to your wallet under{" "}
-                  <span className="opacity-100 font-medium">{realmName}</span>.
-                </>
-              ) : (
-                <>
-                  You pulled out before the realm could take you. Everything you
-                  carried is yours for this session under{" "}
-                  <span className="opacity-100 font-medium">{realmName}</span> —
-                  connect a chain-ready realm to bank it on-chain.
-                </>
-              )}
-            </p>
-            {/* Surfacing ends the delve and returns the player to the
-                base automatically once the chosen findings have banked
-                (see handleConfirmExtract). We only linger on this panel when
-                the bank FAILED — then BankStatusLine offers a retry, and a
-                successful retry redirects home like the happy path. */}
-            <BankStatusLine status={bankStatus} onRetry={handleRetryBank} />
-          </Panel>
+          <ExtractedPanel
+            chainReady={chainReady}
+            realmName={realmName}
+            bankStatus={bankStatus}
+            onRetryBank={handleRetryBank}
+          />
         ) : runOver ? (
           // Boss down: the focal slot held the enemy, now it holds the thing
-          // you WON — the realm-cleared narrative beat plus the clear-receipt /
-          // bank status. Both are display content, so they live here in the
-          // Main pane rather than below the log. The slot drops its fixed
-          // height here (`min-h` above) so the beat sizes to its content
-          // instead of scrolling inside a 22rem box — the run is over, so
-          // there's no combat below to protect from layout shift.
-          <section aria-label="Run complete" className="flex flex-col gap-3">
-            {interstitial}
-            <Panel tone="glass-2" className="flex flex-col gap-2 p-4">
-              {state.bossClearedTurns !== undefined && (
-                <p className="text-xs opacity-70 tabular-nums uppercase tracking-widest">
-                  Cleared in {state.bossClearedTurns} turn
-                  {state.bossClearedTurns === 1 ? "" : "s"}
-                </p>
-              )}
-              {/* Boss clear is an implicit extraction — bank the full escrow. */}
-              <BankStatusLine status={bankStatus} onRetry={handleRetryBank} />
-              {!clearReceipt && (
-                <p className="text-sm opacity-70">Clear receipt: queued…</p>
-              )}
-              {clearReceipt?.status === "pending" && (
-                <p className="text-sm opacity-80">
-                  Minting clear receipt on-chain…
-                </p>
-              )}
-              {clearReceipt?.status === "minted" && (
-                <div className="flex flex-col gap-1 text-sm">
-                  <p className="opacity-90">Clear receipt minted.</p>
-                  <p className="opacity-70 font-mono break-all text-[11px]">
-                    tokenId 0x{clearReceipt.tokenId.toString(16).slice(0, 16)}… ·
-                    tx {clearReceipt.txHash.slice(0, 10)}…
-                  </p>
-                </div>
-              )}
-              {clearReceipt?.status === "failed" && (
-                <div className="flex flex-col gap-1 text-sm">
-                  <p className="text-[var(--color-danger)]">Mint failed.</p>
-                  <p className="opacity-70 text-[11px] break-all">
-                    {clearReceipt.error}
-                  </p>
-                </div>
-              )}
-              {clearReceipt?.status === "skipped" && (
-                <p className="text-sm opacity-70">{clearReceipt.reason}</p>
-              )}
-            </Panel>
-          </section>
+          // you WON. Both the narrative beat and the receipt/bank status are
+          // display content, so they live here in the Main pane rather than
+          // below the log. The slot drops its fixed height here (`min-h`
+          // above) so the beat sizes to its content instead of scrolling
+          // inside a 22rem box — the run is over, so there's no combat below
+          // to protect from layout shift.
+          <RunOverPanel
+            interstitial={interstitial}
+            bossClearedTurns={state.bossClearedTurns}
+            bankStatus={bankStatus}
+            onRetryBank={handleRetryBank}
+            clearReceipt={clearReceipt}
+          />
         ) : null}
-
-        {/*
-          The warden confrontation is an OVERLAY pinned to the top of the focal
-          slot, NOT a flow element. Rendering a banner inline (between the stage
-          and the log) used to insert a box that shoved the combat log and the
-          action buttons down the instant it appeared — then snapped them back
-          up when it auto-faded. Absolutely positioned + pointer-events-none, it
-          floats over the stage and changes nothing below it: zero layout shift,
-          and combat input underneath stays fully live.
-        */}
-        {confrontation && (
-          <div className="pointer-events-none absolute inset-x-0 top-3 z-20 flex justify-center px-3">
-            <WardenConfrontation
-              moment={confrontation.moment}
-              name={confrontation.name}
-              bossId={bossId}
-              onDone={() => setConfrontation(null)}
-            />
-          </div>
-        )}
       </div>
 
       {(state.encounter || feed.length > 0) && <CombatLog lines={feed} />}
@@ -754,122 +570,5 @@ export function EncounterFrame({
         />
       )}
     </div>
-  );
-}
-
-/**
- * Full-screen defeat overlay (permadeath). Death used to be a quiet line
- * appended to the combat log under a live HUD — easy to miss. This portals
- * a dimmed, danger-tinted modal over the whole viewport so a fall is
- * unmissable: the run is over, the unbanked escrow is forfeit, and the only
- * way on is back to the base. Not dismissable by click-outside or Escape —
- * the player must acknowledge the death via the return CTA, which walks them
- * back to the hideout (where the realm is still there to re-enter, on a fresh
- * descent). Mirrors the boss-clear return so both run-end states land home.
- */
-function DefeatOverlay({
-  escrowLost,
-  depth,
-  turn,
-  onLeave,
-}: {
-  escrowLost: number;
-  depth?: number;
-  turn?: number;
-  onLeave: () => void;
-}) {
-  const reduced = useReducedMotion();
-  const [mounted, setMounted] = useState(false);
-  const leaveRef = useRef<HTMLButtonElement>(null);
-
-  useEffect(() => setMounted(true), []);
-  // Pull focus to the return CTA so the death is announced and keyboard
-  // users land on the only action.
-  useEffect(() => {
-    if (mounted) leaveRef.current?.focus();
-  }, [mounted]);
-
-  if (!mounted) return null;
-
-  return createPortal(
-    <motion.div
-      role="alertdialog"
-      aria-modal="true"
-      aria-label="You have fallen"
-      className="fixed inset-0 z-[60] flex items-center justify-center p-4 backdrop-blur-sm bg-[color-mix(in_oklab,var(--color-danger)_18%,#000_82%)]"
-      initial={reduced ? false : { opacity: 0 }}
-      animate={{ opacity: 1 }}
-      transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
-    >
-      <motion.div
-        className="w-full max-w-md rounded-xl border p-7 flex flex-col gap-4 bg-[var(--color-preset-bg)]"
-        style={{
-          borderColor:
-            "color-mix(in oklab, var(--color-danger) 55%, transparent)",
-          boxShadow:
-            "0 0 0 1px color-mix(in oklab, var(--color-danger) 25%, transparent), 0 24px 80px -12px color-mix(in oklab, var(--color-danger) 45%, transparent)",
-        }}
-        initial={reduced ? false : { opacity: 0, scale: 0.92, y: 12 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
-      >
-        <p
-          className="text-[11px] font-mono uppercase tracking-[0.4em] opacity-70"
-          style={{ color: "var(--color-danger)" }}
-        >
-          You are bound
-        </p>
-        <h2
-          className="text-3xl font-semibold leading-tight"
-          style={{ color: "var(--color-danger)" }}
-        >
-          The world sets you into itself.
-        </h2>
-        {depth !== undefined && (
-          <p className="text-xs uppercase tracking-widest opacity-70">
-            Fell at depth {depth}
-            {/*
-              `turn` is the turn count of the FINAL fight (engine resets it
-              each room), not a run total. Label it as such so a deep death
-              on the first turn of a fresh fight doesn't misread as an
-              instant, turn-1 run.
-            */}
-            {turn !== undefined && turn > 0
-              ? ` · turn ${turn} of the fight there`
-              : ""}
-          </p>
-        )}
-        <p className="text-sm opacity-90 leading-relaxed">
-          You reached for a name and the world bound you where you fell — one
-          more aspirant set into the door to hold it against whoever comes next.
-          That is what a warden is: someone who came this far and could not carry
-          themselves out. No name is carved and the realm chain stays unchanged;
-          your owned, equipped gear is untouched, but
-          {escrowLost > 0 ? (
-            <>
-              {" "}the{" "}
-              <strong style={{ color: "var(--color-danger)" }}>
-                {escrowLost} unminted finding
-                {escrowLost === 1 ? "" : "s"}
-              </strong>{" "}
-              you carried down go into the dark with you. Carry yourself out next
-              time.
-            </>
-          ) : (
-            <> you carried nothing down to lose. Carry yourself out next time.</>
-          )}
-        </p>
-        <button
-          ref={leaveRef}
-          type="button"
-          onClick={onLeave}
-          className="mt-1 w-full rounded-lg px-4 py-3 text-sm font-semibold text-[var(--color-preset-bg)] transition-opacity hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2"
-          style={{ background: "var(--color-danger)" }}
-        >
-          Back to the base →
-        </button>
-      </motion.div>
-    </motion.div>,
-    document.body,
   );
 }
