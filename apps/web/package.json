@@ -19,6 +19,7 @@
   "dependencies": {
     "@coinbase/wallet-sdk": "^4.3.0",
     "@rainbow-me/rainbowkit": "^2.2.0",
+    "@seed-protocol-poc/abis": "workspace:*",
     "@tanstack/react-query": "^5.59.0",
     "better-sqlite3": "^12.10.0",
     "burner-connector": "0.0.20",

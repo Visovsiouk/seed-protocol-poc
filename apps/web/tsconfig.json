@@ -16,6 +16,9 @@
     "plugins": [{ "name": "next" }],
     "paths": {
       "@/*": ["./*"],
+      // Resolves into the @seed-protocol-poc/abis workspace package
+      // (declared in dependencies) — kept as a path alias so Next never
+      // has to transpile TS from behind a node_modules symlink.
       "@abis/*": ["../../packages/abis/*"]
     }
   },
