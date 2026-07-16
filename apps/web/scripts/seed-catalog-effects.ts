@@ -33,28 +33,23 @@ import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 
 import {
-  createPublicClient,
-  createWalletClient,
-  http,
   stringToHex,
   hexToString,
   type Abi,
   type Address,
   type Hex,
 } from "viem";
-import { mnemonicToAccount, type HDAccount } from "viem/accounts";
 
 import { catalogEffectRegistryAbi } from "@abis/generated";
-import { activeChain } from "../lib/chain";
 import { CANONICAL_CATALOG_EFFECTS } from "../lib/contracts/catalog-effects-config";
 import type { CatalogEffectName, Preset } from "../lib/engine/types";
-
-// pnpm hoists multiple viem copies via wagmi peer-dep variants — same
-// TS2719 dodge the other seed scripts use.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type PublicClientT = any;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type WalletClientT = any;
+import {
+  assertChainId,
+  buildSeederClients,
+  type PublicClientT,
+  type Signer,
+  type WalletClientT,
+} from "./lib/seeder-client";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -104,25 +99,10 @@ function loadRegistryBytecode(): Hex {
 // Env + keyring
 // ---------------------------------------------------------------------------
 
-function loadEnv() {
-  const mnemonic = process.env.REALM_SIGNER_MNEMONIC;
-  const rpcUrl =
-    process.env.REALM_SIGNER_RPC_URL ?? process.env.NEXT_PUBLIC_RPC_URL;
-  if (!mnemonic) throw new Error("REALM_SIGNER_MNEMONIC is not set");
-  if (!rpcUrl) throw new Error("REALM_SIGNER_RPC_URL (or NEXT_PUBLIC_RPC_URL) is not set");
-  return { mnemonic, rpcUrl };
-}
-
-type Signer = { account: HDAccount; wallet: WalletClientT };
-
-function buildKeyring(mnemonic: string, rpcUrl: string) {
-  const transport = http(rpcUrl);
-  const chain = activeChain;
-  const publicClient = createPublicClient({ chain, transport });
+function buildKeyring() {
+  const { publicClient, signerAt, chain } = buildSeederClients();
   // Admin slot (index 0) — same one that seeded realms + adapters.
-  const account = mnemonicToAccount(mnemonic, { addressIndex: 0 });
-  const wallet = createWalletClient({ account, chain, transport });
-  const admin: Signer = { account, wallet };
+  const admin: Signer = signerAt(0);
   return { publicClient, admin, chain };
 }
 
@@ -298,15 +278,10 @@ async function readEffectsOnchain(
 // ---------------------------------------------------------------------------
 
 async function main() {
-  const { mnemonic, rpcUrl } = loadEnv();
-  const { publicClient, admin, chain } = buildKeyring(mnemonic, rpcUrl);
+  const { publicClient, admin, chain } = buildKeyring();
 
-  const chainId = await publicClient.getChainId();
-  if (chainId !== chain.id) {
-    throw new Error(
-      `RPC chainId ${chainId} doesn't match NEXT_PUBLIC_CHAIN target ${chain.id} (${chain.name})`,
-    );
-  }
+  await assertChainId(publicClient, chain);
+  const chainId = chain.id;
 
   console.log(`Seeding catalog effects on chainId ${chainId} (${chain.name})`);
   console.log(`  admin           : ${admin.account.address}\n`);

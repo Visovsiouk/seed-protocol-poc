@@ -53,27 +53,17 @@ import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 
-import {
-  createPublicClient,
-  createWalletClient,
-  http,
-  type Abi,
-  type Address,
-  type Hex,
-} from "viem";
-import { mnemonicToAccount, type HDAccount } from "viem/accounts";
+import { type Abi, type Address, type Hex } from "viem";
 
 import { adapterRegistryAbi } from "@abis/generated";
 import { addressesByChain } from "../lib/contracts/addresses";
-import { activeChain } from "../lib/chain";
-
-// pnpm hoists multiple viem copies via wagmi/rainbowkit peer-dep variants
-// — same TS2719 dodge the realm seeder uses. The cross-boundary call
-// site is `deployContract` + `waitForTransactionReceipt` here.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type PublicClientT = any;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type WalletClientT = any;
+import {
+  assertChainId,
+  buildSeederClients,
+  type PublicClientT,
+  type Signer,
+  type WalletClientT,
+} from "./lib/seeder-client";
 
 // ---------------------------------------------------------------------------
 // Adapter constants
@@ -142,33 +132,12 @@ function loadArtifact(slot: Slot, src: Preset, tgt: Preset): ForgeArtifact {
 // Env + keyring
 // ---------------------------------------------------------------------------
 
-function loadEnv() {
-  const mnemonic = process.env.REALM_SIGNER_MNEMONIC;
-  const rpcUrl =
-    process.env.REALM_SIGNER_RPC_URL ?? process.env.NEXT_PUBLIC_RPC_URL;
-  if (!mnemonic) {
-    throw new Error("REALM_SIGNER_MNEMONIC is not set");
-  }
-  if (!rpcUrl) {
-    throw new Error("REALM_SIGNER_RPC_URL (or NEXT_PUBLIC_RPC_URL) is not set");
-  }
-  return { mnemonic, rpcUrl };
-}
-
-type Signer = { account: HDAccount; wallet: WalletClientT };
-
-function buildKeyring(mnemonic: string, rpcUrl: string) {
-  const transport = http(rpcUrl);
-  const chain = activeChain;
-  const publicClient = createPublicClient({ chain, transport });
-
+function buildKeyring() {
+  const { publicClient, signerAt, chain } = buildSeederClients();
   // Admin slot (index 0) is used for both deployments and registry
   // writes. registerAdapter is permissionless so any funded account
   // would work — using admin keeps the gas burn on one address.
-  const account = mnemonicToAccount(mnemonic, { addressIndex: 0 });
-  const wallet = createWalletClient({ account, chain, transport });
-  const admin: Signer = { account, wallet };
-
+  const admin: Signer = signerAt(0);
   return { publicClient, admin, chain };
 }
 
@@ -336,15 +305,10 @@ async function registerAdapter(
 // ---------------------------------------------------------------------------
 
 async function main() {
-  const { mnemonic, rpcUrl } = loadEnv();
-  const { publicClient, admin, chain } = buildKeyring(mnemonic, rpcUrl);
+  const { publicClient, admin, chain } = buildKeyring();
 
-  const chainId = await publicClient.getChainId();
-  if (chainId !== chain.id) {
-    throw new Error(
-      `RPC chainId ${chainId} doesn't match NEXT_PUBLIC_CHAIN target ${chain.id} (${chain.name})`,
-    );
-  }
+  await assertChainId(publicClient, chain);
+  const chainId = chain.id;
 
   const addrMap = addressesByChain[chainId];
   if (!addrMap) {

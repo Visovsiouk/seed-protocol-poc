@@ -82,9 +82,21 @@ if $FRESH; then
   # note above for why we reset instead of delete.
   echo "==> FRESH chain — wiping stale anvil state + game db, resetting seed caches"
   rm -f "$STATE_FILE" "${DB_FILES[@]}"
-  printf '%s\n' '{' '  "$schema": "Per-chainId map of seeded realm addresses + per-preset schema IDs, written by `pnpm seed`. Placeholder zeros until the seeder runs."' '}' > "$SEED_REALMS_CACHE"
-  printf '%s\n' '{' '  "$schema": "Per-chainId map of deployed adapter addresses keyed by (slot, sourcePreset, targetPreset), written by `pnpm seed:adapters`."' '}' > "$SEED_ADAPTERS_CACHE"
-  printf '%s\n' '{' '  "$schema": "Per-chainId map of the deployed CatalogEffectRegistry address + per-schema effect lists, written by `pnpm seed:catalog`. Placeholder zeros until the seeder runs."' '}' > "$SEED_CATALOG_CACHE"
+  cat > "$SEED_REALMS_CACHE" <<'EOF'
+{
+  "$schema": "Per-chainId map of seeded realm addresses + per-preset schema IDs, written by `pnpm seed`. Placeholder zeros until the seeder runs."
+}
+EOF
+  cat > "$SEED_ADAPTERS_CACHE" <<'EOF'
+{
+  "$schema": "Per-chainId map of deployed adapter addresses keyed by (slot, sourcePreset, targetPreset), written by `pnpm seed:adapters`."
+}
+EOF
+  cat > "$SEED_CATALOG_CACHE" <<'EOF'
+{
+  "$schema": "Per-chainId map of the deployed CatalogEffectRegistry address + per-schema effect lists, written by `pnpm seed:catalog`. Placeholder zeros until the seeder runs."
+}
+EOF
 fi
 
 # Deploy.s.sol PoC-mode env (mirrors the sister repo's deploy-local.sh).
@@ -162,24 +174,11 @@ for i in {1..40}; do
 done
 
 if $FRESH; then
-  echo "==> pnpm install"
-  pnpm install
-
   echo "==> deploying core protocol (sister Deploy.s.sol, PoC mode)"
   ( cd "$SISTER_REPO" && forge script script/Deploy.s.sol \
       --fork-url "$RPC_URL" --broadcast --private-key "$DEPLOYER_PK" -vvvv )
 
-  echo "==> seeding realms (3 ecosystems + 6 schemas)"
-  pnpm --filter web seed
-
-  echo "==> forge build (12 adapter contracts)"
-  ( cd contracts && forge build )
-
-  echo "==> seeding adapters (12 deploys + registry writes)"
-  pnpm --filter web seed:adapters
-
-  echo "==> seeding catalog-effect registry"
-  pnpm --filter web seed:catalog
+  bash "$ROOT/scripts/seed-all.sh"
 
   # Mark provisioned only after every step above succeeded. `set -e` aborts
   # before this line on any failure, so a crashed seeder leaves no marker and

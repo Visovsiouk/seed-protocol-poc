@@ -39,20 +39,7 @@ if $CLEAN; then
   rm -f apps/web/data/realms.db apps/web/data/realms.db-shm apps/web/data/realms.db-wal
 fi
 
-echo "==> pnpm install"
-pnpm install
-
-echo "==> seeding realms (3 ecosystems + 6 schemas)"
-pnpm --filter web seed
-
-echo "==> forge build (12 adapter contracts)"
-( cd contracts && forge build )
-
-echo "==> seeding adapters (12 deploys + registry writes)"
-pnpm --filter web seed:adapters
-
-echo "==> seeding catalog-effect registry (1 deploy + 3 schema writes)"
-pnpm --filter web seed:catalog
+bash "$ROOT/scripts/seed-all.sh"
 
 # `--demo` (used by `pnpm demo-up`) forces the anvil mock-wallet demo mode;
 # the default (`pnpm bring-up`) forces it off for the real RainbowKit wallet.

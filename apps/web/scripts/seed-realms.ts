@@ -47,36 +47,20 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 
+import { decodeEventLog, parseAbi, type Address, type Hex } from "viem";
+
 import {
-  createPublicClient,
-  createWalletClient,
-  decodeEventLog,
-  http,
-  parseAbi,
-  type Address,
-  type Hex,
-} from "viem";
-import { mnemonicToAccount, type HDAccount } from "viem/accounts";
-
-// pnpm hoists multiple viem copies for wagmi/rainbowkit peer-dep variants
-// (TS2719 "Two different types with this name exist"). Even with inferred
-// `ReturnType<typeof createPublicClient>`, passing that client across a
-// function boundary makes TS pick the "wrong" copy's `getBlock` return
-// type and emit TS2345. We type the cross-boundary params as `any` —
-// runtime behavior is unchanged; the seeder only ever sees the one client
-// built in `buildKeyring`.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type PublicClientT = any;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type WalletClientT = any;
-
+  assertChainId,
+  buildSeederClients,
+  type PublicClientT,
+  type Signer,
+} from "./lib/seeder-client";
 import {
   ecosystemFactoryAbi,
   ecosystemTemplateAbi,
   seedSbtAbi,
 } from "@abis/generated";
 import { addressesByChain } from "../lib/contracts/addresses";
-import { activeChain } from "../lib/chain";
 import { SCHEMAS, SCHEMA_ORDER, type SchemaKey } from "../lib/contracts/schemas";
 import { buildSeederStubProof } from "../lib/contracts/proof-stub";
 
@@ -110,33 +94,12 @@ const ROLE_INDEX: Record<Role, number> = {
 const PRESETS = ["fantasy", "scifi", "cyberpunk"] as const;
 type Preset = (typeof PRESETS)[number];
 
-type Signer = { account: HDAccount; wallet: WalletClientT };
-
-function loadEnv() {
-  const mnemonic = process.env.REALM_SIGNER_MNEMONIC;
-  const rpcUrl =
-    process.env.REALM_SIGNER_RPC_URL ?? process.env.NEXT_PUBLIC_RPC_URL;
-  if (!mnemonic) {
-    throw new Error("REALM_SIGNER_MNEMONIC is not set");
-  }
-  if (!rpcUrl) {
-    throw new Error("REALM_SIGNER_RPC_URL (or NEXT_PUBLIC_RPC_URL) is not set");
-  }
-  return { mnemonic, rpcUrl };
-}
-
-function buildKeyring(mnemonic: string, rpcUrl: string) {
-  const transport = http(rpcUrl);
-  const chain = activeChain;
-  const publicClient = createPublicClient({ chain, transport });
+function buildKeyring() {
+  const { publicClient, signerAt, chain } = buildSeederClients();
 
   const signers = {} as Record<Role, Signer>;
   for (const role of Object.keys(ROLE_INDEX) as Role[]) {
-    const account = mnemonicToAccount(mnemonic, {
-      addressIndex: ROLE_INDEX[role],
-    });
-    const wallet = createWalletClient({ account, chain, transport });
-    signers[role] = { account, wallet };
+    signers[role] = signerAt(ROLE_INDEX[role]);
   }
 
   return { publicClient, signers, chain };
@@ -349,15 +312,10 @@ function writeSeededFile(
 // ---------------------------------------------------------------------------
 
 async function main() {
-  const { mnemonic, rpcUrl } = loadEnv();
-  const { publicClient, signers, chain } = buildKeyring(mnemonic, rpcUrl);
+  const { publicClient, signers, chain } = buildKeyring();
 
-  const chainId = await publicClient.getChainId();
-  if (chainId !== chain.id) {
-    throw new Error(
-      `RPC chainId ${chainId} doesn't match NEXT_PUBLIC_CHAIN target ${chain.id} (${chain.name})`,
-    );
-  }
+  await assertChainId(publicClient, chain);
+  const chainId = chain.id;
 
   const addrMap = addressesByChain[chainId];
   if (!addrMap) {
