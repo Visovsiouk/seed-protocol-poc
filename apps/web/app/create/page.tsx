@@ -48,6 +48,8 @@ import {
   useWriteContract,
 } from "wagmi";
 import { ecosystemFactoryAbi, ecosystemTemplateAbi } from "@abis/generated";
+import { faucetEnabled } from "@/lib/env";
+import type { FaucetResponse } from "@/lib/faucet-server";
 import { getAddress } from "@/lib/contracts/addresses";
 import { useCreateEcosystem } from "@/lib/contracts/factory";
 import { useRegisterRealmSchemas } from "@/lib/contracts/register-schemas";
@@ -62,6 +64,11 @@ import { getFlavorBank } from "@/lib/flavor";
 import type { BossDef, Preset } from "@/lib/engine/types";
 
 const PRESETS: readonly Preset[] = ["fantasy", "scifi", "cyberpunk"] as const;
+
+// Gas budget the four-signature ceremony needs. 0.01 ETH covers all four txs
+// with a wide margin on anvil; below this the very first signature would die
+// in gas estimation with viem's cryptic "gas required exceeds allowance".
+const MIN_DEPLOY_BALANCE_WEI = 10_000_000_000_000_000n;
 
 type Step =
   | { kind: "form" }
@@ -240,11 +247,54 @@ export default function CreatePage() {
     throw new Error("register: exhausted retries while racing for signer index");
   };
 
+  /**
+   * Pre-flight: make sure the wallet can pay deploy gas BEFORE the first
+   * wallet prompt. AutoFaucet normally handles this on connect, but it can
+   * race the user to this page or fail silently (and a chain reset wipes
+   * balances out from under an already-connected wallet) — so the founding
+   * rite re-checks and, when the faucet is available, funds synchronously.
+   * Throws a human-readable error for the existing error step.
+   */
+  const ensureGasFunds = async (owner: `0x${string}`) => {
+    if (!publicClient) return; // no client to check with — let the wallet surface it
+    const balance = await publicClient.getBalance({ address: owner });
+    if (balance >= MIN_DEPLOY_BALANCE_WEI) return;
+
+    if (!faucetEnabled) {
+      throw new Error(
+        "Your wallet has no ETH on this chain, so it can't pay the deploy gas. Fund it and try again.",
+      );
+    }
+
+    const res = await fetch("/api/faucet", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ address: owner }),
+    });
+    const body = (await res.json().catch(() => null)) as FaucetResponse | null;
+    if (!res.ok || !body?.ok) {
+      const reason = body && !body.ok ? body.message : `HTTP ${res.status}`;
+      throw new Error(
+        `Your wallet has no ETH and the faucet couldn't fund it (${reason}). Try again in a few minutes.`,
+      );
+    }
+
+    const after = await publicClient.getBalance({ address: owner });
+    if (after < MIN_DEPLOY_BALANCE_WEI) {
+      throw new Error(
+        "Your wallet is still unfunded after a faucet top-up — the chain may be resetting. Reload and try again.",
+      );
+    }
+  };
+
   const onDeploy = async () => {
     if (!address) return;
     try {
-      // Step 1: factory call. Returns the new clone address.
+      // Step 0: the wallet must hold gas money before we ask it to sign.
       setStep({ kind: "signing_create" });
+      await ensureGasFunds(address);
+
+      // Step 1: factory call. Returns the new clone address.
       const create = await createEcosystem();
 
       // Step 2: register the realm's own clearReceipt + loot schemas on
