@@ -20,6 +20,7 @@ export type TraderError = {
     | "rate_limited"
     | "float_low"
     | "invalid"
+    | "not_configured"
     | "overpriced"
     | "already_traded"
     | "tx_reverted"
@@ -29,6 +30,28 @@ export type TraderError = {
 
 export type TraderResponse = TraderOk | TraderError;
 
+/**
+ * Tolerant response decode. The server always replies with the JSON
+ * envelope, but anything between it and the browser (a crashed dev server,
+ * a proxy 502, an HTML error page) can hand back a non-JSON body — turn
+ * that into a readable error instead of "Unexpected end of JSON input".
+ * Exported for unit tests.
+ */
+export function parseTraderResponse(
+  status: number,
+  text: string,
+): TraderResponse {
+  try {
+    return JSON.parse(text) as TraderResponse;
+  } catch {
+    return {
+      ok: false,
+      reason: "internal",
+      message: `Trader endpoint returned HTTP ${status} without a readable reply — check the server logs`,
+    };
+  }
+}
+
 async function call(route: string, body: unknown): Promise<TraderResponse> {
   try {
     const res = await fetch(route, {
@@ -36,8 +59,7 @@ async function call(route: string, body: unknown): Promise<TraderResponse> {
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
     });
-    const json = (await res.json()) as TraderResponse;
-    return json;
+    return parseTraderResponse(res.status, await res.text());
   } catch (e) {
     return {
       ok: false,

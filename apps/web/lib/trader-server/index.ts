@@ -35,6 +35,7 @@ export type TraderResponse =
         | "rate_limited"
         | "float_low"
         | "invalid"
+        | "not_configured"
         | "overpriced"
         | "already_traded"
         | "tx_reverted"
@@ -62,6 +63,30 @@ function reply(status: number, body: TraderResponse) {
 }
 
 /**
+ * True when the error is an operator problem (missing/placeholder TRADER_*
+ * env, unusable private key) rather than a player or chain problem. Server
+ * env parses lazily, so these surface on the first trader call — from
+ * `getServerEnv()` (ZodError) or viem's `privateKeyToAccount`.
+ */
+function isConfigError(e: unknown): boolean {
+  if (e instanceof z.ZodError) return true;
+  const msg = e instanceof Error ? e.message : String(e);
+  return /TRADER_PRIVATE_KEY|private key/i.test(msg);
+}
+
+function replyNotConfigured(e: unknown) {
+  // Full detail to the server log; the client gets a stable in-world line
+  // (no zod dump, no key material).
+  console.error("[trader] not configured:", e);
+  return reply(503, {
+    ok: false,
+    reason: "not_configured",
+    message:
+      "The Wandering Trader has no license to trade here yet — the operator must set the TRADER_* env vars",
+  });
+}
+
+/**
  * Wraps a route handler with the four shared guards: rate limit, JSON body
  * validation, float check, and unified error-to-response mapping. Routes
  * just provide a Zod schema and a function that takes the parsed body and
@@ -74,66 +99,91 @@ export function withTraderGuards<T extends z.ZodTypeAny>(
   ) => Promise<{ txHash: `0x${string}`; extra?: Record<string, unknown> }>,
 ): (req: Request) => Promise<Response> {
   return async (req) => {
-    const ip = getClientIp(req);
+    // Outer catch-all: nothing may escape this function. An unhandled throw
+    // makes Next return a bodyless 500, which the browser reports as the
+    // useless "Unexpected end of JSON input" instead of a trader message.
     try {
-      enforceRateLimit(ip);
-    } catch (e) {
-      if (e instanceof RateLimitError) {
-        return reply(429, {
+      const ip = getClientIp(req);
+      try {
+        enforceRateLimit(ip);
+      } catch (e) {
+        if (e instanceof RateLimitError) {
+          return reply(429, {
+            ok: false,
+            reason: "rate_limited",
+            message: "Try again in a few minutes",
+          });
+        }
+        throw e;
+      }
+
+      let body: z.infer<T>;
+      try {
+        const raw = await req.json();
+        body = schema.parse(raw);
+      } catch (e) {
+        return reply(400, {
           ok: false,
-          reason: "rate_limited",
-          message: "Try again in a few minutes",
+          reason: "invalid",
+          // A zod message names the offending field; a JSON SyntaxError
+          // ("Unexpected end of JSON input") would just confuse.
+          message:
+            e instanceof z.ZodError
+              ? e.message
+              : "Request body must be a JSON object",
         });
       }
-      throw e;
-    }
 
-    let body: z.infer<T>;
-    try {
-      const raw = await req.json();
-      body = schema.parse(raw);
-    } catch (e) {
-      return reply(400, {
-        ok: false,
-        reason: "invalid",
-        message: e instanceof Error ? e.message : "Bad request body",
-      });
-    }
+      try {
+        await enforceFloat();
+      } catch (e) {
+        if (e instanceof FloatLowError) {
+          return reply(503, {
+            ok: false,
+            reason: "float_low",
+            message: "Trader is recharging — try again later",
+          });
+        }
+        throw e;
+      }
 
-    try {
-      await enforceFloat();
-    } catch (e) {
-      if (e instanceof FloatLowError) {
-        return reply(503, {
+      try {
+        const result = await handler(body);
+        return reply(200, {
+          ok: true,
+          txHash: result.txHash,
+          extra: result.extra,
+        });
+      } catch (e) {
+        if (e instanceof TraderRefusalError) {
+          return reply(400, {
+            ok: false,
+            reason: e.reason,
+            message: e.message,
+          });
+        }
+        if (isConfigError(e)) return replyNotConfigured(e);
+        const message = e instanceof Error ? e.message : String(e);
+        // viem's tx errors expose a `shortMessage` we could surface; for now
+        // just classify revert vs internal heuristically.
+        const isRevert =
+          /revert|reverted|insufficient/i.test(message) ||
+          /^Execution reverted/i.test(message);
+        return reply(isRevert ? 400 : 500, {
           ok: false,
-          reason: "float_low",
-          message: "Trader is recharging — try again later",
+          reason: isRevert ? "tx_reverted" : "internal",
+          message,
         });
       }
-      throw e;
-    }
-
-    try {
-      const result = await handler(body);
-      return reply(200, {
-        ok: true,
-        txHash: result.txHash,
-        extra: result.extra,
-      });
     } catch (e) {
-      if (e instanceof TraderRefusalError) {
-        return reply(400, { ok: false, reason: e.reason, message: e.message });
-      }
-      const message = e instanceof Error ? e.message : String(e);
-      // viem's tx errors expose a `shortMessage` we could surface; for now
-      // just classify revert vs internal heuristically.
-      const isRevert =
-        /revert|reverted|insufficient/i.test(message) ||
-        /^Execution reverted/i.test(message);
-      return reply(isRevert ? 400 : 500, {
+      // Config errors escape the guards above (rate limit + float both read
+      // server env); anything else is a genuine internal fault.
+      if (isConfigError(e)) return replyNotConfigured(e);
+      console.error("[trader] unhandled:", e);
+      return reply(500, {
         ok: false,
-        reason: isRevert ? "tx_reverted" : "internal",
-        message,
+        reason: "internal",
+        message: e instanceof Error ? e.message : String(e),
       });
     }
   };
@@ -147,13 +197,42 @@ export function withTraderGuards<T extends z.ZodTypeAny>(
 const EXCHANGE = () => getAddress("protocolExchange");
 const ASSET = () => getAddress("universalAsset");
 
+/**
+ * The trader's per-item ceiling in ETH: the on-chain-tier appraisal
+ * bounded by TRADER_MAX_BUY_WEI. Enforced on EVERY path where the trader
+ * spends (plain buy and hail alike) — without it, /api/trader/buy would
+ * let any listing extract the full env ceiling regardless of what the
+ * item is worth. Returns the user-facing tier for the response `extra`.
+ */
+async function enforceAppraisal(
+  publicClient: ReturnType<typeof loadTraderClient>["publicClient"],
+  tokenId: bigint,
+  price: bigint,
+): Promise<number> {
+  const env = getServerEnv();
+  const attrs = (await publicClient.readContract({
+    address: ASSET(),
+    abi: universalAssetAbi,
+    functionName: "tokenAttributes",
+    args: [tokenId],
+  })) as readonly [number, bigint, string];
+  const tier = userTierFromOnChain(attrs[0]);
+  const cap = appraiseCapWei(tier, BigInt(env.TRADER_MAX_BUY_WEI));
+  if (price > cap) {
+    throw new TraderRefusalError(
+      "overpriced",
+      `The trader appraises this T${tier} relic at no more than ${formatEther(cap)} ETH — reprice and try again`,
+    );
+  }
+  return tier;
+}
+
 export const buyBodySchema = z.object({
   listingId: z.string().regex(/^\d+$/),
 });
 
 export async function doTraderBuy(body: z.infer<typeof buyBodySchema>) {
   const { wallet, publicClient, account } = loadTraderClient();
-  const env = getServerEnv();
   const listingId = BigInt(body.listingId);
 
   const listing = (await publicClient.readContract({
@@ -169,15 +248,10 @@ export async function doTraderBuy(body: z.infer<typeof buyBodySchema>) {
     boolean, // active
   ];
 
-  const [, , , price, active] = listing;
+  const [, tokenId, , price, active] = listing;
   if (!active) throw new Error("Listing is not active");
 
-  const maxBuy = BigInt(env.TRADER_MAX_BUY_WEI);
-  if (price > maxBuy) {
-    throw new Error(
-      `Listing price ${price.toString()} exceeds TRADER_MAX_BUY_WEI ${maxBuy.toString()}`,
-    );
-  }
+  const tier = await enforceAppraisal(publicClient, tokenId, price);
 
   const txHash = await wallet.writeContract({
     address: EXCHANGE(),
@@ -189,7 +263,7 @@ export async function doTraderBuy(body: z.infer<typeof buyBodySchema>) {
     chain: wallet.chain,
   });
   await publicClient.waitForTransactionReceipt({ hash: txHash });
-  return { txHash, extra: { price: price.toString() } };
+  return { txHash, extra: { price: price.toString(), tier } };
 }
 
 export const listBodySchema = z.object({
@@ -308,7 +382,6 @@ export const hailBodySchema = z.object({
  */
 export async function doTraderHail(body: z.infer<typeof hailBodySchema>) {
   const { wallet, publicClient, account } = loadTraderClient();
-  const env = getServerEnv();
   const listingId = BigInt(body.listingId);
 
   const listing = (await publicClient.readContract({
@@ -330,21 +403,8 @@ export async function doTraderHail(body: z.infer<typeof hailBodySchema>) {
     throw new Error("The trader does not hail itself");
   }
 
-  // --- Guard 1: fair price by on-chain tier -------------------------------
-  const attrs = (await publicClient.readContract({
-    address: ASSET(),
-    abi: universalAssetAbi,
-    functionName: "tokenAttributes",
-    args: [tokenId],
-  })) as readonly [number, bigint, string];
-  const tier = userTierFromOnChain(attrs[0]);
-  const cap = appraiseCapWei(tier, BigInt(env.TRADER_MAX_BUY_WEI));
-  if (price > cap) {
-    throw new TraderRefusalError(
-      "overpriced",
-      `The trader appraises this T${tier} relic at no more than ${formatEther(cap)} ETH — reprice and hail again`,
-    );
-  }
+  // --- Guard 1: fair price by on-chain tier (shared with the buy path) ----
+  const tier = await enforceAppraisal(publicClient, tokenId, price);
 
   // --- Guard 2: one deal per seller, ever (derived from chain) ------------
   const [listedEvents, purchasedEvents] = await Promise.all([

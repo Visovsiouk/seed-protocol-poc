@@ -35,10 +35,26 @@ const publicSchema = z.object({
 });
 
 /**
+ * True for the all-zeros key `.env.example` ships as a placeholder. Zero is
+ * not a valid secp256k1 scalar — viem's `privateKeyToAccount` throws on it —
+ * so catch it at env-parse time with a message that names the fix instead of
+ * letting the trader routes crash on first use.
+ */
+export function isPlaceholderPrivateKey(key: string): boolean {
+  return /^0x0{64}$/.test(key);
+}
+
+/**
  * Server-only env. Lazily parsed; never importable from a `"use client"` file.
  */
 const serverSchema = z.object({
-  TRADER_PRIVATE_KEY: z.string().regex(/^0x[0-9a-fA-F]{64}$/),
+  TRADER_PRIVATE_KEY: z
+    .string()
+    .regex(/^0x[0-9a-fA-F]{64}$/)
+    .refine((key) => !isPlaceholderPrivateKey(key), {
+      message:
+        "TRADER_PRIVATE_KEY is the all-zeros placeholder — set a real key in apps/web/.env.local (any funded account the demo player doesn't use)",
+    }),
   TRADER_RPC_URL: z.string().url(),
   TRADER_FLOAT_MIN_WEI: z.string().regex(/^\d+$/),
   TRADER_MAX_BUY_WEI: z.string().regex(/^\d+$/).default("200000000000000000"),
