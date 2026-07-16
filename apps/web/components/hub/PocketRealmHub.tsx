@@ -44,18 +44,17 @@ import {
 } from "@/lib/tutorial/progress";
 import { warpCrossfade, withReducedMotion } from "@/lib/ui/motion";
 import { Panel, Button, Chip, Stamp, Rule } from "@/components/ui";
-import { CodexPanel } from "@/components/codex/CodexPanel";
 import { useCodexStatus } from "@/lib/codex/use-codex";
 import { LoadoutStaging } from "./LoadoutStaging";
+import { onHubStation } from "./station-event";
 
-type Station = "doors" | "market" | "altar" | "forge" | "codex";
+type Station = "doors" | "market" | "altar" | "forge";
 
 const STATIONS: { id: Station; label: string }[] = [
   { id: "doors", label: "The Doors" },
   { id: "market", label: "The Market" },
   { id: "altar", label: "The Altar" },
   { id: "forge", label: "The Forge" },
-  { id: "codex", label: "The Codex" },
 ];
 
 /** Three diamond glyphs marking sparks kindled (mirrors RealmSelector). */
@@ -205,6 +204,19 @@ export function PocketRealmHub() {
     }
   }, []);
 
+  // Live station switches from globally-mounted chrome (the floating Codex
+  // widget's CTAs) — a same-route <Link> can't re-run the mount-time URL
+  // read above, so the widget emits an event alongside it.
+  useEffect(
+    () =>
+      onHubStation((s) => {
+        if (!STATIONS.some((st) => st.id === s)) return;
+        setSelected(null);
+        setStation(s);
+      }),
+    [],
+  );
+
   // Pre-arc: the world stays small. First the cold-open book (a narrow door
   // with no base chrome); once walked, the player wakes into the base — the
   // same titled hideout as post-arc, but showing the Doors station only. The
@@ -241,12 +253,10 @@ export function PocketRealmHub() {
           <div className="flex w-full flex-col items-center gap-6">
             <RealmSelector onSelectRealm={setSelected} />
             {/* Once the first spark kindles, the Altar surfaces under the picker
-                so the player watches their sparks accumulate between descents. */}
+                so the player watches their sparks accumulate between descents.
+                (The Codex — the journey's map — floats globally as chrome, see
+                CodexWidget.) */}
             {progress.starterClears > 0 && <GenesisLedger />}
-            {/* The Codex is readable from the very first wake — it is the
-                journey's map, and each stamped row explains what the previous
-                action proved on-chain. */}
-            <CodexPanel />
           </div>
         )}
       </div>
@@ -328,14 +338,6 @@ export function PocketRealmHub() {
             <GenesisLedger onClaimed={() => setStation("forge")} />
           )}
           {station === "forge" && <ForgeRoom />}
-          {station === "codex" && (
-            <CodexPanel
-              onNavigate={(s) => {
-                setSelected(null);
-                setStation(s);
-              }}
-            />
-          )}
         </motion.section>
       </AnimatePresence>
     </div>

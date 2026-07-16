@@ -12,6 +12,7 @@ import { fetchExchangeJourney } from "@/lib/reads/exchange-journey";
 import type { ExchangeJourney } from "@/lib/reads/exchange-journey";
 import { loadCodexFlags } from "./local";
 import { deriveCodexStatus, type CodexStatus } from "./status";
+import { useDeploymentGuard } from "@/lib/persistence/deployment-guard";
 import type { PlayerRealmMeta } from "@/lib/reads/hooks";
 
 /**
@@ -50,7 +51,11 @@ export function useCodexStatus(player: `0x${string}` | undefined): {
     ...defaultReadQueryOptions,
   });
 
-  const flags = loadCodexFlags(player);
+  // Don't read the localStorage flags until the deployment guard has
+  // confirmed they belong to THIS chain — a fresh redeploy would otherwise
+  // show last deployment's cross-realm carry as already stamped.
+  const guardChecked = useDeploymentGuard();
+  const flags = guardChecked ? loadCodexFlags(player) : {};
 
   const status = useMemo(
     () =>
@@ -71,7 +76,11 @@ export function useCodexStatus(player: `0x${string}` | undefined): {
   return {
     status,
     isLoading:
-      progress.isLoading || cards.isLoading || realms.isLoading || journey.isLoading,
+      !guardChecked ||
+      progress.isLoading ||
+      cards.isLoading ||
+      realms.isLoading ||
+      journey.isLoading,
     ownedRealm,
   };
 }

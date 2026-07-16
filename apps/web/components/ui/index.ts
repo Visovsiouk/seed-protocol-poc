@@ -19,3 +19,5 @@ export { Stat } from "./Stat";
 export { AmbientOrbs } from "./AmbientOrbs";
 export { AppShell } from "./AppShell";
 export { Dialog } from "./Dialog";
+export { NotificationProvider, useNotify } from "./Toast";
+export type { ToastOptions, ToastTone } from "./Toast";

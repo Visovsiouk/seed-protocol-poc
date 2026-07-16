@@ -3,6 +3,8 @@
 import { useState, type ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { WalletProvider } from "@/components/wallet/WalletProvider";
+import { NotificationProvider } from "@/components/ui/Toast";
+import { CodexWidget } from "@/components/codex/CodexWidget";
 
 /**
  * Root client-side provider stack.
@@ -28,7 +30,14 @@ export function Providers({ children }: { children: ReactNode }) {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <WalletProvider>{children}</WalletProvider>
+      <WalletProvider>
+        <NotificationProvider>
+          {children}
+          {/* Floating protocol-codex chrome + its completion-toast watcher —
+              global so the journey map travels with the player. */}
+          <CodexWidget />
+        </NotificationProvider>
+      </WalletProvider>
     </QueryClientProvider>
   );
 }
