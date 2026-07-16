@@ -1,12 +1,15 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useAccount } from "wagmi";
 import { parseEther } from "viem";
 import { useInventoryCards } from "@/lib/reads/hooks";
 import { useList } from "@/lib/contracts/exchange";
+// Pure appraisal table (no server-only import) — safe in a client bundle.
+import { HAIL_PRICE_CAP_WEI } from "@/lib/trader-server/hail-guards";
 import { AssetCard } from "@/components/inventory/AssetCard";
-import { Dialog, Button } from "@/components/ui";
+import { Dialog, Button, useNotify } from "@/components/ui";
+import { formatEth } from "@/lib/utils";
 
 /**
  * Modal that lets the connected wallet pick a held asset and create a
@@ -27,17 +30,28 @@ export function ListDialog({
   onClose: () => void;
 }) {
   const { address } = useAccount();
+  const notify = useNotify();
   const inventory = useInventoryCards(address);
   const [selectedTokenId, setSelectedTokenId] = useState<bigint | null>(null);
   const [priceEth, setPriceEth] = useState("0.01");
   const [status, setStatus] = useState<
     | { kind: "idle" }
     | { kind: "submitting" }
-    | { kind: "success"; listingId: bigint; txHash: `0x${string}` }
     | { kind: "error"; message: string }
   >({ kind: "idle" });
 
   const { list, isPending } = useList();
+
+  // The dialog stays mounted while closed (Dialog renders null), so wipe
+  // the previous session's selection on reopen — the picked item may have
+  // just been listed and no longer be in inventory.
+  useEffect(() => {
+    if (open) {
+      setSelectedTokenId(null);
+      setPriceEth("0.01");
+      setStatus({ kind: "idle" });
+    }
+  }, [open]);
 
   const weapons = useMemo(
     () => inventory.data?.filter((c) => c.slot === "weapon") ?? [],
@@ -68,11 +82,12 @@ export function ListDialog({
         amount: 1n,
         price: parsedPrice,
       });
-      setStatus({
-        kind: "success",
-        listingId: result.listingId,
-        txHash: result.txHash,
+      notify({
+        title: "Listed on the bazaar",
+        description: `Listing #${result.listingId.toString()} — ${formatEth(parsedPrice)} ETH`,
+        tone: "ok",
       });
+      onClose();
     } catch (e) {
       setStatus({
         kind: "error",
@@ -80,6 +95,12 @@ export function ListDialog({
       });
     }
   };
+
+  const selectedCard = useMemo(
+    () =>
+      inventory.data?.find((c) => c.tokenId === selectedTokenId) ?? null,
+    [inventory.data, selectedTokenId],
+  );
 
   const empty =
     inventory.data !== undefined &&
@@ -153,6 +174,14 @@ export function ListDialog({
                 disabled={!selectedTokenId}
                 className="mt-1 w-full rounded-md bg-black/30 px-3 py-2 text-sm disabled:opacity-50 border border-[var(--border-1)]"
               />
+              {selectedCard && (
+                <p className="mt-1 text-[11px] opacity-70">
+                  The Wandering Trader pays up to{" "}
+                  {formatEth(HAIL_PRICE_CAP_WEI[selectedCard.tier])} ETH for a
+                  T{selectedCard.tier} piece — price above that and only other
+                  players will bite.
+                </p>
+              )}
             </div>
 
             <div className="flex justify-end gap-2 pt-1">
@@ -175,12 +204,6 @@ export function ListDialog({
             {status.kind === "error" && (
               <p className="text-xs text-[var(--color-danger)]">
                 {status.message}
-              </p>
-            )}
-            {status.kind === "success" && (
-              <p className="text-xs text-[var(--color-ok)]">
-                Listed as #{status.listingId.toString()} —{" "}
-                {status.txHash.slice(0, 10)}…
               </p>
             )}
           </>

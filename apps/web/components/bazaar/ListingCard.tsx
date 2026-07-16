@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAccount } from "wagmi";
+import { BaseError } from "viem";
 import { PreseedBadge } from "./PreseedBadge";
 import { AssetCard } from "@/components/inventory/AssetCard";
 import { Button, Panel } from "@/components/ui";
@@ -41,6 +42,7 @@ export function ListingCard({
     "idle" | "running" | "refused" | "error"
   >("idle");
   const [hailError, setHailError] = useState<string | null>(null);
+  const [buyError, setBuyError] = useState<string | null>(null);
 
   // The Wandering Trader is hailed by the SELLER, on their own listing —
   // that keeps the demo counterparty honest (player-initiated, labeled) and
@@ -73,6 +75,7 @@ export function ListingCard({
 
   const onBuy = async () => {
     if (!asset) return;
+    setBuyError(null);
     try {
       const result = await purchase({ listingId: listing.id, price: listing.price });
       onPurchased({
@@ -83,7 +86,15 @@ export function ListingCard({
       });
       refetchAfterPurchase();
     } catch (e) {
-      console.warn("purchase failed", e);
+      // viem's shortMessage is the one-liner ("User rejected the request.");
+      // the full message dumps the whole request object.
+      setBuyError(
+        e instanceof BaseError
+          ? e.shortMessage
+          : e instanceof Error
+            ? e.message
+            : String(e),
+      );
     }
   };
 
@@ -191,6 +202,9 @@ export function ListingCard({
           >
             {hailError}
           </p>
+        )}
+        {buyError && (
+          <p className="text-[11px] text-[var(--color-danger)]">{buyError}</p>
         )}
       </footer>
     </Panel>

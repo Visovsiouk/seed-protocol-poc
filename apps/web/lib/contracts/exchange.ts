@@ -122,6 +122,7 @@ export type ListResult = {
 export function useList() {
   const publicClient = usePublicClient();
   const qc = useQueryClient();
+  const { address } = useAccount();
   const approval = useExchangeApproval();
   const { writeContractAsync, isPending, error } = useWriteContract();
 
@@ -150,12 +151,18 @@ export function useList() {
         throw new Error("list() succeeded but no Listed event found");
       }
 
-      // Invalidate so the bazaar grid refetches immediately.
+      // Invalidate so the bazaar grid refetches immediately — and the
+      // inventory, since the listed piece is now escrowed by the exchange
+      // and must leave the picker/drawer without a reload.
       qc.invalidateQueries({ queryKey: queryKeys.listings() });
+      if (address) {
+        qc.invalidateQueries({ queryKey: queryKeys.inventory(address) });
+        qc.invalidateQueries({ queryKey: queryKeys.inventoryCards(address) });
+      }
 
       return { listingId, txHash: hash };
     },
-    [publicClient, writeContractAsync, qc, approval],
+    [publicClient, writeContractAsync, qc, approval, address],
   );
 
   return { list, isPending, error };
