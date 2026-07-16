@@ -28,6 +28,12 @@ import { BOSS_DEPTH } from "@/lib/engine";
 import type { LootRoll, Preset, Tier } from "@/lib/engine/types";
 import { elementsFor } from "@/lib/engine/types";
 import { getCatalogEffectsForSlot } from "@/lib/contracts/catalog-effects";
+import {
+  addressSchema,
+  bigintString,
+  hex32,
+  presetSchema,
+} from "@/lib/validation/schemas";
 
 /**
  * Per-preset starter-realm tier ceiling. Player-authored realms earn their
@@ -89,13 +95,6 @@ export const dynamic = "force-dynamic";
  * picks bound-consistent values still slips through.
  */
 
-const hex32 = z.string().regex(/^0x[0-9a-fA-F]{64}$/, "expected 0x-prefixed 32-byte hex");
-const addressSchema = z
-  .string()
-  .regex(/^0x[0-9a-fA-F]{40}$/, "expected 0x-prefixed 20-byte address");
-const bigintString = z.string().regex(/^[0-9]+$/, "expected decimal bigint string");
-
-const presetSchema = z.enum(["fantasy", "scifi", "cyberpunk"]);
 const slotSchema = z.enum(["weapon", "armor", "accessory"]);
 const damageDieSchema = z.union([
   z.literal(4),

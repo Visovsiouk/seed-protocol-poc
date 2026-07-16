@@ -4,10 +4,7 @@ import {
   isClearReceiptMetadata,
 } from "./asset-card";
 import { buildClearReceiptMetadataURI } from "@/lib/contracts/clear-receipt-derive";
-
-function b64(s: string): string {
-  return Buffer.from(s, "utf8").toString("base64");
-}
+import { b64 } from "@/lib/utils";
 
 const SVG = '<svg xmlns="http://www.w3.org/2000/svg"><rect/></svg>';
 

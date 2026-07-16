@@ -31,6 +31,8 @@ import { resolveRealmDetail, type RealmDetail } from "@/lib/contracts/realm-deta
 import type { Preset } from "@/lib/engine/types";
 import { AppShell, Panel, Button, Chip, Stamp, Rule } from "@/components/ui";
 import { useRealmTheme } from "@/lib/ui/useRealmTheme";
+import { shortAddress } from "@/lib/utils";
+import { isHexAddress } from "@/lib/validation/schemas";
 
 type CreatorMeta = {
   address: `0x${string}`;
@@ -57,14 +59,6 @@ async function fetchCreatorMeta(address: `0x${string}`): Promise<CreatorMeta | n
   const body = (await res.json()) as MetaReply;
   if (!body.ok) return null;
   return body.realm;
-}
-
-function shortAddress(addr: `0x${string}`): string {
-  return `${addr.slice(0, 6)}…${addr.slice(-4)}`;
-}
-
-function isHexAddress(value: string): value is `0x${string}` {
-  return /^0x[0-9a-fA-F]{40}$/.test(value);
 }
 
 function StatusPill({

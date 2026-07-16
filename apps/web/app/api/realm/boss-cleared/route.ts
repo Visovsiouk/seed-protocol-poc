@@ -21,6 +21,11 @@ import {
   deriveClearReceiptTokenId,
 } from "@/lib/contracts/clear-receipt-derive";
 import type { Preset } from "@/lib/engine/types";
+import {
+  addressSchema,
+  hex32,
+  presetSchema,
+} from "@/lib/validation/schemas";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -64,13 +69,6 @@ export const dynamic = "force-dynamic";
  * Deferred to the next hardening pass — needs the same client-side
  * choice/equip trace plumbing as mint-loot.
  */
-
-const hex32 = z.string().regex(/^0x[0-9a-fA-F]{64}$/, "expected 0x-prefixed 32-byte hex");
-const addressSchema = z
-  .string()
-  .regex(/^0x[0-9a-fA-F]{40}$/, "expected 0x-prefixed 20-byte address");
-
-const presetSchema = z.enum(["fantasy", "scifi", "cyberpunk"]);
 
 const bodySchema = z.object({
   preset: presetSchema,

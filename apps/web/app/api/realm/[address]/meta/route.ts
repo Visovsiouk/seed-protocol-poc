@@ -5,6 +5,7 @@ import { NextResponse } from "next/server";
 import { getPlayerRealm } from "@/lib/server/realm-db";
 import { fetchRealmTierProgress } from "@/lib/reads/realm-tier";
 import { getSeededSchemaIds } from "@/lib/contracts/seeded-realms";
+import { isHexAddress } from "@/lib/validation/schemas";
 
 /**
  * `GET /api/realm/[address]/meta`
@@ -21,10 +22,6 @@ import { getSeededSchemaIds } from "@/lib/contracts/seeded-realms";
  */
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-function isHexAddress(value: string): value is `0x${string}` {
-  return /^0x[0-9a-fA-F]{40}$/.test(value);
-}
 
 export async function GET(
   _req: Request,

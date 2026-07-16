@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { addressSchema } from "@/lib/validation/schemas";
+
 /**
  * Pure faucet guards — no `server-only`, no RPC, no env. Kept dependency-free
  * so the validation + rate-limit logic is unit-testable without a live chain
@@ -15,7 +17,7 @@ export function isFaucetChainId(chainId: number): boolean {
 }
 
 export const faucetBodySchema = z.object({
-  address: z.string().regex(/^0x[0-9a-fA-F]{40}$/),
+  address: addressSchema,
 });
 export type FaucetBody = z.infer<typeof faucetBodySchema>;
 

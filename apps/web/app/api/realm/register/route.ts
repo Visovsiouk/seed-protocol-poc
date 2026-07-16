@@ -19,6 +19,7 @@ import { getFlavorBank } from "@/lib/flavor";
 import { isAllowedAccent } from "@/lib/ui/accents";
 import { isCleanRealmName } from "@/lib/ui/realm-name";
 import type { Preset, Tier } from "@/lib/engine/types";
+import { addressSchema, presetSchema } from "@/lib/validation/schemas";
 
 /**
  * `POST /api/realm/register`
@@ -50,11 +51,6 @@ import type { Preset, Tier } from "@/lib/engine/types";
  */
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-const addressSchema = z
-  .string()
-  .regex(/^0x[0-9a-fA-F]{40}$/, "expected 0x-prefixed 20-byte address");
-const presetSchema = z.enum(["fantasy", "scifi", "cyberpunk"]);
 
 const bodySchema = z.object({
   realmAddress: addressSchema,

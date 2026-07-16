@@ -1,9 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { decodeMetadataURI } from "./decode";
-
-function b64(s: string): string {
-  return Buffer.from(s, "utf8").toString("base64");
-}
+import { b64 } from "@/lib/utils";
 
 const SVG = '<svg xmlns="http://www.w3.org/2000/svg"><rect/></svg>';
 const JSON_PAYLOAD = {

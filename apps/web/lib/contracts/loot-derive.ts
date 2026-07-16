@@ -8,6 +8,7 @@
 
 import { encodePacked, keccak256 } from "viem";
 import type { LootRoll, Preset } from "@/lib/engine/types";
+import { b64 } from "@/lib/utils";
 
 const TIER_LABEL: Record<number, string> = {
   1: "T1",
@@ -37,21 +38,6 @@ export function deriveLootTokenId(args: {
     [args.realm, args.runSeed, args.depth, args.nameSeed],
   );
   return BigInt(keccak256(packed));
-}
-
-function b64(s: string): string {
-  // Prefer Node's Buffer when available (server) — `btoa` exists in Node
-  // 16+ but throws InvalidCharacterError on any non-Latin-1 byte. Realm
-  // labels and assembled loot names can contain Unicode (em dashes,
-  // accented letters), so UTF-8 encoding is required.
-  if (typeof Buffer !== "undefined") {
-    return Buffer.from(s, "utf8").toString("base64");
-  }
-  // Browser path: encode to UTF-8 bytes, repack as Latin-1 for `btoa`.
-  const bytes = new TextEncoder().encode(s);
-  let binary = "";
-  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]!);
-  return btoa(binary);
 }
 
 /**

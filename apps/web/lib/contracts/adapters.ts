@@ -66,6 +66,7 @@ import {
   weaponTypeIndex,
 } from "@/lib/engine/types";
 import { buildAssetCardFromMetadata } from "@/lib/metadata/asset-card";
+import { b64 } from "@/lib/utils";
 import { adapterAbi } from "./adapter-abi";
 import { getAdapterAddress } from "./seeded-adapters";
 import { getSeededRealm } from "./seeded-realms";
@@ -302,14 +303,6 @@ function decodeArmorExt(
 // returned card is decoded via the same `buildAssetCardFromMetadata`
 // path every other card uses.
 // ---------------------------------------------------------------------------
-
-function b64(s: string): string {
-  if (typeof Buffer !== "undefined") return Buffer.from(s, "utf8").toString("base64");
-  const bytes = new TextEncoder().encode(s);
-  let bin = "";
-  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]!);
-  return btoa(bin);
-}
 
 const TRANSLATED_PLACEHOLDER_SVG_URI =
   "data:image/svg+xml;base64," +

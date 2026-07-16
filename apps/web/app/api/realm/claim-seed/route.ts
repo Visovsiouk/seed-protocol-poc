@@ -12,6 +12,7 @@ import {
 } from "@/lib/tutorial/proof";
 import { listStarterRealms } from "@/lib/contracts/starter-realms";
 import type { Preset } from "@/lib/engine/types";
+import { addressSchema } from "@/lib/validation/schemas";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -42,10 +43,6 @@ export const dynamic = "force-dynamic";
  * Seed eligibility) is on-chain truth regardless of what was in the
  * metadata, so the claim path is sound on its own terms.
  */
-
-const addressSchema = z
-  .string()
-  .regex(/^0x[0-9a-fA-F]{40}$/, "expected 0x-prefixed 20-byte address");
 
 const bodySchema = z.object({
   player: addressSchema,
