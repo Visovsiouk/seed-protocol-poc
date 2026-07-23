@@ -47,7 +47,7 @@ Two things make this safe enough to expose:
 
 - Ubuntu 22.04+ (or similar) VPS, ~2 vCPU / 4 GB RAM
 - A domain with three A records pointing at the VPS: `play.`, `rpc.`, `explorer.`
-- Installed as the `realms` user: Node ≥ 20, pnpm 11, Foundry (`foundryup`)
+- Installed as the `realms` user: Node ≥ 22.13 (pnpm 11's floor), pnpm 11, Foundry (`foundryup`)
 - Installed as root: Caddy (`apt install caddy`), Docker (`apt install
   docker.io` — runs the Otterscan explorer), sqlite3 (for backups)
 - Both repos cloned side by side:
