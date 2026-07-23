@@ -136,7 +136,7 @@ function SetupStep({ done, label }: { done: boolean; label: string }) {
   );
 }
 
-function SetupPending() {
+function SetupPending({ isOwner }: { isOwner: boolean }) {
   return (
     <Panel
       as="aside"
@@ -170,11 +170,24 @@ function SetupPending() {
       </div>
 
       <p className="text-xs leading-relaxed opacity-60">
-        This realm was deployed directly via the factory without going through
-        the creation flow. Preset, boss, and the server-held minter delegate
-        are not on record — loot and clear receipts cannot mint until setup
-        is complete.
+        The founding rite never finished for this realm — the clone is live
+        on-chain, but its schemas, boss, name, and server-held minter
+        delegate are not on record. Loot and clear receipts cannot mint
+        until setup is complete.
       </p>
+
+      {isOwner ? (
+        <Link href="/create" className="self-start">
+          <Button intent="primary" size="sm">
+            Finish the founding rite →
+          </Button>
+        </Link>
+      ) : (
+        <p className="text-xs opacity-50">
+          Only the realm owner can finish setup — the create page resumes
+          the rite for them.
+        </p>
+      )}
     </Panel>
   );
 }
@@ -414,10 +427,13 @@ export default function RealmDashboardPage() {
               </div>
             )}
 
-            {/* Unregistered creator realm — deployed on-chain but never
-                went through /create, so no preset/boss/minter on record. */}
+            {/* Unregistered creator realm — the clone exists on-chain but
+                the founding rite never completed (interrupted mid-signing,
+                or deployed straight against the factory), so no
+                preset/boss/minter is on record. /create detects this state
+                and resumes the remaining steps for the owner. */}
             {detail.kind === "creator" && metaQuery.isFetched && !creatorMeta && (
-              <SetupPending />
+              <SetupPending isOwner={!!isOwner} />
             )}
 
             {/* Footer CTA — hidden for unregistered creator realms */}

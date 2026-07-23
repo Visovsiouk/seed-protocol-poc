@@ -32,7 +32,7 @@ import {
 import { setCodexFlag } from "@/lib/codex/local";
 import { getAdapterAddress } from "@/lib/contracts/seeded-adapters";
 import { shortAddress } from "@/lib/utils";
-import { Body, Button, Rule, Stamp } from "@/components/ui";
+import { Body, Button, Rule, Stamp, ExplorerLink } from "@/components/ui";
 import { KbdHint } from "@/components/game/ChoiceRow";
 import { useEnterToActivate } from "@/lib/ui/useEnterToActivate";
 import { warpCrossfade, withReducedMotion } from "@/lib/ui/motion";
@@ -209,8 +209,10 @@ function AdapterStrip({
         <span className="font-mono uppercase opacity-65 tracking-[0.22em]">
           via adapter
         </span>
-        <code className="font-mono opacity-80" title={adapter}>
-          {shortAddress(adapter)}
+        <code className="font-mono opacity-80">
+          <ExplorerLink type="address" value={adapter} title={adapter}>
+            {shortAddress(adapter)}
+          </ExplorerLink>
         </code>
       </div>
       {card.slot === "weapon" ? (

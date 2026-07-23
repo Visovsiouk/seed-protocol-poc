@@ -1,0 +1,23 @@
+[Unit]
+Description=Realms block explorer (Otterscan, docker)
+After=docker.service realms-rpc-guard.service
+Requires=docker.service
+Wants=realms-rpc-guard.service
+
+[Service]
+Type=simple
+# ERIGON_URL=<public rpc URL> — written by scripts/server-up.sh, derived from
+# NEXT_PUBLIC_RPC_URL in apps/web/.env.local. Otterscan runs in the BROWSER,
+# so it must reach the chain through the public rpc domain (via the guard).
+EnvironmentFile=/etc/realms/explorer.env
+ExecStartPre=-/usr/bin/docker rm -f realms-explorer
+ExecStart=/usr/bin/docker run --rm --name realms-explorer \
+  -p 127.0.0.1:5100:80 \
+  -e ERIGON_URL=${ERIGON_URL} \
+  otterscan/otterscan:latest
+ExecStop=/usr/bin/docker stop realms-explorer
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

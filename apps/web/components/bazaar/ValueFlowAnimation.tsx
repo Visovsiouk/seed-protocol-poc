@@ -2,6 +2,7 @@
 
 import { formatEth, shortAddress } from "@/lib/utils";
 import type { FeeBreakdown } from "@/lib/contracts/exchange";
+import { ExplorerLink } from "@/components/ui";
 
 /**
  * The signature "where does the value go" animation.
@@ -116,9 +117,13 @@ function FlowRow({
           style={{ background: color }}
         />
         <span>{label}</span>
-        <span className="font-mono text-xs opacity-65">
+        <ExplorerLink
+          type="address"
+          value={addr}
+          className="font-mono text-xs opacity-65"
+        >
           {shortAddress(addr)}
-        </span>
+        </ExplorerLink>
       </div>
       <div className="text-right">
         <span className="font-semibold">{formatEth(amount)} ETH</span>

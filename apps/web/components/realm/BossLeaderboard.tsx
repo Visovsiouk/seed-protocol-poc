@@ -16,7 +16,7 @@
 import { useAccount } from "wagmi";
 import { useRealmStats } from "@/lib/reads/hooks";
 import type { Preset } from "@/lib/engine/types";
-import { Panel, Stamp } from "@/components/ui";
+import { Panel, Stamp, ExplorerLink } from "@/components/ui";
 
 function short(addr: `0x${string}`): string {
   return `${addr.slice(0, 6)}…${addr.slice(-4)}`;
@@ -81,7 +81,9 @@ export function BossLeaderboard({
                   #{i + 1}
                 </span>
                 <span className="font-mono opacity-90 truncate">
-                  {short(r.player)}
+                  <ExplorerLink type="address" value={r.player}>
+                    {short(r.player)}
+                  </ExplorerLink>
                   {isYou && (
                     <span className="ml-2 text-[10px] uppercase tracking-wider text-[var(--color-warn)]">
                       you

@@ -15,7 +15,7 @@
 import { useRealmActivity } from "@/lib/reads/hooks";
 import type { Preset } from "@/lib/engine/types";
 import type { RealmActivityEntry } from "@/lib/reads/realm-activity";
-import { Panel, Chip, Stamp } from "@/components/ui";
+import { Panel, Chip, Stamp, ExplorerLink } from "@/components/ui";
 
 function short(addr: `0x${string}`): string {
   return `${addr.slice(0, 6)}…${addr.slice(-4)}`;
@@ -100,16 +100,25 @@ export function RealmActivityFeed({
             >
               <div className="flex items-baseline gap-2 min-w-0">
                 <KindBadge kind={e.kind} />
-                <span className="font-mono opacity-80 shrink-0">
+                <ExplorerLink
+                  type="address"
+                  value={e.recipient}
+                  className="font-mono opacity-80 shrink-0"
+                >
                   {short(e.recipient)}
-                </span>
+                </ExplorerLink>
                 <span className="font-mono opacity-65 truncate min-w-0">
                   · token {shortTokenId(e.tokenId)}
                 </span>
               </div>
-              <span className="text-[10px] opacity-65 font-mono shrink-0">
+              <ExplorerLink
+                type="tx"
+                value={e.txHash}
+                title="View transaction"
+                className="text-[10px] opacity-65 font-mono shrink-0"
+              >
                 blk {e.blockNumber.toString()}
-              </span>
+              </ExplorerLink>
             </Panel>
           ))}
         </ul>

@@ -6,7 +6,7 @@ import { useAccount } from "wagmi";
 import { BaseError } from "viem";
 import { PreseedBadge } from "./PreseedBadge";
 import { AssetCard } from "@/components/inventory/AssetCard";
-import { Button, Panel } from "@/components/ui";
+import { Button, Panel, ExplorerLink } from "@/components/ui";
 import { formatEth, shortAddress } from "@/lib/utils";
 import {
   usePurchase,
@@ -14,7 +14,6 @@ import {
   type FeeBreakdown,
 } from "@/lib/contracts/exchange";
 import { traderHail } from "@/lib/trader-client";
-import { setCodexFlag } from "@/lib/codex/local";
 import { buildAssetCardFromMetadata } from "@/lib/metadata/asset-card";
 import { queryKeys } from "@/lib/reads/cache";
 import type { AssetSummary, ListingSummary } from "@/lib/reads/types";
@@ -71,6 +70,10 @@ export function ListingCard({
     // state update, making the modal vanish.
     void qc.invalidateQueries({ queryKey: queryKeys.listings() });
     void qc.invalidateQueries({ queryKey: queryKeys.recentSales() });
+    // The settlement stamps codex steps ("Witness the split" / "Earn your
+    // first royalty") — refetch the journey scan so they toast now, not on
+    // some later reload.
+    void qc.invalidateQueries({ queryKey: queryKeys.exchangeJourneyAll() });
   };
 
   const onBuy = async () => {
@@ -105,7 +108,6 @@ export function ListingCard({
     try {
       const result = await traderHail(listing.id);
       if (result.ok) {
-        setCodexFlag(address, "traderHailed");
         onPurchased({
           fees: computeFeeBreakdown(listing.price),
           txHash: result.txHash,
@@ -158,9 +160,13 @@ export function ListingCard({
         </div>
         <div className="flex flex-col items-end gap-1">
           <PreseedBadge preseed={listing.preseed} />
-          <span className="text-[10px] opacity-65 font-mono">
+          <ExplorerLink
+            type="address"
+            value={listing.seller}
+            className="text-[10px] opacity-65 font-mono"
+          >
             seller {shortAddress(listing.seller)}
-          </span>
+          </ExplorerLink>
         </div>
       </div>
 

@@ -31,6 +31,7 @@
  * gate execution.
  */
 
+import Link from "next/link";
 import { useCallback, useMemo, useState } from "react";
 import { useAccount, usePublicClient, useWriteContract } from "wagmi";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -51,7 +52,7 @@ import { evocativeName } from "@/lib/loot/names";
 import { fallbackSeed } from "@/lib/engine/runtime";
 import { queryKeys } from "@/lib/reads/cache";
 import type { LootRoll, Preset } from "@/lib/engine/types";
-import { Panel, Button, Chip, Stamp } from "@/components/ui";
+import { Panel, Button, Chip, Stamp, ExplorerLink } from "@/components/ui";
 
 const DEMO_PRICE = parseEther("0.005");
 const DEMO_TIER_ONCHAIN = 0; // SeedTypes.Tier.T1 == 0
@@ -101,7 +102,7 @@ export function RoyaltyEarnedDemo({ realm, preset, realmLabel, lootSchemaId }: P
 
   const [steps, setSteps] = useState<StepsState>(INITIAL_STEPS);
   const [tokenId, setTokenId] = useState<bigint | null>(null);
-  const [visitorListingId, setVisitorListingId] = useState<bigint | null>(null);
+  const [, setVisitorListingId] = useState<bigint | null>(null);
   const [traderListingId, setTraderListingId] = useState<bigint | null>(null);
   const [royaltyEarned, setRoyaltyEarned] = useState<bigint>(0n);
 
@@ -377,8 +378,12 @@ export function RoyaltyEarnedDemo({ realm, preset, realmLabel, lootSchemaId }: P
             border: "1px solid color-mix(in oklab, var(--color-warn) 30%, transparent)",
           }}
         >
-          This realm has no registered loot schema yet. Register a schema
-          on the realm (Phase 5a inline flow) before running the demo —
+          This realm has no registered loot schema yet — its founding rite
+          never finished.{" "}
+          <Link href="/create" className="underline hover:opacity-80">
+            Resume the rite on the create page
+          </Link>{" "}
+          before running the demo —
           <code className="font-mono"> mintAsset</code> needs a real{" "}
           <code className="font-mono">extensionSchemaId</code>.
         </aside>
@@ -416,9 +421,13 @@ export function RoyaltyEarnedDemo({ realm, preset, realmLabel, lootSchemaId }: P
                   </span>
                 )}
                 {rec.txHash && (
-                  <span className="text-[10px] opacity-65 font-mono">
+                  <ExplorerLink
+                    type="tx"
+                    value={rec.txHash}
+                    className="text-[10px] opacity-65 font-mono"
+                  >
                     tx {rec.txHash.slice(0, 10)}…{rec.txHash.slice(-6)}
-                  </span>
+                  </ExplorerLink>
                 )}
               </div>
               <StatusBadge

@@ -1,5 +1,5 @@
 [Unit]
-Description=Realms public RPC allowlist proxy (eth_/net_/web3_ only)
+Description=Realms public RPC allowlist proxy (eth_/net_/web3_/ots_ only)
 After=realms-chain.service
 Wants=realms-chain.service
 

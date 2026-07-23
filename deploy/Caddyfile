@@ -9,3 +9,7 @@ play.example.com {
 rpc.example.com {
 	reverse_proxy 127.0.0.1:8546
 }
+
+explorer.example.com {
+	reverse_proxy 127.0.0.1:5100
+}

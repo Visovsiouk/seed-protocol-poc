@@ -46,13 +46,6 @@ export function AppShell({ children, title, back, actions, width = "default" }: 
 
   return (
     <>
-      <a
-        href="#main"
-        className="sr-only focus-visible:not-sr-only focus-visible:fixed focus-visible:left-4 focus-visible:top-4 focus-visible:z-50 focus-visible:rounded focus-visible:bg-[var(--color-preset-accent)] focus-visible:px-3 focus-visible:py-2 focus-visible:text-[var(--color-preset-bg)]"
-      >
-        Skip to content
-      </a>
-
       <AmbientOrbs />
 
       <header className="sticky top-0 z-30 border-b border-[var(--border-1)] bg-[color-mix(in_oklab,var(--color-preset-bg)_82%,transparent)] backdrop-blur">

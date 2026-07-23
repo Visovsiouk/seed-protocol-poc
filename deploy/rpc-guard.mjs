@@ -8,8 +8,10 @@
  * The app's server-side routes (faucet, realm signer, trader) keep talking to
  * anvil directly over loopback, so the faucet cheat still works server-side.
  *
- * Allowed: standard read/broadcast namespaces only (eth_*, net_*, web3_*).
- * Everything else gets a JSON-RPC error. Batches are filtered per-entry.
+ * Allowed: standard read/broadcast namespaces (eth_*, net_*, web3_*) plus
+ * ots_* — Otterscan's read-only explorer API, which anvil serves natively
+ * (the namespace has no mutating methods). Everything else gets a JSON-RPC
+ * error. Batches are filtered per-entry.
  *
  * Zero dependencies. Usage:
  *   node deploy/rpc-guard.mjs            # listens on :8546 -> 127.0.0.1:8545
@@ -22,7 +24,7 @@ const LISTEN_HOST = process.env.LISTEN_HOST ?? "127.0.0.1";
 const UPSTREAM = new URL(process.env.UPSTREAM ?? "http://127.0.0.1:8545");
 const MAX_BODY = 512 * 1024; // generous for eth_call payloads, blocks abuse
 
-const ALLOWED = /^(eth|net|web3)_[a-zA-Z0-9]+$/;
+const ALLOWED = /^(eth|net|web3|ots)_[a-zA-Z0-9]+$/;
 // Standard-namespace methods that still mutate node-wide dev state — none in
 // eth_*/net_*/web3_* on anvil mutate beyond normal tx submission, which is the
 // point of the demo (users send real txs). Explicitly deny subscriptions over
@@ -119,6 +121,6 @@ const server = http.createServer((req, res) => {
 
 server.listen(LISTEN_PORT, LISTEN_HOST, () => {
   console.log(
-    `rpc-guard listening on ${LISTEN_HOST}:${LISTEN_PORT} -> ${UPSTREAM.href} (eth_/net_/web3_ only)`,
+    `rpc-guard listening on ${LISTEN_HOST}:${LISTEN_PORT} -> ${UPSTREAM.href} (eth_/net_/web3_/ots_ only)`,
   );
 });

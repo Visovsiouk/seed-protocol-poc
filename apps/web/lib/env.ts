@@ -32,6 +32,12 @@ const publicSchema = z.object({
   // brand-new MetaMask account on the local chain has ETH to sign with. The
   // `faucetEnabled` export below additionally gates this to NEXT_PUBLIC_CHAIN=anvil.
   NEXT_PUBLIC_FAUCET_ENABLED: z.enum(["true", "false"]).optional(),
+  // Block-explorer base URL (Otterscan). When set, tx hashes / addresses /
+  // block numbers across the UI become external links and the anvil chain
+  // gains a `blockExplorers` entry (lib/chain.ts). Unset → plain text.
+  // `pnpm local --explorer` sets it to the local docker Otterscan; on a VPS
+  // set it to https://explorer.<domain> (see deploy/README.md).
+  NEXT_PUBLIC_EXPLORER_URL: z.string().url().optional(),
 });
 
 /**
@@ -91,6 +97,9 @@ export const publicEnv = publicSchema.parse({
   NEXT_PUBLIC_DEMO_MODE: process.env.NEXT_PUBLIC_DEMO_MODE,
   NEXT_PUBLIC_DEMO_ADDRESS: process.env.NEXT_PUBLIC_DEMO_ADDRESS,
   NEXT_PUBLIC_FAUCET_ENABLED: process.env.NEXT_PUBLIC_FAUCET_ENABLED,
+  // `|| undefined` so an empty string (e.g. local-up.sh without --explorer)
+  // reads as "no explorer" instead of failing .url() validation.
+  NEXT_PUBLIC_EXPLORER_URL: process.env.NEXT_PUBLIC_EXPLORER_URL || undefined,
 });
 
 /**
@@ -109,6 +118,12 @@ export const demoMode =
 export const faucetEnabled =
   publicEnv.NEXT_PUBLIC_FAUCET_ENABLED === "true" &&
   publicEnv.NEXT_PUBLIC_CHAIN === "anvil";
+
+/**
+ * Explorer base URL without a trailing slash, or undefined when no explorer
+ * is configured. Consumed by <ExplorerLink> and lib/chain.ts.
+ */
+export const explorerUrl = publicEnv.NEXT_PUBLIC_EXPLORER_URL?.replace(/\/+$/, "");
 
 export type PublicEnv = z.infer<typeof publicSchema>;
 export type ServerEnv = z.infer<typeof serverSchema>;

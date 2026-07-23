@@ -36,11 +36,20 @@
  * On step (4) success we route to `/play/realm/[address]`, which fetches
  * the metadata from `/api/realm/[address]/meta` and runs the engine in
  * the preset/boss the player picked.
+ *
+ * Resume handling: any failure after step (1) leaves a clone on-chain with
+ * no schemas/delegate/charter — and `ecosystemOf(owner)` non-zero, which
+ * used to dead-end the page on "already founded". We now probe
+ * `/api/realm/[address]/meta`: a 404 means the rite was interrupted, so the
+ * form re-opens in resume mode and re-runs steps (2)–(4) against the
+ * existing clone (the cosmetic picks were never persisted, so the player
+ * re-picks them).
  */
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   useAccount,
   usePublicClient,
@@ -51,6 +60,7 @@ import { ecosystemFactoryAbi, ecosystemTemplateAbi } from "@abis/generated";
 import { faucetEnabled } from "@/lib/env";
 import type { FaucetResponse } from "@/lib/faucet-server";
 import { getAddress } from "@/lib/contracts/addresses";
+import { jitteredFees } from "@/lib/contracts/fee-jitter";
 import { useCreateEcosystem } from "@/lib/contracts/factory";
 import { useRegisterRealmSchemas } from "@/lib/contracts/register-schemas";
 import { useTutorialProgress } from "@/lib/reads/hooks";
@@ -76,7 +86,7 @@ type Step =
   | { kind: "signing_schema"; ecosystem: `0x${string}` }
   | { kind: "signing_minter"; ecosystem: `0x${string}`; signerAddress: `0x${string}`; signerIndex: number }
   | { kind: "registering"; ecosystem: `0x${string}`; signerAddress: `0x${string}`; signerIndex: number }
-  | { kind: "done"; ecosystem: `0x${string}`; txHash: `0x${string}`; signerAddress: `0x${string}`; signerIndex: number; maxTier: number }
+  | { kind: "done"; ecosystem: `0x${string}`; txHash?: `0x${string}`; signerAddress: `0x${string}`; signerIndex: number; maxTier: number }
   | { kind: "error"; message: string };
 
 type NextSignerReply =
@@ -106,6 +116,29 @@ type RegisterReply =
 
 function shortAddress(addr: `0x${string}`): string {
   return `${addr.slice(0, 6)}…${addr.slice(-4)}`;
+}
+
+/**
+ * Map raw wallet/RPC failures onto copy a player can act on. The one we
+ * special-case: the node's `-32602: Failed to decode transaction`, which
+ * means the WALLET emitted raw tx bytes the node can't RLP-decode (seen
+ * live from Brave Wallet whenever the signature's recovery bit is 0).
+ * Deterministic signing re-produces identical bytes on an identical retry,
+ * so the flow's writes carry a per-attempt fee jitter (see fee-jitter.ts)
+ * that re-rolls the signature — retrying here is genuinely worth it.
+ */
+function describeDeployError(err: unknown): string {
+  const raw = err instanceof Error ? err.message : String(err);
+  if (/failed to decode transaction/i.test(raw)) {
+    return (
+      "Your wallet signed a transaction this chain's node couldn't decode — " +
+      "a known Brave Wallet signing quirk on local chains. Retry (each " +
+      "attempt nudges the fee so the wallet re-signs fresh bytes), or " +
+      "connect with MetaMask or the built-in burner wallet instead. " +
+      `Raw error: ${raw.length > 300 ? `${raw.slice(0, 300)}…` : raw}`
+    );
+  }
+  return raw;
 }
 
 async function fetchNextSigner(): Promise<NextSignerReply> {
@@ -146,6 +179,27 @@ export default function CreatePage() {
       : null;
   const alreadyFounded = !!existingRealm;
 
+  // A clone can exist on-chain while the server never saw step (4) — the
+  // rite was interrupted mid-flow (wallet balked on a later signature, tab
+  // closed, server down). Probe the register store: 404 means "founded but
+  // unregistered", i.e. resumable from step 2; 200 means genuinely founded.
+  const registrationQuery = useQuery({
+    queryKey: ["realm-registered", existingRealm],
+    enabled: !!existingRealm,
+    queryFn: async () => {
+      const res = await fetch(`/api/realm/${existingRealm}/meta`, {
+        cache: "no-store",
+      });
+      if (res.status === 404) return false;
+      if (!res.ok) throw new Error(`realm meta lookup failed (HTTP ${res.status})`);
+      return true;
+    },
+  });
+  const resumeRealm =
+    existingRealm && registrationQuery.data === false ? existingRealm : null;
+  const registeredRealm =
+    existingRealm && registrationQuery.data === true ? existingRealm : null;
+
   const [preset, setPreset] = useState<Preset>("fantasy");
   const [bossId, setBossId] = useState<string>("forest_hag");
   const [realmName, setRealmName] = useState<string>("");
@@ -179,7 +233,7 @@ export default function CreatePage() {
   const canSubmit =
     !!address &&
     !seedGate &&
-    !alreadyFounded &&
+    (!alreadyFounded || !!resumeRealm) &&
     !busy &&
     step.kind === "form" &&
     realmName.trim().length > 0 &&
@@ -201,11 +255,14 @@ export default function CreatePage() {
     // Cap retry attempts so a buggy server can't loop us forever.
     for (let attempt = 0; attempt < 3; attempt += 1) {
       setStep({ kind: "signing_minter", ecosystem, signerAddress, signerIndex });
+      // Fee jitter re-rolls the sighash per attempt — see fee-jitter.ts.
+      const fees = publicClient ? await jitteredFees(publicClient) : undefined;
       const minterTxHash = await writeContractAsync({
         address: ecosystem,
         abi: ecosystemTemplateAbi,
         functionName: "setMinter",
         args: [signerAddress, true],
+        ...fees,
       });
       if (publicClient) {
         await publicClient.waitForTransactionReceipt({ hash: minterTxHash });
@@ -290,18 +347,29 @@ export default function CreatePage() {
   const onDeploy = async () => {
     if (!address) return;
     try {
-      // Step 0: the wallet must hold gas money before we ask it to sign.
-      setStep({ kind: "signing_create" });
-      await ensureGasFunds(address);
-
-      // Step 1: factory call. Returns the new clone address.
-      const create = await createEcosystem();
+      // Step 0/1: the wallet must hold gas money before we ask it to sign.
+      // On resume the clone already exists — its owner spent their Seed on
+      // it, so createEcosystem() would revert; skip straight to step 2.
+      let ecosystem: `0x${string}`;
+      let createTxHash: `0x${string}` | undefined;
+      if (resumeRealm) {
+        setStep({ kind: "signing_schema", ecosystem: resumeRealm });
+        await ensureGasFunds(address);
+        ecosystem = resumeRealm;
+      } else {
+        setStep({ kind: "signing_create" });
+        await ensureGasFunds(address);
+        // Step 1: factory call. Returns the new clone address.
+        const create = await createEcosystem();
+        ecosystem = create.ecosystem;
+        createTxHash = create.txHash;
+        setStep({ kind: "signing_schema", ecosystem });
+      }
 
       // Step 2: register the realm's own clearReceipt + loot schemas on
       // its fresh clone. Owner-signed; the returned ids are bound to this
       // ecosystem so its future mints carry true per-realm provenance.
-      setStep({ kind: "signing_schema", ecosystem: create.ecosystem });
-      const schemaIds = await registerRealmSchemas(create.ecosystem);
+      const schemaIds = await registerRealmSchemas(ecosystem);
 
       // Step 2.5: pull the proposed signer slot. Advisory — claimed
       // by the register route when the row is inserted.
@@ -310,7 +378,7 @@ export default function CreatePage() {
 
       // Steps 3 + 4 with retry.
       const result = await authorizeAndRegister(
-        create.ecosystem,
+        ecosystem,
         {
           signerIndex: next.signerIndex,
           signerAddress: next.signerAddress,
@@ -324,7 +392,7 @@ export default function CreatePage() {
       setStep({
         kind: "done",
         ecosystem: result.ecosystem,
-        txHash: create.txHash,
+        txHash: createTxHash,
         signerAddress: result.signerAddress,
         signerIndex: result.signerIndex,
         maxTier: result.maxTier,
@@ -334,12 +402,19 @@ export default function CreatePage() {
       // the base's default room.
       router.push("/");
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      setStep({ kind: "error", message });
+      setStep({ kind: "error", message: describeDeployError(err) });
     }
   };
 
-  const onReset = () => setStep({ kind: "form" });
+  const onReset = () => {
+    // The failure may have landed AFTER the clone deployed (a later
+    // signature balked) — refetch both probes so the form comes back in
+    // resume mode instead of letting createEcosystem() revert on a spent
+    // Seed.
+    void existingRealmQuery.refetch();
+    void registrationQuery.refetch();
+    setStep({ kind: "form" });
+  };
 
   // Map the on-chain step machine onto the spawn-feed's beat phases.
   const spawnPhase: SpawnPhase | null =
@@ -437,7 +512,37 @@ export default function CreatePage() {
             </Panel>
           )}
 
-          {alreadyFounded && existingRealm && (
+          {alreadyFounded && registrationQuery.isPending && (
+            <Panel as="aside" tone="glass-2" className="p-4 text-sm opacity-70">
+              Checking your realm&apos;s registration…
+            </Panel>
+          )}
+
+          {step.kind === "form" && resumeRealm && (
+            <Panel
+              as="aside"
+              tone="glass-2"
+              aria-label="Resume the founding rite"
+              className="p-4 text-sm"
+              style={{
+                background:
+                  "color-mix(in oklab, var(--color-warn) 9%, transparent)",
+                borderColor:
+                  "color-mix(in oklab, var(--color-warn) 35%, transparent)",
+              }}
+            >
+              <Stamp tone="accent">Founding interrupted</Stamp>
+              <p className="mt-2 leading-relaxed opacity-80">
+                Your ecosystem clone is already live at{" "}
+                <span className="font-mono">{shortAddress(resumeRealm)}</span>{" "}
+                but the rite never finished — it has no schemas, no mint
+                delegate, and no charter. Pick your genre, boss and name
+                again, then resume with the remaining three signatures.
+              </p>
+            </Panel>
+          )}
+
+          {registeredRealm && (
             <Panel
               as="aside"
               tone="glass-2"
@@ -452,18 +557,18 @@ export default function CreatePage() {
                 The Genesis Seed is spent the moment you deploy an ecosystem —
                 it&apos;s soulbound and singular. Your realm lives at{" "}
                 <span className="font-mono break-all">
-                  {shortAddress(existingRealm)}
+                  {shortAddress(registeredRealm)}
                 </span>
                 . Tend the one you have rather than minting another.
               </p>
               <Rule tone="accent" />
               <div className="flex flex-wrap items-center justify-center gap-3">
-                <Link href={`/realm/${existingRealm}`}>
+                <Link href={`/realm/${registeredRealm}`}>
                   <Button intent="primary" size="sm">
                     Open your realm dashboard →
                   </Button>
                 </Link>
-                <Link href={`/play/realm/${existingRealm}`}>
+                <Link href={`/play/realm/${registeredRealm}`}>
                   <Button intent="ghost" size="sm">
                     Play your realm
                   </Button>
@@ -472,7 +577,7 @@ export default function CreatePage() {
             </Panel>
           )}
 
-          {step.kind === "form" && !alreadyFounded && (
+          {step.kind === "form" && (!alreadyFounded || resumeRealm) && (
             <>
               <fieldset className="flex flex-col gap-3">
                 <legend className="mb-1">
@@ -640,7 +745,7 @@ export default function CreatePage() {
                   disabled={!canSubmit}
                   className="self-start"
                 >
-                  Deploy realm
+                  {resumeRealm ? "Resume the founding rite" : "Deploy realm"}
                 </Button>
               </div>
             </>
@@ -713,9 +818,11 @@ export default function CreatePage() {
                   T{step.maxTier} · earns T4 at 20 clearers, T5 at 50
                 </dd>
               </dl>
-              <p className="break-all font-mono text-[11px] opacity-65">
-                tx {step.txHash}
-              </p>
+              {step.txHash && (
+                <p className="break-all font-mono text-[11px] opacity-65">
+                  tx {step.txHash}
+                </p>
+              )}
               <div className="mt-2 flex flex-wrap items-center gap-3">
                 <Link href={`/play/realm/${step.ecosystem}`}>
                   <Button intent="primary" size="sm">

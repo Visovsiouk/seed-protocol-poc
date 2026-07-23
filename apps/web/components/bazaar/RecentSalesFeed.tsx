@@ -2,7 +2,7 @@
 
 import { useRecentSales } from "@/lib/reads/hooks";
 import { formatEth, shortAddress } from "@/lib/utils";
-import { Panel } from "@/components/ui";
+import { Panel, ExplorerLink } from "@/components/ui";
 
 export function RecentSalesFeed() {
   const { data, isLoading } = useRecentSales();
@@ -23,12 +23,19 @@ export function RecentSalesFeed() {
             #{s.listingId.toString()}
           </span>
           <span className="opacity-80">
-            {shortAddress(s.buyer)} bought for{" "}
-            <strong>{formatEth(s.price)} ETH</strong>
+            <ExplorerLink type="address" value={s.buyer}>
+              {shortAddress(s.buyer)}
+            </ExplorerLink>{" "}
+            bought for <strong>{formatEth(s.price)} ETH</strong>
           </span>
-          <span className="font-mono text-[10px] opacity-65">
+          <ExplorerLink
+            type="tx"
+            value={s.txHash}
+            title="View transaction"
+            className="font-mono text-[10px] opacity-65"
+          >
             blk {s.blockNumber.toString()}
-          </span>
+          </ExplorerLink>
         </Panel>
       ))}
     </ul>

@@ -33,7 +33,12 @@ import { cardDisplayName } from "@/lib/loot/card-name";
 import { tierColor } from "@/lib/ui/loot-visuals";
 import { EASE_OUT, fadeRise, lineReveal, withReducedMotion } from "@/lib/ui/motion";
 import { provenanceFor } from "@/lib/story/provenance";
-import { ElementChip, EffectChip, ProvenanceChip } from "@/components/ui";
+import {
+  ElementChip,
+  EffectChip,
+  ProvenanceChip,
+  ExplorerLink,
+} from "@/components/ui";
 import {
   AnimatePresence,
   motion,
@@ -206,9 +211,13 @@ function OriginalStrip({
           Translated from {sourcePreset}
         </span>
         {hasAdapter && (
-          <span className="text-[10px] opacity-65 font-mono">
+          <ExplorerLink
+            type="address"
+            value={adapter}
+            className="text-[10px] opacity-65 font-mono"
+          >
             via {shortAddr(adapter)}
-          </span>
+          </ExplorerLink>
         )}
       </div>
       {!hasAdapter ? (

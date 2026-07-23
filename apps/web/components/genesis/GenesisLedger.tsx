@@ -21,7 +21,15 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAccount } from "wagmi";
-import { Panel, Button, Chip, Stamp, Rule, Footnote } from "@/components/ui";
+import {
+  Panel,
+  Button,
+  Chip,
+  Stamp,
+  Rule,
+  Footnote,
+  ExplorerLink,
+} from "@/components/ui";
 import { useTutorialProgress } from "@/lib/reads/hooks";
 import { emptyTutorialProgress } from "@/lib/tutorial/progress";
 import { listStarterRealms } from "@/lib/contracts/starter-realms";
@@ -189,8 +197,14 @@ export function GenesisLedger({
                 The name takes. It is yours, and only yours.
               </span>
               <span className="font-mono text-[11px] opacity-70">
-                via {shortAddr(result.realm)} · tx{" "}
-                {result.txHash.slice(0, 10)}…{result.txHash.slice(-6)}
+                via{" "}
+                <ExplorerLink type="address" value={result.realm}>
+                  {shortAddr(result.realm)}
+                </ExplorerLink>{" "}
+                ·{" "}
+                <ExplorerLink type="tx" value={result.txHash}>
+                  tx {result.txHash.slice(0, 10)}…{result.txHash.slice(-6)}
+                </ExplorerLink>
               </span>
             </Panel>
           ) : (

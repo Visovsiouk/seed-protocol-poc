@@ -1,7 +1,7 @@
 "use client";
 
 import type { FeeBreakdown } from "@/lib/contracts/exchange";
-import { Dialog, Button } from "@/components/ui";
+import { Dialog, Button, ExplorerLink } from "@/components/ui";
 import { ValueFlowAnimation } from "./ValueFlowAnimation";
 
 /**
@@ -39,8 +39,14 @@ export function PurchaseReceipt({
         </button>
       </div>
 
-      <p className="mt-1 font-mono text-[11px] opacity-65">
-        tx {txHash.slice(0, 10)}…{txHash.slice(-6)}
+      <p className="mt-1">
+        <ExplorerLink
+          type="tx"
+          value={txHash}
+          className="font-mono text-[11px] opacity-65"
+        >
+          tx {txHash.slice(0, 10)}…{txHash.slice(-6)}
+        </ExplorerLink>
       </p>
 
       {/* Fixed height so the modal doesn't jump when treasury arrives */}

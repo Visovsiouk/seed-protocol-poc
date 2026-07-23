@@ -17,7 +17,7 @@
 
 import { motion, useReducedMotion } from "framer-motion";
 import { fadeRise, ledgerStagger, withReducedMotion } from "@/lib/ui/motion";
-import { Panel, Stamp } from "@/components/ui";
+import { Panel, Stamp, ExplorerLink } from "@/components/ui";
 
 export type SpawnPhase = "create" | "schema" | "minter" | "register" | "done";
 
@@ -91,13 +91,27 @@ export function RealmSpawnFeed({
           const detail =
             beat.key === "create"
               ? ecosystem && status === "stamped"
-                ? `→ ${shortAddr(ecosystem)}`
+                ? (
+                    <>
+                      →{" "}
+                      <ExplorerLink type="address" value={ecosystem}>
+                        {shortAddr(ecosystem)}
+                      </ExplorerLink>
+                    </>
+                  )
                 : "Confirm the factory call in your wallet."
               : beat.key === "schema"
                 ? "Sign two registerSchema calls — clearReceipt + loot."
                 : beat.key === "minter"
                   ? signerAddress
-                    ? `slot #${signerIndex} · ${shortAddr(signerAddress)}`
+                    ? (
+                        <>
+                          slot #{signerIndex} ·{" "}
+                          <ExplorerLink type="address" value={signerAddress}>
+                            {shortAddr(signerAddress)}
+                          </ExplorerLink>
+                        </>
+                      )
                     : "Sign setMinter against your new realm."
                   : "Server verifies ownership, minter rights + schemas.";
 

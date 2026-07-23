@@ -1,6 +1,6 @@
 import { defineChain } from "viem";
 import { baseSepolia } from "viem/chains";
-import { publicEnv } from "./env";
+import { explorerUrl, publicEnv } from "./env";
 
 export const rpcUrl = publicEnv.NEXT_PUBLIC_RPC_URL;
 
@@ -21,6 +21,11 @@ export const anvil = defineChain({
   rpcUrls: {
     default: { http: [rpcUrl] },
   },
+  // With NEXT_PUBLIC_EXPLORER_URL set (Otterscan), wallet UIs (RainbowKit
+  // account modal etc.) gain their native "view on explorer" links.
+  ...(explorerUrl
+    ? { blockExplorers: { default: { name: "Otterscan", url: explorerUrl } } }
+    : {}),
   testnet: true,
 });
 
