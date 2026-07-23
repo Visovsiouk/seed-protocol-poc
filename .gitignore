@@ -12,10 +12,11 @@ dist/
 build/
 *.tsbuildinfo
 
-# env
+# env (and any backup copies — these can hold provisioned keys)
 .env
 .env.local
 .env.*.local
+.env*.bak
 
 # logs
 *.log

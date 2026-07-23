@@ -16,6 +16,15 @@ royalties, and translated across presets by adapters.
 > Contracts live in a sibling repo (`../seed-protocol`). This repo is frontend +
 > server-side helpers + the cross-realm adapter Foundry project (`contracts/`).
 
+Two ways to run it, one command each:
+
+```bash
+pnpm local                       # LOCAL: full dev stack — anvil + contracts + seeders + app
+                                 # (see “Local development”; needs the sibling repo cloned)
+sudo bash scripts/server-up.sh   # SERVER: all VPS services under systemd, incl. the
+                                 # Otterscan explorer (see “Server deployment” + deploy/)
+```
+
 ## Status
 
 - **Phase 0** — workspace scaffold, wallet stack, env validation. _Done._
@@ -75,8 +84,8 @@ the frontend always calls the UUPS proxies, never implementations):
 
 The cross-realm layer lives in this repo's Foundry project ([`contracts/`](contracts),
 Solidity 0.8.24): **12 adapters** (6 weapon + 6 armor — every ordered pair of the
-three presets) plus a `CatalogEffectRegistry`, seeded by `pnpm seed:adapters` /
-`pnpm seed:catalog`.
+three presets) plus a `CatalogEffectRegistry`, seeded during `pnpm local`
+chain provisioning (`pnpm --filter web seed:adapters` / `seed:catalog`).
 
 ## How it works
 
@@ -181,14 +190,18 @@ apps/web/
   data/                   anvil-state.json, realms.db (gitignored runtime state)
 packages/abis/            Generated typed contract bindings (wagmi:gen output)
 contracts/                Foundry project — 12 adapters + CatalogEffectRegistry
-scripts/                  chain-up.sh, app-up.sh, bring-up.sh (deploy/dev)
+scripts/                  local-up.sh, server-up.sh (entry points);
+                          chain-up.sh, app-up.sh, seed-all.sh (internal plumbing)
 docs/seed-scripts-spec.md Spec handed to the contracts repo
 ```
 
 ## Environment
 
-Validated in [`apps/web/lib/env.ts`](apps/web/lib/env.ts) via Zod. Copy
-[`apps/web/.env.example`](apps/web/.env.example) → `apps/web/.env.local`.
+Validated in [`apps/web/lib/env.ts`](apps/web/lib/env.ts) via Zod. For local
+dev there is nothing to do: `pnpm local` creates `apps/web/.env.local` from
+[`apps/web/.env.example`](apps/web/.env.example) automatically (and never
+overwrites an existing one) — edit it only to change the defaults. Server
+deployments fill it in by hand ([`deploy/README.md`](deploy/README.md) §2).
 Server-only vars are never importable from a `"use client"` module.
 
 | Var | Scope | Required | Purpose |
@@ -201,6 +214,7 @@ Server-only vars are never importable from a `"use client"` module.
 | `NEXT_PUBLIC_PRESEED_SELLERS` | client | no | Comma-separated addresses tagged "Genesis liquidity" |
 | `NEXT_PUBLIC_PAYMASTER_URL` | client | no | Paymaster (base-sepolia only) |
 | `NEXT_PUBLIC_WC_PROJECT_ID` | client | no | Reserved for WalletConnect (currently stubbed) |
+| `NEXT_PUBLIC_EXPLORER_URL` | client | no | Block-explorer base URL (Otterscan). When set, tx/address/block references in the UI link out and the anvil chain gains `blockExplorers`. Set automatically by `pnpm local --explorer`; on a VPS use `https://explorer.<domain>` |
 | `REALM_SIGNER_MNEMONIC` | server | yes | BIP-39 mnemonic for the realm-signer keyring (admin + realm owners + delegates) |
 | `REALM_SIGNER_RPC_URL` | server | yes | RPC the realm signers broadcast against |
 | `TRADER_PRIVATE_KEY` | server | yes | Wandering Trader burner EOA |
@@ -227,99 +241,75 @@ exposed on base-sepolia.
 - A browser wallet for the real-wallet flow (MetaMask, Rabby, Frame, or Brave) —
   or just use demo / the in-browser burner
 
-### Quick start (solo dev)
+### Quick start — one command
 
 ```bash
-pnpm demo-up        # anvil mock wallet — fastest, no extension, hot reload
-# or
-pnpm bring-up       # real RainbowKit wallet (MetaMask / burner / injected)
+pnpm local            # prompts: demo (mock wallet) vs real wallet
+pnpm local --demo     # non-interactive: anvil mock wallet (AI / CI testing)
+pnpm local --wallet   # non-interactive: real RainbowKit wallet
+pnpm local --clean    # wipe the chain + game db first (fresh provisioning)
+pnpm local --explorer # + Otterscan block explorer at :5100 (needs Docker)
 ```
 
-`bring-up` / `demo-up` run: `pnpm install` → seed realms → `forge build` the
-adapters → seed adapters → seed the catalog-effect registry → `pnpm dev`. The
-`--clean` variants (`bring-up-clean` / `demo-up-clean`) wipe the SQLite game db
-first. Both assume a running anvil with the core contracts already deployed (the
-sibling repo's `./deploy-local.sh`, or `scripts/chain-up.sh` below).
+[`scripts/local-up.sh`](scripts/local-up.sh) brings up the **entire stack**
+from a fresh clone with zero manual setup:
 
-Then open <http://localhost:3000>. On anvil the ConnectWizard offers
+1. Creates `apps/web/.env.local` from `.env.example` if missing (the defaults
+   are fully local-viable: anvil test mnemonic, loopback RPCs).
+2. Starts [`scripts/chain-up.sh`](scripts/chain-up.sh) on `127.0.0.1` — the
+   **first run** deploys the sister repo's core protocol and runs every seeder
+   (realms, adapters, catalog, trader; takes a few minutes). Later runs reload
+   the persisted chain state in seconds, so your Seeds/realms/balances survive
+   restarts.
+3. Starts the Next.js dev server (hot reload) in the chosen wallet mode.
+
+`Ctrl+C` tears down both the dev server and anvil (state is dumped first).
+There is no default wallet mode: on a terminal it asks; non-interactive
+sessions must pass `--demo` or `--wallet`.
+
+With `--explorer` (requires Docker) an Otterscan container runs at
+<http://localhost:5100> against the local anvil — anvil natively serves
+Otterscan's `ots_*` API — and `NEXT_PUBLIC_EXPLORER_URL` is set for the run,
+so every tx hash / address in the app UI links to the explorer.
+
+Then open <http://localhost:3000>. In `--wallet` mode the ConnectWizard offers
 **Play instantly** (in-browser burner, auto-funded) or **Use your own wallet**
-(adds the Anvil network and switches to it).
+(adds the Anvil network and switches to it); `--demo` auto-connects a mock
+anvil wallet so the whole game is testable with no extension at all.
 
 ## Server deployment
 
-For a public-ish deployment where users connect their **own** wallets from other
-devices against a shared local anvil, use the two-layer scripts. The chain layer
-is long-lived and owns all on-chain state; the app layer is freely restartable.
-
-> **Internet-facing demo?** Use the full kit in [`deploy/`](deploy/README.md)
-> instead: TLS via Caddy, a JSON-RPC allowlist proxy that hides anvil's cheat
-> methods, fresh (non-public) chain keys, systemd units, and nightly state
-> snapshots. The notes below cover a trusted-LAN setup only.
-
-### Prerequisites
-
-- A Linux host with Node ≥ 20, pnpm 11, Foundry (`anvil` + `forge`)
-- The sibling `../seed-protocol` repo present on the host (override: `SISTER_REPO`)
-- Ports **8545** (RPC) and **3000** (app) reachable by your users
-- `apps/web/.env.local` filled in (see below)
-
-### 1. Chain layer — run once, leave running
+The VPS runs **all** production services under systemd — the demo chain, the
+Next.js app, the JSON-RPC allowlist proxy, the Otterscan block explorer, and
+nightly state backups — behind Caddy TLS. After the one-time configuration in
+[`deploy/README.md`](deploy/README.md) (fresh chain keys, `.env.local`,
+domains), the whole stack is one idempotent command:
 
 ```bash
-bash scripts/chain-up.sh
+sudo bash scripts/server-up.sh            # checks, units, start, status summary
+sudo bash scripts/server-up.sh --app      # after git pull: rebuild + restart the app only
+sudo bash scripts/server-up.sh --check    # prerequisite checks only
 ```
 
-[`scripts/chain-up.sh`](scripts/chain-up.sh):
+[`scripts/server-up.sh`](scripts/server-up.sh) verifies prerequisites,
+installs/refreshes the systemd units, wires the explorer (its RPC URL is
+derived from `NEXT_PUBLIC_RPC_URL` — nothing extra to configure), restarts the
+stateless services, and prints a per-service status report with `journalctl`
+hints. It **never restarts the chain**, so players' Seeds, realms, and
+balances survive every deploy. Faults are managed with plain systemd:
+`systemctl status realms-chain`, `journalctl -fu realms-app`, etc.
 
-- Starts `anvil --host 0.0.0.0` (reachable by remote MetaMask) with persistent
-  state at `apps/web/data/anvil-state.json`.
-- On the **first** run only (until `apps/web/data/.chain-provisioned` exists):
-  wipes stale state + seed caches, runs the sister `Deploy.s.sol`, then this
-  repo's realm / adapter / catalog seeders, and writes the `.chain-provisioned`
-  marker on success. Subsequent runs load the state file and **skip** deploy+seed,
-  so contract addresses, players' Seeds, realms, and balances persist.
-- A crashed seeder leaves no marker, so the next run re-provisions from clean.
-- Refuses to start if something is already serving RPC on `8545` (avoids seeding
-  against a foreign node).
+<details>
+<summary><b>Advanced: trusted-LAN setup without systemd/Caddy</b></summary>
 
-Anvil runs in the foreground; `Ctrl+C` dumps state and exits. Overrides:
-`SISTER_REPO` (contracts repo path), `ANVIL_HOST` (bind host, default `0.0.0.0`).
-Run it under a process manager (systemd / tmux) to keep it alive.
+The internal layers still run standalone: `bash scripts/chain-up.sh` starts
+the long-lived chain (anvil on `ANVIL_HOST`, default `0.0.0.0`, persistent
+state, first-run deploy+seed), and `bash scripts/app-up.sh` builds + serves
+the app on `APP_HOST:APP_PORT`. Point `NEXT_PUBLIC_RPC_URL` at the host's LAN
+address. Only do this on a **trusted** network — bare anvil exposes cheat
+methods (see Security notes).
 
-### 2. Configure `.env.local`
-
-```ini
-NEXT_PUBLIC_CHAIN=anvil
-# Point remote browsers at the host's LAN/public address — MetaMask runs in the
-# user's browser and must reach anvil directly:
-NEXT_PUBLIC_RPC_URL=http://<host-lan-or-public-ip>:8545
-NEXT_PUBLIC_DEMO_MODE=false
-NEXT_PUBLIC_FAUCET_ENABLED=true
-
-# Server-side RPCs run on the same host, so they can stay loopback:
-REALM_SIGNER_RPC_URL=http://127.0.0.1:8545
-REALM_SIGNER_MNEMONIC="test test test test test test test test test test test junk"
-FAUCET_RPC_URL=http://127.0.0.1:8545
-TRADER_RPC_URL=http://127.0.0.1:8545
-TRADER_PRIVATE_KEY=0x...          # any unused anvil account
-TRADER_FLOAT_MIN_WEI=10000000000000000
-```
-
-### 3. App layer — restartable
-
-```bash
-bash scripts/app-up.sh
-```
-
-[`scripts/app-up.sh`](scripts/app-up.sh) runs `pnpm install` → `pnpm --filter web
-build` → `next start -H 0.0.0.0 -p 3000`. It does **not** touch the chain, so
-shipping an update is just:
-
-```bash
-git pull && bash scripts/app-up.sh
-```
-
-Overrides: `APP_HOST` (default `0.0.0.0`), `APP_PORT` (default `3000`).
+</details>
 
 ### Security notes
 
@@ -336,24 +326,46 @@ Overrides: `APP_HOST` (default `0.0.0.0`), `APP_PORT` (default `3000`).
 
 ## Scripts
 
+Two entry points, everything else is a quality gate or internal plumbing:
+
 ```bash
-pnpm dev                        # Next.js dev server
-pnpm build                      # Production build
-pnpm start                      # next start (production)
+# Entry points
+pnpm local                      # LOCAL: full dev stack (anvil + deploy + seed + dev server)
+                                #   flags: --demo | --wallet | --clean
+sudo bash scripts/server-up.sh  # SERVER: all VPS services under systemd (see deploy/README.md)
+                                #   flags: --app | --check | --no-explorer
+
+# Quality gates (same as CI)
 pnpm typecheck                  # tsc --noEmit across the workspace
 pnpm test                       # vitest run (all packages)
 pnpm --filter web test:watch    # vitest watch mode
 pnpm lint                       # eslint (web)
+pnpm build                      # Production build
+
+# Codegen + seeding
 pnpm wagmi:gen                  # Regenerate typed contract bindings from ABIs
 pnpm seed                       # Seed the three preset realms + schemas
 pnpm --filter web seed:adapters # Deploy + register the 12 cross-realm adapters
 pnpm --filter web seed:catalog  # Deploy + seed the CatalogEffectRegistry
-pnpm --filter web seed:all      # seed + seed:adapters + seed:catalog
-pnpm demo-up   / demo-up-clean  # Seed + dev with the anvil mock wallet
-pnpm bring-up  / bring-up-clean # Seed + dev with the real RainbowKit wallet
-pnpm chain-up                   # Long-lived chain layer (anvil + one-time deploy/seed)
-pnpm app-up                     # Restartable production app layer
+pnpm --filter web seed:all      # seed + seed:adapters + seed:catalog (TS seeders only)
+
+# Foundry adapters (run inside contracts/)
+forge build                     # Compile the 12 adapters + CatalogEffectRegistry
+forge test                      # Adapter + catalog-registry unit tests
+
+# Engine tuning harnesses (stdout-only, no chain needed; run inside apps/web/)
+pnpm exec tsx scripts/balance-sweep.ts   # Win-rate / TTK / HP tables per preset × tier
+pnpm exec tsx scripts/heal-variants.ts   # Compare inter-room recovery variants
 ```
+
+Internal plumbing in [`scripts/`](scripts) (invoked by the entry points, still
+runnable by hand): `chain-up.sh` (long-lived anvil + one-time deploy/seed),
+`app-up.sh` (production app build + serve), `seed-all.sh` (`pnpm install` +
+`forge build` + all seeders, for re-seeding against a running chain).
+
+CI ([`.github/workflows/test.yml`](.github/workflows/test.yml)) gates every
+push/PR with `forge build --sizes` + `forge test -vvv` in `contracts/` and
+`pnpm typecheck` + `pnpm test` across the workspace.
 
 ## Notable design choices
 
