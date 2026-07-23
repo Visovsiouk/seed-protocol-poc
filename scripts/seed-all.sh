@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 #
-# Shared install + seed sequence, invoked by scripts/bring-up.sh and
-# scripts/chain-up.sh (fresh-chain provisioning):
+# Shared install + seed sequence, invoked by scripts/chain-up.sh during
+# fresh-chain provisioning (which `pnpm local` and the realms-chain systemd
+# unit both run). Can also be run standalone against an already-running,
+# already-deployed anvil:
 #
 #   1. installs workspace deps
 #   2. seeds the three preset realms + loot schemas

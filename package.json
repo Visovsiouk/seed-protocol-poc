@@ -4,20 +4,14 @@
   "private": true,
   "packageManager": "pnpm@11.0.9",
   "scripts": {
-    "dev": "pnpm --filter web dev",
+    "local": "bash scripts/local-up.sh",
+    "server": "bash scripts/server-up.sh",
     "build": "pnpm --filter web build",
-    "start": "pnpm --filter web start",
     "lint": "pnpm --filter web lint",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",
     "wagmi:gen": "pnpm --filter web wagmi:gen",
-    "seed": "pnpm --filter web seed",
-    "bring-up": "bash scripts/bring-up.sh",
-    "bring-up-clean": "bash scripts/bring-up.sh --clean",
-    "demo-up": "bash scripts/bring-up.sh --demo",
-    "demo-up-clean": "bash scripts/bring-up.sh --clean --demo",
-    "chain-up": "bash scripts/chain-up.sh",
-    "app-up": "bash scripts/app-up.sh"
+    "seed": "pnpm --filter web seed"
   },
   "engines": {
     "node": ">=20"

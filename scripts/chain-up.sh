@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 #
-# Long-lived LOCAL chain layer for a public-ish deploy. Run this ONCE and leave
-# it running; restart the app freely against it (scripts/app-up.sh) without
-# touching on-chain state.
+# Chain layer — internal plumbing, not a user entry point. Invoked by:
+#   - scripts/local-up.sh (background child, ANVIL_HOST=127.0.0.1)  → `pnpm local`
+#   - deploy/systemd/realms-chain.service (VPS)                     → server-up.sh
+# The chain is long-lived and owns all on-chain state; the app layer restarts
+# freely against it without touching that state.
 #
 # What it does:
 #   1. Starts anvil bound to 0.0.0.0 (reachable by remote MetaMask users) with
@@ -27,7 +29,8 @@
 #   ADMIN / TREASURY / EMERGENCY_MULTISIG / DEPLOYER_PK
 #                   deploy roles; default to anvil dev accounts 0/1/2
 #
-# See scripts/app-up.sh for the restartable app layer.
+# See scripts/app-up.sh for the restartable app layer (VPS) and
+# scripts/local-up.sh for the local dev bring-up.
 
 set -euo pipefail
 
@@ -99,7 +102,7 @@ EOF
 EOF
 fi
 
-# Deploy.s.sol PoC-mode env (mirrors the sister repo's deploy-local.sh).
+# Deploy.s.sol PoC-mode env for the sister repo's deploy script.
 # Every value is overridable so a public deploy can use fresh keys — the
 # defaults are anvil's WELL-KNOWN dev accounts, which anyone can sign for.
 # See deploy/README.md: for anything reachable from the internet, generate a
@@ -148,7 +151,10 @@ if curl -s -X POST "$RPC_URL" \
 fi
 
 echo "==> starting anvil (host $ANVIL_HOST, state $STATE_FILE, logs $ANVIL_LOG)"
-ANVIL_ARGS=(--host "$ANVIL_HOST" --state "$STATE_FILE")
+# --state-interval: periodic dumps on top of the exit-time dump. On Windows
+# (Git Bash) `kill` can hard-terminate the native anvil.exe and skip the exit
+# dump entirely — the 30s interval bounds any loss.
+ANVIL_ARGS=(--host "$ANVIL_HOST" --state "$STATE_FILE" --state-interval 30)
 [[ -n "$ANVIL_MNEMONIC" ]] && ANVIL_ARGS+=(--mnemonic "$ANVIL_MNEMONIC")
 anvil "${ANVIL_ARGS[@]}" > "$ANVIL_LOG" 2>&1 &
 ANVIL_PID=$!
@@ -189,6 +195,5 @@ fi
 
 echo
 echo "Anvil running at $RPC_URL (PID $ANVIL_PID), bound to $ANVIL_HOST."
-echo "Now run: bash scripts/app-up.sh"
 echo "Press Ctrl+C to stop anvil (state is dumped to $STATE_FILE)."
 wait "$ANVIL_PID"

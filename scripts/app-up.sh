@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 #
-# Restartable APP layer. The chain (anvil + deployed contracts + user state)
-# is owned by scripts/chain-up.sh and is NOT touched here — so updating the app
-# is just:  git pull && bash scripts/app-up.sh
+# Restartable APP layer — internal plumbing run by realms-app.service on the
+# VPS (server-up.sh restarts that unit to redeploy). The chain (anvil +
+# deployed contracts + user state) is owned by scripts/chain-up.sh and is NOT
+# touched here — so updating the app is just:
+#   git pull && sudo bash scripts/server-up.sh --app
 #
 # Builds and serves the Next.js app in production mode, bound to 0.0.0.0 so
-# remote users can reach it. Use `pnpm demo-up` / `pnpm dev` instead for solo
-# hot-reload development.
+# remote users can reach it. Use `pnpm local` instead for solo hot-reload
+# development.
 #
 # Env overrides:
 #   APP_HOST  host to bind (default 0.0.0.0)
