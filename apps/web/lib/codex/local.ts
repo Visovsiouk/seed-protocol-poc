@@ -13,8 +13,6 @@ const STORAGE_KEY = "seed-protocol-poc:codex-flags";
 export type CodexLocalFlags = {
   /** Gear minted under preset A was carried into a preset-B descent. */
   crossRealmCarry?: boolean;
-  /** The Wandering Trader has bought one of this player's listings. */
-  traderHailed?: boolean;
 };
 
 type Store = Record<string, CodexLocalFlags>;

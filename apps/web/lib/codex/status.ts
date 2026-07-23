@@ -21,6 +21,8 @@ export type CodexInputs = {
   /** From the exchange scan. */
   hasListed: boolean;
   hasPurchased: boolean;
+  /** One of the player's listings sold — incl. to the Wandering Trader. */
+  hasSold: boolean;
   royaltyEarned: boolean;
   /** localStorage: carried foreign-provenance gear into a descent. */
   crossRealmCarry: boolean;
@@ -45,7 +47,9 @@ export function deriveCodexStatus(i: CodexInputs): CodexStatus {
   if (i.hasSeed) done.add("seed");
   if (i.ownsRealm) done.add("realm");
   if (i.hasListed) done.add("list");
-  if (i.hasPurchased) done.add("purchase");
+  // "Witness the split" counts both sides of a settlement — buying any
+  // relic, or having yours bought (the hail path), per the step copy.
+  if (i.hasPurchased || i.hasSold) done.add("purchase");
   if (i.royaltyEarned) done.add("royalty");
   if ((i.realmMaxTier ?? 0) >= 4) done.add("tier");
 

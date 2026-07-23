@@ -7,10 +7,14 @@ import { fetchAssetSummaries } from "./provenance";
  * Exchange-journey scan for the Protocol Codex (and the hail button state).
  *
  * One pass over the exchange's full `Listed` + `Purchased` history answers
- * three per-player questions the codex needs:
+ * four per-player questions the codex needs:
  *
  *   - hasListed:    the player has ever escrowed a listing (seller side)
  *   - hasPurchased: the player has ever bought a listing (buyer side)
+ *   - hasSold:      one of the player's listings has been bought — by
+ *     anyone, including the Wandering Trader (this is what stamps
+ *     "Witness the split" for the hail path; the settlement is on-chain,
+ *     so no localStorage flag is needed)
  *   - royaltyEarned: any sold listing's token was minted by `ownedRealm`,
  *     i.e. the player's realm has earned its 4.5% creator royalty at least
  *     once (regardless of who sold or bought)
@@ -24,6 +28,7 @@ const EXCHANGE = () => getAddress("protocolExchange");
 export type ExchangeJourney = {
   hasListed: boolean;
   hasPurchased: boolean;
+  hasSold: boolean;
   royaltyEarned: boolean;
 };
 
@@ -60,6 +65,21 @@ export async function fetchExchangeJourney(
     (ev) => ev.args.buyer?.toLowerCase() === me,
   );
 
+  const myListingIds = new Set<string>();
+  for (const ev of listed) {
+    if (
+      ev.args.listingId !== undefined &&
+      ev.args.seller?.toLowerCase() === me
+    ) {
+      myListingIds.add(ev.args.listingId.toString());
+    }
+  }
+  const hasSold = purchased.some(
+    (ev) =>
+      ev.args.listingId !== undefined &&
+      myListingIds.has(ev.args.listingId.toString()),
+  );
+
   let royaltyEarned = false;
   if (ownedRealm && purchased.length > 0) {
     // Join Purchased → Listed to recover each sold listing's tokenId, then
@@ -86,5 +106,5 @@ export async function fetchExchangeJourney(
     }
   }
 
-  return { hasListed, hasPurchased, royaltyEarned };
+  return { hasListed, hasPurchased, hasSold, royaltyEarned };
 }

@@ -7,7 +7,7 @@ import {
   usePlayerRealms,
   useTutorialProgress,
 } from "@/lib/reads/hooks";
-import { defaultReadQueryOptions } from "@/lib/reads/cache";
+import { defaultReadQueryOptions, queryKeys } from "@/lib/reads/cache";
 import { fetchExchangeJourney } from "@/lib/reads/exchange-journey";
 import type { ExchangeJourney } from "@/lib/reads/exchange-journey";
 import { loadCodexFlags } from "./local";
@@ -41,11 +41,10 @@ export function useCodexStatus(player: `0x${string}` | undefined): {
   }, [player, realms.data]);
 
   const journey = useQuery<ExchangeJourney>({
-    queryKey: [
-      "exchange-journey",
+    queryKey: queryKeys.exchangeJourney(
       player ?? "none",
       ownedRealm?.address ?? "none",
-    ],
+    ),
     enabled: !!player,
     queryFn: () => fetchExchangeJourney(player!, ownedRealm?.address ?? null),
     ...defaultReadQueryOptions,
@@ -67,6 +66,7 @@ export function useCodexStatus(player: `0x${string}` | undefined): {
         realmMaxTier: ownedRealm?.maxTier ?? null,
         hasListed: journey.data?.hasListed ?? false,
         hasPurchased: journey.data?.hasPurchased ?? false,
+        hasSold: journey.data?.hasSold ?? false,
         royaltyEarned: journey.data?.royaltyEarned ?? false,
         crossRealmCarry: flags.crossRealmCarry ?? false,
       }),

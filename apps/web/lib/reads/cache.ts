@@ -30,6 +30,10 @@ export const queryKeys = {
   realmStats: (realm: `0x${string}`) => ["realm-stats", realm] as const,
   realmAssets: (realm: `0x${string}`) => ["realm-assets", realm] as const,
   adapters: (schemaId: number) => ["adapters", schemaId] as const,
+  /** Prefix form (no args) is the invalidation handle for all players. */
+  exchangeJourney: (player: string, realm: string) =>
+    ["exchange-journey", player, realm] as const,
+  exchangeJourneyAll: () => ["exchange-journey"] as const,
 };
 
 /**

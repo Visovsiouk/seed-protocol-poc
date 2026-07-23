@@ -10,6 +10,7 @@ const NONE: CodexInputs = {
   realmMaxTier: null,
   hasListed: false,
   hasPurchased: false,
+  hasSold: false,
   royaltyEarned: false,
   crossRealmCarry: false,
 };
@@ -43,6 +44,7 @@ describe("deriveCodexStatus", () => {
       realmMaxTier: 3,
       hasListed: true,
       hasPurchased: true,
+      hasSold: true,
       royaltyEarned: true,
       crossRealmCarry: true,
     });
@@ -59,5 +61,20 @@ describe("deriveCodexStatus", () => {
     const s = deriveCodexStatus({ ...NONE, hasListed: true });
     expect(s.done.has("list")).toBe(true);
     expect(s.done.has("royalty")).toBe(false);
+  });
+
+  it("the split is witnessed from either side of a settlement", () => {
+    // Buyer side: the player bought a relic.
+    expect(
+      deriveCodexStatus({ ...NONE, hasPurchased: true }).done.has("purchase"),
+    ).toBe(true);
+    // Seller side: the player's listing sold (e.g. to the hailed trader).
+    expect(
+      deriveCodexStatus({ ...NONE, hasSold: true }).done.has("purchase"),
+    ).toBe(true);
+    // A bare listing is not a settlement.
+    expect(
+      deriveCodexStatus({ ...NONE, hasListed: true }).done.has("purchase"),
+    ).toBe(false);
   });
 });
