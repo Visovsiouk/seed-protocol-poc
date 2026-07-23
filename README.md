@@ -62,7 +62,7 @@ sudo bash scripts/server-up.sh   # SERVER: all VPS services under systemd, incl.
 - `better-sqlite3` for the off-chain realm registry; `obscenity` to profanity-gate realm names
 - Vitest for unit tests (Playwright wired for future e2e)
 - Foundry (`contracts/`) for the 12 cross-realm adapters + catalog-effect registry
-- Node ≥ 20, pnpm 11 workspaces (`apps/*`, `packages/*`)
+- Node ≥ 22.13, pnpm 11 workspaces (`apps/*`, `packages/*`)
 
 ## Contracts
 
@@ -235,7 +235,7 @@ exposed on base-sepolia.
 
 ### Prerequisites
 
-- Node ≥ 20, pnpm 11
+- Node ≥ 22.13, pnpm 11
 - Foundry (`anvil` + `forge`) for the sibling contracts repo + this repo's adapters
 - The sibling `../seed-protocol` contracts repo (override with `SISTER_REPO=...`)
 - A browser wallet for the real-wallet flow (MetaMask, Rabby, Frame, or Brave) —
