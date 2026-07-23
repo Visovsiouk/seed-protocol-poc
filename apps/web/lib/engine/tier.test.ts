@@ -176,14 +176,14 @@ describe("rollTier", () => {
 
 describe("tier table integrity", () => {
   it("every difficulty distribution sums to 100", () => {
-    for (const [_, dist] of Object.entries(_tierTablesForTests.TIER_DISTRIBUTION)) {
+    for (const dist of Object.values(_tierTablesForTests.TIER_DISTRIBUTION)) {
       const sum = dist.reduce((acc, [, w]) => acc + w, 0);
       expect(sum).toBe(100);
     }
   });
 
   it("every effect-count distribution sums to 100", () => {
-    for (const [_, dist] of Object.entries(
+    for (const dist of Object.values(
       _tierTablesForTests.EFFECT_COUNT_DISTRIBUTION,
     )) {
       const sum = dist.reduce((acc, [, w]) => acc + w, 0);

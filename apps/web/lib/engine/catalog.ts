@@ -201,7 +201,7 @@ export function applyCatalogEffects(
   };
   const notes: CatalogTick["notes"] = [];
 
-  for (const { hook: effHook, effect, spec: _spec } of collectEffects(equipped)) {
+  for (const { hook: effHook, effect } of collectEffects(equipped)) {
     if (effHook !== hook) continue;
     if (next.suppressedEffects.includes(effect.name)) continue;
 

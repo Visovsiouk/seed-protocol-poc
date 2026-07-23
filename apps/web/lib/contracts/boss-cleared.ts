@@ -20,10 +20,6 @@ import { useAccount } from "wagmi";
 import { useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/reads/cache";
 import type { Preset } from "@/lib/engine/types";
-import {
-  buildClearReceiptMetadataURI,
-  deriveClearReceiptTokenId,
-} from "./clear-receipt-derive";
 
 export type MintClearReceiptArgs = {
   preset: Preset;

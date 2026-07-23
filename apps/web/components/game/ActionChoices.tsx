@@ -28,7 +28,6 @@ type Props = {
 };
 
 export function ActionChoices({
-  encounter,
   equipped,
   disabled,
   onChoose,

@@ -27,7 +27,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/reads/cache";
 import { evocativeName } from "@/lib/loot/names";
 import type { LootRoll, Preset } from "@/lib/engine/types";
-import { deriveLootTokenId, buildLootMetadataURI } from "./loot-derive";
+import { deriveLootTokenId } from "./loot-derive";
 
 export type MintLootArgs = {
   realm: `0x${string}`;
