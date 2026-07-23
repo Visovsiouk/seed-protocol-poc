@@ -19,7 +19,7 @@
         "loot": "6"
       }
     },
-    "seededAt": "2026-07-16T16:12:24.514Z"
+    "seededAt": "2026-07-19T16:05:16.084Z"
   },
   "$schema": "Per-chainId map of seeded realm addresses + per-preset schema IDs, written by `pnpm seed`. Placeholder zeros until the seeder runs."
 }
