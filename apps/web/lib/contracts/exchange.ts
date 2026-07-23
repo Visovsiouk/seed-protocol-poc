@@ -153,8 +153,10 @@ export function useList() {
 
       // Invalidate so the bazaar grid refetches immediately — and the
       // inventory, since the listed piece is now escrowed by the exchange
-      // and must leave the picker/drawer without a reload.
+      // and must leave the picker/drawer without a reload. The exchange
+      // journey feeds the codex ("Offer a relic" stamps on this refetch).
       qc.invalidateQueries({ queryKey: queryKeys.listings() });
+      qc.invalidateQueries({ queryKey: queryKeys.exchangeJourneyAll() });
       if (address) {
         qc.invalidateQueries({ queryKey: queryKeys.inventory(address) });
         qc.invalidateQueries({ queryKey: queryKeys.inventoryCards(address) });

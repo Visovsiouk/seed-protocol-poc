@@ -25,6 +25,7 @@ import { useCallback } from "react";
 import { usePublicClient, useWriteContract } from "wagmi";
 import { ecosystemTemplateAbi } from "@abis/generated";
 import { SCHEMAS } from "./schemas";
+import { jitteredFees } from "./fee-jitter";
 import { parseSchemaRegistered } from "./schema-register-parse";
 
 export type RealmSchemaIds = {
@@ -44,6 +45,8 @@ export function useRegisterRealmSchemas() {
         def: { name: string; metadataURI: string; fields: unknown },
         label: string,
       ): Promise<bigint> => {
+        // Fee jitter re-rolls the sighash per attempt — see fee-jitter.ts.
+        const fees = await jitteredFees(publicClient);
         const hash = await writeContractAsync({
           address: realm,
           abi: ecosystemTemplateAbi,
@@ -53,6 +56,7 @@ export function useRegisterRealmSchemas() {
             def.metadataURI,
             def.fields as never,
           ],
+          ...fees,
         });
         const receipt = await publicClient.waitForTransactionReceipt({ hash });
         if (receipt.status !== "success") {
