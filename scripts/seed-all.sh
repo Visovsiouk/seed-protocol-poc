@@ -28,6 +28,11 @@ echo "==> seeding realms (3 ecosystems + 6 schemas)"
 pnpm --filter web seed
 
 echo "==> forge build (12 adapter contracts)"
+# contracts/lib is gitignored and there is no .gitmodules, so a fresh clone has
+# no forge-std and the build fails parsing the test sources. CI installs it
+# explicitly (.github/workflows/test.yml); do the same here so provisioning
+# works from a bare clone.
+[ -d contracts/lib/forge-std ] || ( cd contracts && forge install foundry-rs/forge-std )
 ( cd contracts && forge build )
 
 echo "==> seeding adapters (12 deploys + registry writes)"
