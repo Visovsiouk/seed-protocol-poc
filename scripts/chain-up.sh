@@ -184,6 +184,13 @@ if $FRESH; then
   ( cd "$SISTER_REPO" && forge script script/Deploy.s.sol \
       --fork-url "$RPC_URL" --broadcast --private-key "$DEPLOYER_PK" -vvvv )
 
+  # The addresses committed in addresses.ts are deterministic for anvil's
+  # DEFAULT account 0. A public deploy uses fresh keys (deploy/README.md §1),
+  # so the contracts land elsewhere and every seeder/read path would point at
+  # empty accounts. Re-point the address book at what actually got deployed.
+  echo "==> syncing addresses.ts from the sister repo's deployment artifact"
+  node "$ROOT/scripts/sync-addresses.mjs" "$SISTER_REPO"
+
   bash "$ROOT/scripts/seed-all.sh"
 
   # Mark provisioned only after every step above succeeded. `set -e` aborts
