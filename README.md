@@ -1,20 +1,23 @@
-# Realms — Seed Protocol PoC
+# Realms (Seed Protocol PoC)
 
-Next.js / wagmi web app exercising the Seed Protocol contracts (ERC-1155
+This Next.js and wagmi web app exercises the Seed Protocol contracts: ERC-1155
 `UniversalAsset`, `ProtocolExchange`, `EmissionController`, `SeedSBT`, the
-per-preset `EcosystemTemplate` clones, and the cross-realm adapter +
-catalog-effect registries). The goal is a playable, end-to-end demonstration of
-the protocol's royalty-routed bazaar, Seed-gated realm creation, and emission
-engine on a local anvil chain, with a clean migration path to base-sepolia.
+per-preset `EcosystemTemplate` clones, and the cross-realm adapter and
+catalog-effect registries. It is a playable, end-to-end demo of the protocol on
+a local anvil chain. The demo covers the royalty-routed bazaar, Seed-gated realm
+creation, and the emission engine. It has a direct migration path to
+base-sepolia.
 
 It is a **deterministic dice-driven text RPG** with three genre presets
 (Fantasy, Sci-Fi, Cyberpunk). A player clears the three founding realms to earn
-a soulbound **Seed**, which unlocks authoring their own realm. Loot is minted
-under each realm's provenance, traded on a shared bazaar with perpetual creator
-royalties, and translated across presets by adapters.
+a soulbound **Seed**. The Seed unlocks the right to author their own realm. Each
+realm mints loot under its own provenance. Players trade the loot on a shared
+bazaar with perpetual creator royalties, and adapters translate it across
+presets.
 
-> Contracts live in a sibling repo (`../seed-protocol`). This repo is frontend +
-> server-side helpers + the cross-realm adapter Foundry project (`contracts/`).
+> Contracts live in a sibling repo (`../seed-protocol`). This repo holds the
+> frontend, the server-side helpers, and the cross-realm adapter Foundry project
+> (`contracts/`).
 
 Two ways to run it, one command each:
 
@@ -33,41 +36,41 @@ sudo bash scripts/server-up.sh   # SERVER: all VPS services under systemd, incl.
 - TanStack Query v5 for client cache
 - Tailwind v4 + tailwind-variants + `framer-motion` for styling/motion
 - Zod for runtime env + request validation
-- `better-sqlite3` for the off-chain realm registry; `obscenity` to profanity-gate realm names
+- `better-sqlite3` for the off-chain realm registry. `obscenity` to profanity-gate realm names
 - Vitest for unit tests (Playwright wired for future e2e)
 - Foundry (`contracts/`) for the 12 cross-realm adapters + catalog-effect registry
 - Node ≥ 22.13, pnpm 11 workspaces (`apps/*`, `packages/*`)
 
 ## Contracts
 
-Nine core contracts (deployed by the sibling repo, address book in
-[`apps/web/lib/contracts/addresses.ts`](apps/web/lib/contracts/addresses.ts) —
-the frontend always calls the UUPS proxies, never implementations):
+Nine core contracts. The sibling repo deploys them, and the address book lives in
+[`apps/web/lib/contracts/addresses.ts`](apps/web/lib/contracts/addresses.ts).
+The frontend always calls the UUPS proxies, never implementations:
 
 | Contract | Role |
 | --- | --- |
-| `SeedSBT` | Soulbound Seed token. `admin` holds `GOVERNANCE_ROLE` and calls `mintGenesis` once to bootstrap the founding realms; players later mint their own via `/api/realm/claim-seed`. |
-| `EcosystemFactory` | `createEcosystem` clones a realm; enforces the **1 Seed = 1 Ecosystem** invariant (spends the caller's Seed). |
+| `SeedSBT` | Soulbound Seed token. `admin` holds `GOVERNANCE_ROLE` and calls `mintGenesis` once to bootstrap the founding realms. Players later mint their own via `/api/realm/claim-seed`. |
+| `EcosystemFactory` | `createEcosystem` clones a realm. It enforces the **1 Seed = 1 Ecosystem** invariant (it spends the caller's Seed). |
 | `EcosystemRegistry` | Index of every deployed realm clone. |
-| `EcosystemTemplate` | Per-realm clone (impl behind proxies). Emits `BossClearEvent` + `AssetMinted`; owner-gated `mintAsset` / `registerSchema` / `triggerSeedMint` / `setMinter`. |
-| `UniversalAsset` | Single ERC-1155 holding all loot across every realm (provenance in tokenId). |
+| `EcosystemTemplate` | Per-realm clone (impl behind proxies). Emits `BossClearEvent` and `AssetMinted`. Owner-gated `mintAsset` / `registerSchema` / `triggerSeedMint` / `setMinter`. |
+| `UniversalAsset` | Single ERC-1155 that holds all loot across every realm (provenance in tokenId). |
 | `ProtocolExchange` | Royalty-routed bazaar: `list` / `purchase` / `cancel`. |
-| `SchemaRegistry` | Loot schemas (weapon/armor type, tier, effects) — 2 per starter preset. |
+| `SchemaRegistry` | Loot schemas (weapon/armor type, tier, effects), 2 per starter preset. |
 | `AdapterRegistry` | Permissionless registry of the 12 cross-realm adapters. |
 | `EmissionController` | Loot drop rates + mint caps. |
 
 The cross-realm layer lives in this repo's Foundry project ([`contracts/`](contracts),
-Solidity 0.8.24): **12 adapters** (6 weapon + 6 armor — every ordered pair of the
-three presets) plus a `CatalogEffectRegistry`, seeded during `pnpm local`
-chain provisioning (`pnpm --filter web seed:adapters` / `seed:catalog`).
+Solidity 0.8.24). It has **12 adapters** (6 weapon + 6 armor, every ordered pair
+of the three presets) plus a `CatalogEffectRegistry`. Chain provisioning seeds
+them during `pnpm local` (`pnpm --filter web seed:adapters` / `seed:catalog`).
 
 ## How it works
 
-**The crux of the deploy model is server-signed vs user-signed flows.** The
-player's wallet is mostly an *identity*: most state-changing game actions are
-signed server-side by a keyring derived from `REALM_SIGNER_MNEMONIC`, so a
+**The deploy model turns on server-signed versus user-signed flows.** The
+player's wallet is mostly an *identity*. A keyring derived from
+`REALM_SIGNER_MNEMONIC` signs most state-changing game actions server-side, so a
 player needs no gas for normal play. Only realm *creation* asks the user to sign
-and broadcast real transactions themselves.
+and broadcast real transactions.
 
 | Flow | Signed by | Route |
 | --- | --- | --- |
@@ -80,50 +83,50 @@ and broadcast real transactions themselves.
 | Faucet top-up (`anvil_setBalance`) | server cheat call | `POST /api/faucet` |
 | **Realm creation (Founding Rite)** | **the user's own wallet** | `/create` page (4 txs) |
 
-The realm-signer keyring (`apps/web/lib/server/realm-signer.ts`) derives:
-admin @ index 0, the three founding-realm owners @ indices 1–3, and player-realm
-delegate signers @ indices 4+ — all from the single `REALM_SIGNER_MNEMONIC`. The
-default Anvil test mnemonic derives Anvil's deterministic accounts 0..3, so it
-works out of the box locally.
+The realm-signer keyring (`apps/web/lib/server/realm-signer.ts`) derives four
+kinds of signer from the single `REALM_SIGNER_MNEMONIC`: admin at index 0, the
+three founding-realm owners at indices 1–3, and player-realm delegate signers at
+indices 4+. The default Anvil test mnemonic derives Anvil's deterministic
+accounts 0..3, so it works locally with no setup.
 
-Seed eligibility is reconstructed purely from on-chain `BossClearEvent`s: a
-player who has cleared all three founding (starter) realms and does not already
-hold a Seed is eligible. See
+The app reconstructs Seed eligibility purely from on-chain `BossClearEvent`s. A
+player is eligible after they clear all three founding (starter) realms and do
+not already hold a Seed. See
 [`apps/web/lib/tutorial/progress.ts`](apps/web/lib/tutorial/progress.ts). At claim
-time [`/api/realm/claim-seed`](apps/web/app/api/realm/claim-seed/route.ts) does not
-trust the client — it independently rescans `AssetMinted` events to rebuild the
-proof before the server signs the `SeedSBT` mint.
+time, [`/api/realm/claim-seed`](apps/web/app/api/realm/claim-seed/route.ts) does not
+trust the client. It rescans `AssetMinted` events itself to rebuild the proof
+before the server signs the `SeedSBT` mint.
 
 ### The deterministic engine
 
 Play is a **deterministic dice RPG** ([`apps/web/lib/engine/`](apps/web/lib/engine)):
 
-- **Three presets** — fantasy / sci-fi / cyberpunk — each with its own 6-value
-  element vocabulary (fantasy: fire/ice/shock/holy/unholy/none, etc.). Loot and
-  gear translate across genres through the on-chain adapters.
+- **Three presets** (fantasy / sci-fi / cyberpunk), each with its own 6-value
+  element vocabulary (fantasy: fire/ice/shock/holy/unholy/none, and so on). Loot
+  and gear translate across genres through the on-chain adapters.
 - **Two-button combat.** Every turn is *Attack* vs a *Secondary* action that
   varies by equipped armor (Dodge / Brace / Steady / Reflect / Focus). Round order
-  is preTurn → player → monster → postTurn → boss-phase check; elemental matchups
+  is preTurn → player → monster → postTurn → boss-phase check. Elemental matchups
   apply a 1.5× weakness / 0.5× resist multiplier.
 - **Seeded RNG.** All randomness flows through a deterministic **sfc32** generator
-  (128-bit state, no `Math.random()` anywhere) seeded from
-  `keccak256(playerAddr ‖ blockhash ‖ encounterId)` — same seed, same run, on any
+  (128-bit state, no `Math.random()` anywhere). It is seeded from
+  `keccak256(playerAddr ‖ blockhash ‖ encounterId)`. Same seed, same run, on any
   machine or tab. See [`apps/web/lib/engine/rng.ts`](apps/web/lib/engine/rng.ts).
-- **Tiers T1–T5.** Weapons scale d4→d12 (+0→+4 to-hit/damage); armor +1/+5 HP →
-  +5/+50 HP, uniform across presets so adapters map without a balance audit
-  ([`apps/web/lib/engine/tier.ts`](apps/web/lib/engine/tier.ts)). Starter realms
-  cap at **T3** (boss depth 3). Player-made realms earn their ceiling from distinct
-  clearers: T3 base, **T4 @ 20**, **T5 @ 50**
+- **Tiers T1–T5.** Weapons scale d4→d12 (+0→+4 to-hit/damage). Armor scales
+  +1/+5 HP → +5/+50 HP, uniform across presets, so adapters map without a balance
+  audit ([`apps/web/lib/engine/tier.ts`](apps/web/lib/engine/tier.ts)). Starter
+  realms cap at **T3** (boss depth 3). Player-made realms earn their ceiling from
+  distinct clearers: T3 base, **T4 @ 20**, **T5 @ 50**
   ([`apps/web/lib/reads/realm-tier.ts`](apps/web/lib/reads/realm-tier.ts)).
 
 ## Environment
 
-Validated in [`apps/web/lib/env.ts`](apps/web/lib/env.ts) via Zod. For local
-dev there is nothing to do: `pnpm local` creates `apps/web/.env.local` from
-[`apps/web/.env.example`](apps/web/.env.example) automatically (and never
-overwrites an existing one) — edit it only to change the defaults. Server
-deployments fill it in by hand ([`deploy/README.md`](deploy/README.md) §2).
-Server-only vars are never importable from a `"use client"` module.
+[`apps/web/lib/env.ts`](apps/web/lib/env.ts) validates the environment with Zod.
+For local dev there is nothing to do. `pnpm local` creates `apps/web/.env.local`
+from [`apps/web/.env.example`](apps/web/.env.example) automatically, and it never
+overwrites an existing one. Edit it only to change the defaults. Server
+deployments set it by hand ([`deploy/README.md`](deploy/README.md) §2). You can
+never import server-only vars from a `"use client"` module.
 
 | Var | Scope | Required | Purpose |
 | --- | --- | --- | --- |
@@ -135,7 +138,7 @@ Server-only vars are never importable from a `"use client"` module.
 | `NEXT_PUBLIC_PRESEED_SELLERS` | client | no | Comma-separated addresses tagged "Genesis liquidity" |
 | `NEXT_PUBLIC_PAYMASTER_URL` | client | no | Paymaster (base-sepolia only) |
 | `NEXT_PUBLIC_WC_PROJECT_ID` | client | no | Reserved for WalletConnect (currently stubbed) |
-| `NEXT_PUBLIC_EXPLORER_URL` | client | no | Block-explorer base URL (Otterscan). When set, tx/address/block references in the UI link out and the anvil chain gains `blockExplorers`. Set automatically by `pnpm local --explorer`; on a VPS use `https://explorer.<domain>` |
+| `NEXT_PUBLIC_EXPLORER_URL` | client | no | Block-explorer base URL (Otterscan). When set, tx/address/block references in the UI become links and the anvil chain gains `blockExplorers`. `pnpm local --explorer` sets it automatically. On a VPS use `https://explorer.<domain>` |
 | `REALM_SIGNER_MNEMONIC` | server | yes | BIP-39 mnemonic for the realm-signer keyring (admin + realm owners + delegates) |
 | `REALM_SIGNER_RPC_URL` | server | yes | RPC the realm signers broadcast against |
 | `TRADER_PRIVATE_KEY` | server | yes | Wandering Trader burner EOA |
@@ -143,14 +146,14 @@ Server-only vars are never importable from a `"use client"` module.
 | `TRADER_FLOAT_MIN_WEI` | server | yes | Trader refuses to act below this balance |
 | `TRADER_MAX_BUY_WEI` | server | no | Hard cap per buy (default 0.2 ETH) |
 | `TRADER_RATE_LIMIT_PER_IP_PER_10MIN` | server | no | Trader per-IP rate limit (default 10) |
-| `FAUCET_RPC_URL` | server | no | RPC for `anvil_setBalance`; falls back to `REALM_SIGNER_RPC_URL`. May stay `127.0.0.1` even when the public RPC is a LAN address |
+| `FAUCET_RPC_URL` | server | no | RPC for `anvil_setBalance`. Falls back to `REALM_SIGNER_RPC_URL`. May stay `127.0.0.1` even when the public RPC is a LAN address |
 | `FAUCET_AMOUNT_WEI` | server | no | Balance the faucet tops up to (default 10 ETH) |
 | `FAUCET_RATE_LIMIT_PER_IP_PER_10MIN` | server | no | Faucet per-IP rate limit (default 5) |
 
-`NEXT_PUBLIC_DEMO_MODE` and `NEXT_PUBLIC_FAUCET_ENABLED` only take effect when
-`NEXT_PUBLIC_CHAIN=anvil` — the `demoMode`/`faucetEnabled` exports in `env.ts`
-hard-gate them so the mock wallet and the `anvil_setBalance` cheat can never be
-exposed on base-sepolia.
+`NEXT_PUBLIC_DEMO_MODE` and `NEXT_PUBLIC_FAUCET_ENABLED` take effect only when
+`NEXT_PUBLIC_CHAIN=anvil`. The `demoMode`/`faucetEnabled` exports in `env.ts`
+hard-gate them. The mock wallet and the `anvil_setBalance` cheat can therefore
+never reach base-sepolia.
 
 ## Local development
 
@@ -159,10 +162,10 @@ exposed on base-sepolia.
 - Node ≥ 22.13, pnpm 11
 - Foundry (`anvil` + `forge`) for the sibling contracts repo + this repo's adapters
 - The sibling `../seed-protocol` contracts repo (override with `SISTER_REPO=...`)
-- A browser wallet for the real-wallet flow (MetaMask, Rabby, Frame, or Brave) —
-  or just use demo / the in-browser burner
+- A browser wallet for the real-wallet flow (MetaMask, Rabby, Frame, or Brave).
+  Or just use demo / the in-browser burner
 
-### Quick start — one command
+### Quick start: one command
 
 ```bash
 pnpm local            # prompts: demo (mock wallet) vs real wallet
@@ -172,37 +175,37 @@ pnpm local --clean    # wipe the chain + game db first (fresh provisioning)
 pnpm local --explorer # + Otterscan block explorer at :5100 (needs Docker)
 ```
 
-[`scripts/local-up.sh`](scripts/local-up.sh) brings up the **entire stack**
+[`scripts/local-up.sh`](scripts/local-up.sh) starts the **entire stack**
 from a fresh clone with zero manual setup:
 
 1. Creates `apps/web/.env.local` from `.env.example` if missing (the defaults
    are fully local-viable: anvil test mnemonic, loopback RPCs).
-2. Starts [`scripts/chain-up.sh`](scripts/chain-up.sh) on `127.0.0.1` — the
+2. Starts [`scripts/chain-up.sh`](scripts/chain-up.sh) on `127.0.0.1`. The
    **first run** deploys the sister repo's core protocol and runs every seeder
-   (realms, adapters, catalog, trader; takes a few minutes). Later runs reload
-   the persisted chain state in seconds, so your Seeds/realms/balances survive
-   restarts.
+   (realms, adapters, catalog, trader). This takes a few minutes. Later runs
+   reload the persisted chain state in seconds, so your Seeds/realms/balances
+   survive restarts.
 3. Starts the Next.js dev server (hot reload) in the chosen wallet mode.
 
-`Ctrl+C` tears down both the dev server and anvil (state is dumped first).
-There is no default wallet mode: on a terminal it asks; non-interactive
-sessions must pass `--demo` or `--wallet`.
+`Ctrl+C` stops both the dev server and anvil (it dumps state first). There is no
+default wallet mode. On a terminal it asks. Non-interactive sessions must pass
+`--demo` or `--wallet`.
 
-With `--explorer` (requires Docker) an Otterscan container runs at
-<http://localhost:5100> against the local anvil — anvil natively serves
-Otterscan's `ots_*` API — and `NEXT_PUBLIC_EXPLORER_URL` is set for the run,
-so every tx hash / address in the app UI links to the explorer.
+With `--explorer` (requires Docker), an Otterscan container runs at
+<http://localhost:5100> against the local anvil. Anvil natively serves
+Otterscan's `ots_*` API. The run also sets `NEXT_PUBLIC_EXPLORER_URL`, so every
+tx hash / address in the app UI links to the explorer.
 
 Then open <http://localhost:3000>. In `--wallet` mode the ConnectWizard offers
 **Play instantly** (in-browser burner, auto-funded) or **Use your own wallet**
-(adds the Anvil network and switches to it); `--demo` auto-connects a mock
-anvil wallet so the whole game is testable with no extension at all.
+(it adds the Anvil network and switches to it). `--demo` auto-connects a mock
+anvil wallet, so you can test the whole game with no extension at all.
 
 ## Server deployment
 
-The VPS runs **all** production services under systemd — the demo chain, the
-Next.js app, the JSON-RPC allowlist proxy, the Otterscan block explorer, and
-nightly state backups — behind Caddy TLS. After the one-time configuration in
+The VPS runs **all** production services under systemd, behind Caddy TLS. These
+are the demo chain, the Next.js app, the JSON-RPC allowlist proxy, the Otterscan
+block explorer, and nightly state backups. After the one-time configuration in
 [`deploy/README.md`](deploy/README.md) (fresh chain keys, `.env.local`,
 domains), the whole stack is one idempotent command:
 
@@ -213,41 +216,41 @@ sudo bash scripts/server-up.sh --check    # prerequisite checks only
 ```
 
 [`scripts/server-up.sh`](scripts/server-up.sh) verifies prerequisites,
-installs/refreshes the systemd units, wires the explorer (its RPC URL is
-derived from `NEXT_PUBLIC_RPC_URL` — nothing extra to configure), restarts the
+installs or refreshes the systemd units, wires the explorer, restarts the
 stateless services, and prints a per-service status report with `journalctl`
-hints. It **never restarts the chain**, so players' Seeds, realms, and
-balances survive every deploy. Faults are managed with plain systemd:
-`systemctl status realms-chain`, `journalctl -fu realms-app`, etc.
+hints. It derives the explorer RPC URL from `NEXT_PUBLIC_RPC_URL`, so there is
+nothing extra to configure. It **never restarts the chain**, so players' Seeds,
+realms, and balances survive every deploy. Manage faults with plain systemd:
+`systemctl status realms-chain`, `journalctl -fu realms-app`, and so on.
 
 <details>
 <summary><b>Advanced: trusted-LAN setup without systemd/Caddy</b></summary>
 
-The internal layers still run standalone: `bash scripts/chain-up.sh` starts
+The internal layers still run standalone. `bash scripts/chain-up.sh` starts
 the long-lived chain (anvil on `ANVIL_HOST`, default `0.0.0.0`, persistent
-state, first-run deploy+seed), and `bash scripts/app-up.sh` builds + serves
+state, first-run deploy+seed). `bash scripts/app-up.sh` builds and serves
 the app on `APP_HOST:APP_PORT`. Point `NEXT_PUBLIC_RPC_URL` at the host's LAN
-address. Only do this on a **trusted** network — bare anvil exposes cheat
+address. Only do this on a **trusted** network. Bare anvil exposes cheat
 methods (see Security notes).
 
 </details>
 
 ### Security notes
 
-- **Anvil is an unauthenticated dev node** and the faucet exposes the
+- **Anvil is an unauthenticated dev node**, and the faucet exposes the
   `anvil_setBalance` cheat. Only expose RPC `8545` to a **trusted** network or
-  behind a reverse proxy — never the open internet.
+  behind a reverse proxy. Never expose it to the open internet.
 - `REALM_SIGNER_MNEMONIC` controls minting and the admin role. Treat it as a
-  secret even on local chains; rotate away from the public Anvil test mnemonic
+  secret even on local chains. Rotate away from the public Anvil test mnemonic
   for anything beyond a throwaway demo.
-- **Vercel / serverless is not viable for this model** — it needs a long-lived
+- **Vercel / serverless does not fit this model.** It needs a long-lived
   anvil node plus a co-located server signer. The base-sepolia migration target
   (real testnet RPC, paymaster-sponsored txs) is the intended path off local
-  anvil; that work is not yet built.
+  anvil. That work is not yet built.
 
 ## Scripts
 
-Two entry points, everything else is a quality gate or internal plumbing:
+There are two entry points. Everything else is a quality gate or internal plumbing:
 
 ```bash
 # Entry points
@@ -279,10 +282,11 @@ pnpm exec tsx scripts/balance-sweep.ts   # Win-rate / TTK / HP tables per preset
 pnpm exec tsx scripts/heal-variants.ts   # Compare inter-room recovery variants
 ```
 
-Internal plumbing in [`scripts/`](scripts) (invoked by the entry points, still
-runnable by hand): `chain-up.sh` (long-lived anvil + one-time deploy/seed),
-`app-up.sh` (production app build + serve), `seed-all.sh` (`pnpm install` +
-`forge build` + all seeders, for re-seeding against a running chain).
+Internal plumbing lives in [`scripts/`](scripts). The entry points invoke it,
+but you can still run it by hand: `chain-up.sh` (long-lived anvil + one-time
+deploy/seed), `app-up.sh` (production app build + serve), `seed-all.sh`
+(`pnpm install` + `forge build` + all seeders, for re-seeding against a running
+chain).
 
 CI ([`.github/workflows/test.yml`](.github/workflows/test.yml)) gates every
 push/PR with `forge build --sizes` + `forge test -vvv` in `contracts/` and
@@ -290,31 +294,33 @@ push/PR with `forge build --sizes` + `forge test -vvv` in `contracts/` and
 
 ## Notable design choices
 
-- **Deterministic engine.** Every encounter is fully reproducible: sfc32 RNG
+- **Deterministic engine.** Every encounter is reproducible: sfc32 RNG
   seeded from `keccak256(playerAddr ‖ blockhash ‖ encounterId)`, no `Math.random()`.
-  Same seed → same run, which keeps server-side loot validation honest.
+  Same seed gives the same run, which keeps server-side loot validation honest.
 - **Royalty math.** 5% total (`500` BPS): 4.5% creator + 0.5% treasury, 95% to
   the seller. Integer `bigint` math (no float drift) in
   [`apps/web/lib/contracts/exchange.ts`](apps/web/lib/contracts/exchange.ts),
   mirrored client-side so the fee display is trustless.
-- **Inventory discovery.** No subgraph — scans `TransferSingle` / `TransferBatch`
-  logs (both `to` and `from`), dedupes tokenIds, then resolves balances via a
+- **Inventory discovery.** No subgraph. It scans `TransferSingle` / `TransferBatch`
+  logs (both `to` and `from`), dedupes tokenIds, then resolves balances with a
   single `balanceOfBatch`.
-- **Server-signed clears + mint.** Players never pay gas for normal play; the
+- **Server-signed clears + mint.** Players never pay gas for normal play. The
   realm-signer keyring signs `BossCleared`, loot mints, and the `SeedSBT` mint.
   Realm creation is the one user-signed flow (the 4-tx Founding Rite on `/create`).
-- **Play-instantly burner.** On anvil the first thing a visitor sees is the
-  ConnectWizard, offering an in-browser burner wallet (`burner-connector`) that
-  signs locally and is auto-funded by `/api/faucet` on connect — no extension.
-- **Wandering Trader.** Server-side EOA fronted by `/api/trader/*` with in-process
-  sliding-window rate limit, float guard, Zod-validated bodies, and revert-vs-
-  internal error classification. Never exposes the private key to the client.
-- **Wallets via RainbowKit.** Bare wagmi connectors don't surface in the RK modal
-  in v2; everything is registered through `getDefaultConfig`.
-- **Coinbase Smart Wallet gated off anvil.** It's a hosted account-abstraction
-  wallet that signs/broadcasts through Coinbase's backend and only knows Coinbase-
-  supported networks, so it can't reach a local `127.0.0.1` anvil or chainId
-  31337. Offered only on base-sepolia; on anvil use the burner or an injected wallet.
+- **Play-instantly burner.** On anvil the visitor first sees the ConnectWizard.
+  It offers an in-browser burner wallet (`burner-connector`) that signs locally.
+  `/api/faucet` auto-funds it on connect, with no extension.
+- **Wandering Trader.** A server-side EOA sits behind `/api/trader/*`, with an
+  in-process sliding-window rate limit, a float guard, Zod-validated bodies, and
+  revert-vs-internal error classification. It never exposes the private key to
+  the client.
+- **Wallets via RainbowKit.** Bare wagmi connectors do not surface in the RK modal
+  in v2. Everything registers through `getDefaultConfig`.
+- **Coinbase Smart Wallet gated off anvil.** It is a hosted account-abstraction
+  wallet. It signs and broadcasts through Coinbase's backend and knows only
+  Coinbase-supported networks. It therefore cannot reach a local `127.0.0.1`
+  anvil or chainId 31337. It is offered only on base-sepolia. On anvil, use the
+  burner or an injected wallet.
 - **No WalletConnect.** Its universal provider touches `indexedDB` at module-eval
-  time and crashes Next.js SSR. Re-add via the `cookieStorage` +
-  `cookieToInitialState` pattern when base-sepolia + QR pairing is needed.
+  time and crashes Next.js SSR. Re-add it with the `cookieStorage` +
+  `cookieToInitialState` pattern when you need base-sepolia + QR pairing.
