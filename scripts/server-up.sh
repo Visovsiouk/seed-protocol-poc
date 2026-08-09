@@ -9,12 +9,18 @@
 #
 # Installs/refreshes the systemd units from deploy/systemd/, wires the
 # Otterscan explorer (env derived from NEXT_PUBLIC_RPC_URL — no extra config),
-# (re)starts every stateless service, and prints a per-service status summary
-# with journalctl hints.
+# builds the app, (re)starts every stateless service, and prints a per-service
+# status summary with journalctl hints.
+#
+# The app is built BEFORE anything is restarted (scripts/app-build.sh, as the
+# service user), so downtime is the ~2s `next start` boot rather than the whole
+# install + build, and a failed build aborts the deploy with the previous
+# version still serving.
 #
 # It NEVER restarts realms-chain: on-chain state (players' Seeds, realms,
 # balances) lives there, and a restart mid-provisioning would re-wipe. The
-# chain unit is only enabled/started if not already running.
+# chain unit is only enabled/started if not already running. To wipe that state
+# deliberately, see scripts/chain-reset.sh.
 #
 # App update after `git pull`:  sudo bash scripts/server-up.sh --app
 # Full runbook: deploy/README.md
@@ -64,12 +70,18 @@ probe_rpc() { # label, method, expected-substring
 }
 
 probe_http() { # label, url
-  local code
-  code="$(curl -s -o /dev/null -m 5 -w '%{http_code}' "$2" || true)"
-  case "$code" in
-    200|301|302|307|308) echo "  OK   $1 (HTTP $code)" ;;
-    *)                   echo "  FAIL $1 (HTTP $code)" ;;
-  esac
+  # Retries: we probe immediately after restarting the unit, and `next start`
+  # needs a second or two to bind. A single shot reported FAIL on perfectly
+  # good deploys, which trained everyone to ignore the summary.
+  local code i
+  for i in {1..15}; do
+    code="$(curl -s -o /dev/null -m 5 -w '%{http_code}' "$2" || true)"
+    case "$code" in
+      200|301|302|307|308) echo "  OK   $1 (HTTP $code)"; return 0 ;;
+    esac
+    sleep 1
+  done
+  echo "  FAIL $1 (HTTP $code after 15s)"
 }
 
 status_summary() {
@@ -93,10 +105,27 @@ status_summary() {
   echo "App update after git pull:  sudo bash scripts/server-up.sh --app"
 }
 
+# -------------------------------------------------------------- app build ---
+
+# Build BEFORE restarting anything. The old app keeps serving throughout, and a
+# failed build aborts the deploy with the previous version still up — the unit
+# is never restarted, so there is nothing to roll back.
+build_app() {
+  echo "==> building app as $SERVICE_USER (site still serving the previous build)"
+  if ! sudo -u "$SERVICE_USER" bash -lc "cd '$ROOT' && bash scripts/app-build.sh"; then
+    echo >&2
+    echo "ERROR: app build failed — NOTHING was restarted, the running app is untouched." >&2
+    echo "       Fix the build and re-run. To inspect:" >&2
+    echo "         sudo -u $SERVICE_USER bash -lc 'cd $ROOT && bash scripts/app-build.sh'" >&2
+    exit 1
+  fi
+}
+
 # ------------------------------------------------------------- fast path ----
 
 if [[ "$MODE" == app ]]; then
-  echo "==> restarting realms-app (app-up.sh: pnpm install + build + next start)"
+  build_app
+  echo "==> restarting realms-app (app-up.sh: next start only)"
   systemctl restart realms-app
   status_summary
   exit 0
@@ -183,10 +212,12 @@ if $EXPLORER; then
     || echo "==> docker pull failed (offline?) — will use a cached image if present"
 fi
 
+build_app
+
 echo "==> enabling + starting services"
 systemctl enable --now "${ALL_UNITS[@]}" realms-state-backup.timer
-# Redeploy the stateless layer: picks up a new app build (app-up.sh rebuilds),
-# guard code, or explorer image. realms-chain is deliberately NOT restarted.
+# Redeploy the stateless layer: picks up the build we just made, new guard code,
+# or a new explorer image. realms-chain is deliberately NOT restarted.
 systemctl restart "${STATELESS_UNITS[@]}"
 systemctl reload caddy || echo "WARN: caddy reload failed — check /etc/caddy/Caddyfile" >&2
 
