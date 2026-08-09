@@ -18,7 +18,7 @@ export function RealmAssetsGrid({
   realm,
   preset,
   clearReceiptSchemaId,
-  limit = 24,
+  limit = 20,
 }: {
   realm: `0x${string}`;
   preset: Preset | null;
@@ -26,6 +26,7 @@ export function RealmAssetsGrid({
   limit?: number;
 }) {
   const assets = useRealmAssets({ realm, preset, clearReceiptSchemaId, limit });
+  const count = assets.data?.length ?? 0;
 
   return (
     <Panel
@@ -36,19 +37,32 @@ export function RealmAssetsGrid({
     >
       <header className="flex items-baseline justify-between gap-2">
         <Stamp>Assets minted by this realm</Stamp>
-        <span className="text-[10px] opacity-65">
-          {assets.data?.length ?? 0} shown · newest first
-        </span>
+        {count > 0 && (
+          <span className="text-[10px] opacity-65">
+            Showing latest {count}
+          </span>
+        )}
       </header>
 
       {assets.isLoading ? (
-        <p className="text-sm opacity-70">Hydrating asset metadata…</p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div
+              key={i}
+              className="h-28 animate-pulse rounded-lg"
+              style={{
+                background: "var(--surface-2)",
+                border: "1px solid var(--border-2)",
+              }}
+            />
+          ))}
+        </div>
       ) : assets.isError ? (
-        <p className="text-sm text-[var(--color-danger)]">
+        <p className="py-6 text-center text-sm text-[var(--color-danger)]">
           Failed to load realm assets.
         </p>
-      ) : !assets.data || assets.data.length === 0 ? (
-        <p className="text-sm opacity-70">
+      ) : !assets.data || count === 0 ? (
+        <p className="py-6 text-center text-sm opacity-70">
           No loot has been minted from this realm yet.
         </p>
       ) : (

@@ -37,7 +37,7 @@ export async function fetchRealmAssets(args: {
     preset,
     clearReceiptSchemaId,
     scanLimit = 200,
-    cardLimit = 24,
+    cardLimit = 20,
   } = args;
   const client = getReadClient();
 
