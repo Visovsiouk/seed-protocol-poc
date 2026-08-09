@@ -43,6 +43,31 @@ genesis_present() {
   [[ -f "$GENESIS_DIR/anvil-state.json" ]]
 }
 
+# Who these files must belong to. chain-snapshot.sh and chain-reset.sh both run
+# as root (they drive systemctl), but the files are WRITTEN by the service user:
+# anvil dumps its state on shutdown, and the seeders rewrite generated/. Since
+# genesis_restore does `rm -f` before `cp`, a root-side restore recreates them
+# owned by root, and the next chain start silently fails to persist its state.
+#
+# Defaults to whoever owns the checkout — on a conventional install that is the
+# account systemd's User= runs as. Override with STATE_OWNER=user:group.
+state_owner() {
+  if [[ -n "${STATE_OWNER:-}" ]]; then
+    printf '%s\n' "$STATE_OWNER"
+  else
+    stat -c '%U:%G' "$ROOT" 2>/dev/null || true
+  fi
+}
+
+# No-op unless we are root and the checkout belongs to someone else.
+hand_back_ownership() {
+  [[ "${EUID:-$(id -u)}" -eq 0 ]] || return 0
+  local owner
+  owner="$(state_owner)"
+  [[ -n "$owner" && "$owner" != "root:root" ]] || return 0
+  chown -R "$owner" "$@" 2>/dev/null || true
+}
+
 # Copy the live chain state INTO the bundle. The chain must already be stopped —
 # anvil dumps its state on SIGINT, so a copy taken while it runs is stale by up
 # to --state-interval seconds.
@@ -70,6 +95,8 @@ genesis_save() {
   for f in "${GENERATED_FILES[@]}"; do
     cp "$GENERATED_DIR/$f" "$GENESIS_DIR/generated/$f"
   done
+
+  hand_back_ownership "$GENESIS_DIR"
 }
 
 # Copy the bundle back OVER the live chain state. The chain must already be
@@ -89,4 +116,7 @@ genesis_restore() {
   for f in "${GENERATED_FILES[@]}"; do
     cp "$GENESIS_DIR/generated/$f" "$GENERATED_DIR/$f"
   done
+
+  # STATE_DIR covers the state file, the db and the bundle itself in one pass.
+  hand_back_ownership "$STATE_DIR" "$GENERATED_DIR"
 }
