@@ -10,6 +10,7 @@ import { Button, Panel, ExplorerLink } from "@/components/ui";
 import { formatEth, shortAddress } from "@/lib/utils";
 import {
   usePurchase,
+  useCancel,
   computeFeeBreakdown,
   type FeeBreakdown,
 } from "@/lib/contracts/exchange";
@@ -37,11 +38,14 @@ export function ListingCard({
   const qc = useQueryClient();
   const { address } = useAccount();
   const { purchase, isPending } = usePurchase();
+  const { cancel } = useCancel();
   const [hailStatus, setHailStatus] = useState<
     "idle" | "running" | "refused" | "error"
   >("idle");
   const [hailError, setHailError] = useState<string | null>(null);
   const [buyError, setBuyError] = useState<string | null>(null);
+  const [cancelStatus, setCancelStatus] = useState<"idle" | "running">("idle");
+  const [cancelError, setCancelError] = useState<string | null>(null);
 
   // The Wandering Trader is hailed by the SELLER, on their own listing —
   // that keeps the demo counterparty honest (player-initiated, labeled) and
@@ -130,6 +134,32 @@ export function ListingCard({
     }
   };
 
+  // Withdraw your own listing — cancel() returns the escrowed asset to your
+  // inventory so you can relist at a fair price (the de-facto "reprice"). The
+  // trader refuses overpriced listings but there's no in-place edit, so this
+  // is the escape hatch that copy points at.
+  const onWithdraw = async () => {
+    setCancelStatus("running");
+    setCancelError(null);
+    try {
+      await cancel(listing.id);
+      // cancel() already invalidates listings(); also refresh inventory so the
+      // returned asset reappears without a manual reload.
+      void qc.invalidateQueries({ queryKey: ["inventory"] });
+      void qc.invalidateQueries({ queryKey: ["inventory-cards"] });
+      setCancelStatus("idle");
+    } catch (e) {
+      setCancelStatus("idle");
+      setCancelError(
+        e instanceof BaseError
+          ? e.shortMessage
+          : e instanceof Error
+            ? e.message
+            : String(e),
+      );
+    }
+  };
+
   return (
     <Panel
       as="article"
@@ -195,6 +225,19 @@ export function ListingCard({
                 : "Hail the Wandering Trader"}
             </Button>
           )}
+          {isOwnListing && (
+            <Button
+              intent="ghost"
+              onClick={onWithdraw}
+              disabled={cancelStatus === "running"}
+              className="flex-1"
+              title="Cancel this listing and return the asset to your inventory — relist at a fair price to reprice"
+            >
+              {cancelStatus === "running"
+                ? "Withdrawing…"
+                : "Withdraw listing"}
+            </Button>
+          )}
         </div>
         {hailError && (
           <p
@@ -211,6 +254,9 @@ export function ListingCard({
         )}
         {buyError && (
           <p className="text-[11px] text-[var(--color-danger)]">{buyError}</p>
+        )}
+        {cancelError && (
+          <p className="text-[11px] text-[var(--color-danger)]">{cancelError}</p>
         )}
       </footer>
     </Panel>

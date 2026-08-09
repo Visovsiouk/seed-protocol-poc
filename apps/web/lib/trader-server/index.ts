@@ -221,7 +221,7 @@ async function enforceAppraisal(
   if (price > cap) {
     throw new TraderRefusalError(
       "overpriced",
-      `The trader appraises this T${tier} relic at no more than ${formatEther(cap)} ETH — reprice and try again`,
+      `The trader appraises this T${tier} relic at no more than ${formatEther(cap)} ETH — withdraw it and relist at or below that.`,
     );
   }
   return tier;
