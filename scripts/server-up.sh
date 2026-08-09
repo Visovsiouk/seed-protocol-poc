@@ -46,6 +46,9 @@ ENV_LOCAL="$ROOT/apps/web/.env.local"
 CHAIN_ENV=/etc/realms/chain.env
 EXPLORER_ENV=/etc/realms/explorer.env
 
+# PROVISIONED_MARKER / GENESIS_DIR / genesis_present
+source "$ROOT/scripts/lib/state-paths.sh"
+
 STATELESS_UNITS=(realms-rpc-guard realms-app)
 $EXPLORER && STATELESS_UNITS+=(realms-explorer)
 ALL_UNITS=(realms-chain "${STATELESS_UNITS[@]}")
@@ -186,5 +189,17 @@ systemctl enable --now "${ALL_UNITS[@]}" realms-state-backup.timer
 # guard code, or explorer image. realms-chain is deliberately NOT restarted.
 systemctl restart "${STATELESS_UNITS[@]}"
 systemctl reload caddy || echo "WARN: caddy reload failed — check /etc/caddy/Caddyfile" >&2
+
+# Capture the genesis snapshot the one moment it is genuinely pristine: the
+# chain is provisioned and nobody has played yet. Everything after this is
+# player state, and chain-snapshot.sh refuses to clobber an existing bundle.
+if [[ -f "$PROVISIONED_MARKER" ]] && ! genesis_present; then
+  echo "==> no genesis snapshot yet — capturing one for fast resets"
+  bash "$ROOT/scripts/chain-snapshot.sh" || \
+    echo "WARN: snapshot failed — fast reset unavailable until scripts/chain-snapshot.sh succeeds" >&2
+elif [[ ! -f "$PROVISIONED_MARKER" ]]; then
+  echo "==> chain is still provisioning — once it finishes, capture the genesis"
+  echo "    snapshot so resets take seconds:  sudo bash scripts/chain-snapshot.sh"
+fi
 
 status_summary

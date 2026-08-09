@@ -40,23 +40,9 @@ cd "$ROOT"
 SISTER_REPO="${SISTER_REPO:-$ROOT/../seed-protocol}"
 ANVIL_HOST="${ANVIL_HOST:-0.0.0.0}"
 RPC_URL="http://127.0.0.1:8545"
-STATE_FILE="$ROOT/apps/web/data/anvil-state.json"
-# Written only AFTER deploy + seed fully succeed. Its presence — not the
-# auto-dumped state file — is what marks the chain as provisioned, so a
-# half-finished run (e.g. a seeder crash) re-provisions cleanly next time
-# instead of loading a partially-seeded chain.
-PROVISIONED_MARKER="$ROOT/apps/web/data/.chain-provisioned"
-# The generated address book + seeder caches live in
-# apps/web/lib/contracts/generated/ (gitignored). On a fresh chain they must NOT
-# carry stale addresses, so ensure-generated.mjs --reset blanks them — see that
-# script for why they are blanked rather than deleted, and why a stale cached
-# address is worse than none.
-ENSURE_GENERATED="$ROOT/apps/web/scripts/ensure-generated.mjs"
-DB_FILES=(
-  "$ROOT/apps/web/data/realms.db"
-  "$ROOT/apps/web/data/realms.db-shm"
-  "$ROOT/apps/web/data/realms.db-wal"
-)
+
+# STATE_FILE / PROVISIONED_MARKER / DB_FILES / ENSURE_GENERATED / GENESIS_DIR
+source "$ROOT/scripts/lib/state-paths.sh"
 
 if [[ ! -d "$SISTER_REPO" ]]; then
   echo "ERROR: sister contracts repo not found at $SISTER_REPO" >&2

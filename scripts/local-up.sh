@@ -6,6 +6,7 @@
 #   pnpm local --demo     # non-interactive: anvil mock wallet (AI / CI testing)
 #   pnpm local --wallet   # non-interactive: real RainbowKit wallet
 #   pnpm local --clean    # wipe chain + game db first (fresh provisioning)
+#   pnpm local --reset    # restore the genesis snapshot (seconds, if captured)
 #   pnpm local --explorer # also run Otterscan (needs Docker) at :5100 and
 #                         # turn on explorer links in the app UI
 #
@@ -29,14 +30,16 @@ cd "$ROOT"
 
 DEMO=""
 CLEAN=false
+RESET=false
 EXPLORER=false
 for arg in "$@"; do
   case "$arg" in
     --demo)     DEMO=true ;;
     --wallet)   DEMO=false ;;
     --clean)    CLEAN=true ;;
+    --reset)    RESET=true ;;
     --explorer) EXPLORER=true ;;
-    *) echo "unknown flag: $arg (use --demo | --wallet | --clean | --explorer)" >&2; exit 1 ;;
+    *) echo "unknown flag: $arg (use --demo | --wallet | --clean | --reset | --explorer)" >&2; exit 1 ;;
   esac
 done
 
@@ -71,12 +74,25 @@ if [[ ! -f "$ENV_LOCAL" ]]; then
   echo "==> created apps/web/.env.local from .env.example (anvil defaults)"
 fi
 
-MARKER="$ROOT/apps/web/data/.chain-provisioned"
+# PROVISIONED_MARKER / GENESIS_DIR / genesis_present / genesis_restore
+source "$ROOT/scripts/lib/state-paths.sh"
+
 if $CLEAN; then
   # Dropping the marker is enough: chain-up.sh's FRESH branch wipes the state
-  # file + game db and resets the seed caches itself.
+  # file + game db and resets the generated addresses itself.
   echo "==> --clean: forcing fresh chain provisioning"
-  rm -f "$MARKER"
+  rm -f "$PROVISIONED_MARKER"
+elif $RESET; then
+  # Fast local equivalent of scripts/chain-reset.sh. Safe to do here because the
+  # chain has not started yet — nothing is holding the state file open.
+  if genesis_present; then
+    echo "==> --reset: restoring genesis snapshot from $GENESIS_DIR"
+    genesis_restore
+  else
+    echo "==> --reset: no genesis snapshot yet — falling back to a full re-provision"
+    echo "    (capture one with scripts/chain-snapshot.sh after this run finishes)"
+    rm -f "$PROVISIONED_MARKER"
+  fi
 fi
 
 echo "==> pnpm install"
@@ -128,7 +144,7 @@ trap cleanup EXIT INT TERM
 # half-seeded chain. No overall timeout: first provisioning legitimately
 # takes minutes — the chain child's liveness check is the failure detector.
 i=0
-until [[ -f "$MARKER" ]] && rpc_up; do
+until [[ -f "$PROVISIONED_MARKER" ]] && rpc_up; do
   if ! kill -0 "$CHAIN_PID" 2>/dev/null; then
     echo "ERROR: chain layer exited — see output above" >&2
     exit 1
