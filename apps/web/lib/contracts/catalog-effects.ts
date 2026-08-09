@@ -4,10 +4,10 @@
  * Architecture:
  *
  *     on-chain CatalogEffectRegistry  ──┐
- *                                       ├─→ seed script ─→ .seeded-catalog.json ─→ this resolver
+ *                                       ├─→ seed script ─→ generated/catalog.json ─→ this resolver
  *        CANONICAL_CATALOG_EFFECTS (seed-time input only) ──┘
  *
- * Reads the build artifact `.seeded-catalog.json` synchronously — same
+ * Reads the build artifact `generated/catalog.json` synchronously — same
  * pattern as `seeded-realms.ts`. The chain is the source of truth in
  * connected play; the JSON is a regenerated mirror. When no entry exists
  * for the active chain (or the entry is unseeded zeros), falls back to
@@ -32,7 +32,7 @@ import {
   CATALOG_EFFECT_NAMES,
 } from "./catalog-effects-config";
 import { getSeededSchemaIds } from "./seeded-realms";
-import data from "./.seeded-catalog.json";
+import data from "./generated/catalog.json";
 
 type SeededCatalogEntry = {
   registry: string;

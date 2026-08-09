@@ -264,7 +264,7 @@ export async function POST(req: Request) {
   // The on-chain `extensionSchemaId` is per-realm. Player realms
   // registered after per-realm schemas landed carry their OWN loot
   // schema id (verified at register time); older rows and starter realms
-  // fall back to the seeded pair recorded in `.seeded-realms.json`,
+  // fall back to the seeded pair recorded in `generated/realms.json`,
   // keyed off the flavor preset.
   const effectivePreset: Preset = playerRow ? playerRow.preset : body.preset;
   const realm: `0x${string}` = playerRow

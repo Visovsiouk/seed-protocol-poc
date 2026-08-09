@@ -2,7 +2,7 @@
  * Reader for the per-chain seeder output written by `pnpm seed`
  * (see `apps/web/scripts/seed-realms.ts`).
  *
- * The seeder produces `lib/contracts/.seeded-realms.json` — one entry per
+ * The seeder produces `lib/contracts/generated/realms.json` — one entry per
  * `chainId` with the three starter-realm proxy addresses + the two schema
  * IDs registered by the seeder. The file is committed with zero
  * placeholders so dev/build still type-check before the seeder has run; a
@@ -19,7 +19,7 @@
 import { activeChain } from "@/lib/chain";
 import type { Preset } from "@/lib/engine/types";
 import { ZERO_ADDRESS } from "./realm-picker";
-import data from "./.seeded-realms.json";
+import data from "./generated/realms.json";
 
 type SchemaPair = { clearReceipt: string; loot: string };
 
