@@ -140,21 +140,33 @@ One idempotent command. It:
    `realms-app`, `realms-explorer`, `realms-state-backup.timer`) — units are
    code and are always refreshed. The Caddyfile is *config*: installed only if
    `/etc/caddy/Caddyfile` doesn't exist (edit the domains!), never overwritten.
-4. **Enables + starts everything**, restarting the *stateless* services
+4. **Builds the app** as the `realms` user, *before* touching any unit. A failed
+   build aborts the deploy with the previous version still serving.
+5. **Enables + starts everything**, restarting the *stateless* services
    (guard, app, explorer) so a `git pull` redeploys — but **never restarts
    `realms-chain`**: on-chain state (Seeds, realms, balances) survives every run.
-5. **Prints a status summary**: per-unit `systemctl is-active` with
+6. **Captures the genesis snapshot** once the chain is provisioned and none
+   exists — this is what makes resets take seconds (see Operational notes).
+7. **Prints a status summary**: per-unit `systemctl is-active` with
    `journalctl` hints, plus live probes (guard allows `eth_chainId` +
    `ots_getApiLevel`, still blocks `anvil_setBalance`; app and explorer answer
    HTTP).
 
-Flags: `--app` (fast path — rebuild + restart only the app), `--check`
+Flags: `--app` (fast path — build, then restart only the app), `--check`
 (prereqs only), `--no-explorer` (skip the docker bits).
 
 First `realms-chain` start takes a few minutes: it deploys the core protocol
 from the sister repo, then seeds the three founding realms, twelve adapters,
 and the catalog registry. Watch with `journalctl -fu realms-chain`. State
 persists in `apps/web/data/anvil-state.json`; restarts skip deploy+seed.
+
+Provisioning outlives the `server-up.sh` run, so step 6 lands on the *next*
+invocation. Once the first provision finishes, take the snapshot explicitly so
+resets are fast from day one:
+
+```bash
+sudo bash scripts/chain-snapshot.sh
+```
 
 ## 4. Smoke test (golden path)
 
@@ -194,12 +206,25 @@ intact (your Seed and realm still exist).
 
 ## Operational notes
 
-- **Resets.** If the chain must be reset, delete
-  `apps/web/data/.chain-provisioned` and restart `realms-chain` — it wipes
-  state and re-provisions from scratch. Announce it; players lose progress.
-- **App updates.** `git pull && sudo bash scripts/server-up.sh --app`. The
-  chain is untouched. (A plain re-run of `server-up.sh` also works and
-  additionally refreshes units, guard, and explorer.)
+- **Resets.** `sudo bash scripts/chain-reset.sh` restores the genesis snapshot
+  in ~2s: same contract addresses, same seeded realms/adapters/catalog, so the
+  app needs no rebuild. Use `--full` when the contracts or the seeders changed —
+  that re-runs `Deploy.s.sol` and all six seeders (minutes) and re-captures the
+  snapshot afterwards. Both back up the current state first. Announce either
+  one: players lose their Seeds, realms, balances and listings, and need a fresh
+  browser profile because burner wallets live in `localStorage`.
+- **App updates.** `git pull && sudo bash scripts/server-up.sh --app`. The build
+  runs first, as the `realms` user, with the old version still serving; only a
+  successful build gets a restart, so downtime is the ~2s `next start` boot and
+  a broken build cannot take the demo offline. The chain is untouched. (A plain
+  re-run of `server-up.sh` also works and additionally refreshes units, guard,
+  and explorer.)
+- **Generated deploy data.** `apps/web/lib/contracts/generated/` (address book +
+  seeder caches) is gitignored and rewritten by provisioning; the committed
+  templates live in `lib/contracts/defaults/`. A deployed checkout therefore
+  stays clean, and `git pull` never conflicts with it. Never restore that
+  directory from `defaults/` on a provisioned host — it would point the app at
+  contracts that do not exist on this chain.
 - **Backups.** Nightly snapshots land in `/home/realms/backups` (state file +
   realm registry, last 14 kept). To restore, stop `realms-chain`, copy a
   snapshot over `apps/web/data/anvil-state.json` (and `realms.db`), start.

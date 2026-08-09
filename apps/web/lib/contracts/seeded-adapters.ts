@@ -2,7 +2,7 @@
  * Reader for the per-chain adapter map written by `pnpm seed:adapters`
  * (see `apps/web/scripts/seed-adapters.ts`).
  *
- * `seeded-adapters.json` mirrors the `seeded-realms.json` shape: one
+ * `generated/adapters.json` mirrors the `generated/realms.json` shape: one
  * entry per chainId, with a per-(slot, sourcePreset, targetPreset) map
  * of deployed adapter addresses. Zero address means "not deployed yet"
  * — callers should bail out gracefully (the equip path falls back to
@@ -14,7 +14,7 @@
 import { activeChain } from "@/lib/chain";
 import type { Preset } from "@/lib/engine/types";
 import { ZERO_ADDRESS } from "./realm-picker";
-import data from "./.seeded-adapters.json";
+import data from "./generated/adapters.json";
 
 type Slot = "weapon" | "armor";
 type AdaptersBySlot = Record<Slot, Record<Preset, Record<Preset, string>>>;

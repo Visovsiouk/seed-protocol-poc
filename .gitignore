@@ -42,5 +42,12 @@ coverage/
 playwright-report/
 test-results/
 
-# sqlite (player-realm metadata)
+# sqlite (player-realm metadata) + the pristine genesis snapshot
 apps/web/data/
+
+# generated deploy data: the address book written by scripts/sync-addresses.mjs
+# and the three seeder caches. Committed templates live in
+# apps/web/lib/contracts/defaults/ and are copied in by
+# apps/web/scripts/ensure-generated.mjs, which every build/dev/test run calls.
+# Untracked so a provisioned checkout keeps a clean worktree for `git pull`.
+apps/web/lib/contracts/generated/

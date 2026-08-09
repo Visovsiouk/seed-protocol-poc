@@ -38,7 +38,7 @@ export type RealmDisplay =
       bossId: string;
       name: string;
       tagline: string;
-      /** False until `pnpm seed` has populated `.seeded-realms.json`. */
+      /** False until `pnpm seed` has populated `generated/realms.json`. */
       deployed: boolean;
       /** Matching registry entry; undefined if the address isn't registered yet. */
       onchain: RealmSummary | undefined;

@@ -19,14 +19,14 @@
  *   knows how to decode the Fantasy weapon schema and re-encode against
  *   the Sci-Fi weapon schema (with any direction-specific rebalance baked
  *   in). At construction time it's bound to the actual on-chain loot
- *   schema ids (read from `.seeded-realms.json`) and then registered in
+ *   schema ids (read from `generated/realms.json`) and then registered in
  *   AdapterRegistry under that same (source, target) pair so any
  *   ecosystem on-chain can discover them via `getAdapters(sourceSchemaId)`.
  *
  *   Registration is permissionless (IAdapterRegistry.sol:39) — any
  *   funded account can call it; we use the admin keyring slot.
  *
- * Idempotency: re-running checks `.seeded-adapters.json` AND probes the
+ * Idempotency: re-running checks `generated/adapters.json` AND probes the
  * cached address for bytecode (`eth_getCode`). A non-zero entry whose
  * address has no code (e.g. after an Anvil restart that wiped state but
  * left the JSON behind) is treated as missing and redeployed. The
@@ -142,7 +142,7 @@ function buildKeyring() {
 }
 
 // ---------------------------------------------------------------------------
-// .seeded-realms.json — read the on-chain loot schema ids
+// generated/realms.json — read the on-chain loot schema ids
 // ---------------------------------------------------------------------------
 
 const SEEDED_REALMS_FILE = resolve(
@@ -150,7 +150,8 @@ const SEEDED_REALMS_FILE = resolve(
   "..",
   "lib",
   "contracts",
-  ".seeded-realms.json",
+  "generated",
+  "realms.json",
 );
 
 type RealmsSchemaPair = { clearReceipt: string; loot: string };
@@ -167,7 +168,7 @@ function readLootSchemaIds(chainId: number): Record<Preset, bigint> {
   >;
   const entry = doc[String(chainId)];
   if (!entry) {
-    throw new Error(`No .seeded-realms.json entry for chainId ${chainId}`);
+    throw new Error(`No generated/realms.json entry for chainId ${chainId}`);
   }
   const out = {} as Record<Preset, bigint>;
   for (const p of PRESETS) {
@@ -183,7 +184,7 @@ function readLootSchemaIds(chainId: number): Record<Preset, bigint> {
 }
 
 // ---------------------------------------------------------------------------
-// .seeded-adapters.json — output
+// generated/adapters.json — output
 // ---------------------------------------------------------------------------
 
 const SEEDED_ADAPTERS_FILE = resolve(
@@ -191,7 +192,8 @@ const SEEDED_ADAPTERS_FILE = resolve(
   "..",
   "lib",
   "contracts",
-  ".seeded-adapters.json",
+  "generated",
+  "adapters.json",
 );
 
 const ZERO: Address = "0x0000000000000000000000000000000000000000";
@@ -334,7 +336,7 @@ async function main() {
   console.log(`  admin           : ${admin.account.address}\n`);
 
   const lootSchemas = readLootSchemaIds(chainId);
-  console.log(`Loot schemas (source of truth from .seeded-realms.json):`);
+  console.log(`Loot schemas (source of truth from generated/realms.json):`);
   for (const p of PRESETS) console.log(`  ${p.padEnd(9)} = ${lootSchemas[p]}`);
   console.log("");
 

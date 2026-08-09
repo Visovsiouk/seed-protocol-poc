@@ -2,10 +2,10 @@
  * `pnpm seed:catalog` — deploys the `CatalogEffectRegistry` and writes
  * the per-preset catalog effect names against each preset's on-chain
  * loot schemaId. Run after `pnpm seed` (the loot schemaIds in
- * `.seeded-realms.json` are the registry's keys).
+ * `generated/realms.json` are the registry's keys).
  *
  * Idempotency:
- *   1. If `.seeded-catalog.json` cached a registry address whose
+ *   1. If `generated/catalog.json` cached a registry address whose
  *      bytecode is still present, skip deployment and use it.
  *   2. For each preset's loot schemaId, read `effectsOf(id)` on chain
  *      and only call `setEffects` if the on-chain set differs from
@@ -19,7 +19,7 @@
  *
  * Prerequisites:
  *   - `pnpm seed` has succeeded on the active chain (loot schemas exist
- *     in `.seeded-realms.json`).
+ *     in `generated/realms.json`).
  *   - `forge build` in `contracts/` has produced
  *     `contracts/out/CatalogEffectRegistry.sol/CatalogEffectRegistry.json`.
  *     The script reads bytecode straight from there. (ABI is the
@@ -107,7 +107,7 @@ function buildKeyring() {
 }
 
 // ---------------------------------------------------------------------------
-// .seeded-realms.json — read the on-chain loot schema ids
+// generated/realms.json — read the on-chain loot schema ids
 // ---------------------------------------------------------------------------
 
 const SEEDED_REALMS_FILE = resolve(
@@ -115,7 +115,8 @@ const SEEDED_REALMS_FILE = resolve(
   "..",
   "lib",
   "contracts",
-  ".seeded-realms.json",
+  "generated",
+  "realms.json",
 );
 
 type RealmsSchemaPair = { clearReceipt: string; loot: string };
@@ -132,7 +133,7 @@ function readLootSchemaIds(chainId: number): Record<Preset, bigint> {
   >;
   const entry = doc[String(chainId)];
   if (!entry) {
-    throw new Error(`No .seeded-realms.json entry for chainId ${chainId}`);
+    throw new Error(`No generated/realms.json entry for chainId ${chainId}`);
   }
   const out = {} as Record<Preset, bigint>;
   for (const p of PRESETS) {
@@ -148,7 +149,7 @@ function readLootSchemaIds(chainId: number): Record<Preset, bigint> {
 }
 
 // ---------------------------------------------------------------------------
-// .seeded-catalog.json — output
+// generated/catalog.json — output
 // ---------------------------------------------------------------------------
 
 const SEEDED_CATALOG_FILE = resolve(
@@ -156,7 +157,8 @@ const SEEDED_CATALOG_FILE = resolve(
   "..",
   "lib",
   "contracts",
-  ".seeded-catalog.json",
+  "generated",
+  "catalog.json",
 );
 
 type SeededCatalogEntry = {
@@ -287,7 +289,7 @@ async function main() {
   console.log(`  admin           : ${admin.account.address}\n`);
 
   const lootSchemas = readLootSchemaIds(chainId);
-  console.log("Loot schemas from .seeded-realms.json:");
+  console.log("Loot schemas from generated/realms.json:");
   for (const p of PRESETS) console.log(`  ${p.padEnd(9)} = ${lootSchemas[p]}`);
   console.log("");
 

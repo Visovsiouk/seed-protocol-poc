@@ -1,15 +1,18 @@
 #!/usr/bin/env node
 /**
- * Rewrites the anvil address block in `apps/web/lib/contracts/addresses.ts`
- * from the sister repo's `deployments/<chainId>.env`, which Deploy.s.sol
- * writes (see script/lib/DeployFlow.sol `_writeEnvFile`).
+ * Writes `apps/web/lib/contracts/generated/addresses.json` from the sister
+ * repo's `deployments/<chainId>.env`, which Deploy.s.sol produces (see
+ * script/lib/DeployFlow.sol `_writeEnvFile`).
  *
- * Why this exists: the addresses checked into `addresses.ts` are the
- * (deployer, nonce)-deterministic ones for anvil's DEFAULT account 0. Any
- * deploy from a different deployer — which deploy/README.md §1 mandates for a
- * public demo, since anvil's default keys are public knowledge — lands the
- * contracts at different addresses, and every seeder and read path then points
- * at empty accounts ("No contract at EcosystemFactory address 0x...").
+ * Why this exists: the default addresses are the (deployer, nonce)-deterministic
+ * ones for anvil's DEFAULT account 0. Any deploy from a different deployer —
+ * which deploy/README.md §1 mandates for a public demo, since anvil's default
+ * keys are public knowledge — lands the contracts at different addresses, and
+ * every seeder and read path then points at empty accounts ("No contract at
+ * EcosystemFactory address 0x...").
+ *
+ * `addresses.ts` imports the generated JSON, so provisioning no longer edits
+ * tracked source and a deployed checkout stays clean for `git pull`.
  *
  * Invoked by scripts/chain-up.sh on fresh-chain provisioning, between
  * Deploy.s.sol and seed-all.sh. Idempotent; a no-op deploy rewrites the same
@@ -17,7 +20,7 @@
  *
  * Usage: node scripts/sync-addresses.mjs <sister-repo> [chainId=31337]
  */
-import { readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -62,33 +65,31 @@ if (missing.length) {
   process.exit(1);
 }
 
-const addressesPath = resolve(ROOT, "apps/web/lib/contracts/addresses.ts");
-const source = readFileSync(addressesPath, "utf8");
+// Output is the generated address book, NOT the TypeScript source: addresses.ts
+// imports `generated/addresses.json` and stays untouched by provisioning, so a
+// deployed checkout keeps a clean worktree. See apps/web/scripts/ensure-generated.mjs.
+const outPath = resolve(ROOT, "apps/web/lib/contracts/generated/addresses.json");
 
-// Narrow the rewrite to the [anvil.id] block so the base-sepolia placeholders
-// are never touched.
-const blockRe = /(\[anvil\.id\]:\s*\{)([\s\S]*?)(\n\s*\},)/;
-const block = blockRe.exec(source);
-if (!block) {
-  console.error(`ERROR: could not locate the [anvil.id] block in ${addressesPath}`);
-  process.exit(1);
+let doc = {};
+try {
+  doc = JSON.parse(readFileSync(outPath, "utf8"));
+} catch {
+  // Missing or unparseable — ensure-generated.mjs normally puts the defaults
+  // here first, but provisioning must not hard-fail if it did not run.
 }
 
-let body = block[2];
-const changed = [];
-for (const [key, addr] of Object.entries(deployed)) {
-  const lineRe = new RegExp(`(\\b${key}:\\s*")0x[0-9a-fA-F]{40}(")`);
-  if (!lineRe.test(body)) {
-    console.error(`ERROR: no '${key}' entry in the [anvil.id] block`);
-    process.exit(1);
-  }
-  const before = body;
-  body = body.replace(lineRe, `$1${addr}$2`);
-  if (before !== body) changed.push(key);
-}
+const previous = doc[chainId] ?? {};
+const changed = Object.entries(deployed).filter(([k, v]) => previous[k] !== v);
 
-writeFileSync(addressesPath, source.replace(blockRe, `$1${body}$3`), "utf8");
+doc[chainId] = deployed;
+doc.$schema =
+  "Per-chainId map of core-protocol addresses, written by `scripts/sync-addresses.mjs` " +
+  "from the sister repo's `deployments/<chainId>.env`. Gitignored — see lib/contracts/defaults/.";
+
+mkdirSync(dirname(outPath), { recursive: true });
+writeFileSync(outPath, JSON.stringify(doc, null, 2) + "\n", "utf8");
 console.log(
-  `synced ${Object.keys(deployed).length} anvil addresses from ${envPath}` +
+  `synced ${Object.keys(deployed).length} addresses for chainId ${chainId} from ${envPath} ` +
+    `-> ${outPath}` +
     (changed.length ? ` (${changed.length} changed)` : " (already current)"),
 );

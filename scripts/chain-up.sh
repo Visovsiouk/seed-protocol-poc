@@ -10,11 +10,11 @@
 #   1. Starts anvil bound to 0.0.0.0 (reachable by remote MetaMask users) with
 #      persistent state at apps/web/data/anvil-state.json.
 #   2. FIRST run only (until apps/web/data/.chain-provisioned exists): wipes any
-#      stale state + seed caches, runs the sister repo's Deploy.s.sol (core
-#      protocol), then this repo's realm/adapter/catalog seeders, and writes the
-#      .chain-provisioned marker on success. On subsequent runs the state file
-#      is loaded and deploy+seed are SKIPPED so contract addresses
-#      (lib/contracts/addresses.ts) stay valid and users keep their
+#      stale state + generated addresses, runs the sister repo's Deploy.s.sol
+#      (core protocol), then this repo's realm/adapter/catalog seeders, and
+#      writes the .chain-provisioned marker on success. On subsequent runs the
+#      state file is loaded and deploy+seed are SKIPPED so the generated contract
+#      addresses (lib/contracts/generated/) stay valid and users keep their
 #      Seeds/realms/balances. A crashed seeder leaves no marker, so the next run
 #      re-provisions from a clean slate.
 #
@@ -40,31 +40,9 @@ cd "$ROOT"
 SISTER_REPO="${SISTER_REPO:-$ROOT/../seed-protocol}"
 ANVIL_HOST="${ANVIL_HOST:-0.0.0.0}"
 RPC_URL="http://127.0.0.1:8545"
-STATE_FILE="$ROOT/apps/web/data/anvil-state.json"
-# Written only AFTER deploy + seed fully succeed. Its presence — not the
-# auto-dumped state file — is what marks the chain as provisioned, so a
-# half-finished run (e.g. a seeder crash) re-provisions cleanly next time
-# instead of loading a partially-seeded chain.
-PROVISIONED_MARKER="$ROOT/apps/web/data/.chain-provisioned"
-# Seed-address caches. These are (deployer, nonce)-deterministic. On a fresh
-# chain they must NOT carry stale addresses: both the sister deploy and these
-# seeders deploy from anvil account 0, so if the deploy footprint shifts, a
-# cached address can land on a different contract on the new chain and get
-# silently (and wrongly) reused (seed:adapters/seed:catalog getCode-check the
-# cached address and reuse on any code — a foreign contract passes that check).
-#
-# We RESET rather than delete: seed-realms.ts does a bare readFileSync (no
-# existsSync guard) and ENOENT-crashes if the file is gone. Each reset doc keeps
-# only its `$schema` note — no chainId entry — so the seeders see "nothing
-# cached", deploy fresh, and re-stamp the file with this chain's addresses.
-SEED_REALMS_CACHE="$ROOT/apps/web/lib/contracts/.seeded-realms.json"
-SEED_ADAPTERS_CACHE="$ROOT/apps/web/lib/contracts/.seeded-adapters.json"
-SEED_CATALOG_CACHE="$ROOT/apps/web/lib/contracts/.seeded-catalog.json"
-DB_FILES=(
-  "$ROOT/apps/web/data/realms.db"
-  "$ROOT/apps/web/data/realms.db-shm"
-  "$ROOT/apps/web/data/realms.db-wal"
-)
+
+# STATE_FILE / PROVISIONED_MARKER / DB_FILES / ENSURE_GENERATED / GENESIS_DIR
+source "$ROOT/scripts/lib/state-paths.sh"
 
 if [[ ! -d "$SISTER_REPO" ]]; then
   echo "ERROR: sister contracts repo not found at $SISTER_REPO" >&2
@@ -79,27 +57,12 @@ FRESH=false
 mkdir -p "$(dirname "$STATE_FILE")"
 
 if $FRESH; then
-  # Clean slate: drop any leftover anvil state + game db, and reset the seed
-  # caches to schema-only docs (no chainId entry) so the seeders deploy from
-  # scratch and write addresses that match THIS chain. See the SEED_*_CACHE
-  # note above for why we reset instead of delete.
-  echo "==> FRESH chain — wiping stale anvil state + game db, resetting seed caches"
+  # Clean slate: drop any leftover anvil state + game db, and blank the generated
+  # address book + seeder caches so the deploy and seeders write addresses that
+  # match THIS chain.
+  echo "==> FRESH chain — wiping stale anvil state + game db, resetting generated addresses"
   rm -f "$STATE_FILE" "${DB_FILES[@]}"
-  cat > "$SEED_REALMS_CACHE" <<'EOF'
-{
-  "$schema": "Per-chainId map of seeded realm addresses + per-preset schema IDs, written by `pnpm seed`. Placeholder zeros until the seeder runs."
-}
-EOF
-  cat > "$SEED_ADAPTERS_CACHE" <<'EOF'
-{
-  "$schema": "Per-chainId map of deployed adapter addresses keyed by (slot, sourcePreset, targetPreset), written by `pnpm seed:adapters`."
-}
-EOF
-  cat > "$SEED_CATALOG_CACHE" <<'EOF'
-{
-  "$schema": "Per-chainId map of the deployed CatalogEffectRegistry address + per-schema effect lists, written by `pnpm seed:catalog`. Placeholder zeros until the seeder runs."
-}
-EOF
+  node "$ENSURE_GENERATED" --reset
 fi
 
 # Deploy.s.sol PoC-mode env for the sister repo's deploy script.

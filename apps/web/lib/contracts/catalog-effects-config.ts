@@ -9,7 +9,7 @@
  *   1. `pnpm seed:catalog` — feeds these names into the registry's
  *      `setEffects(schemaId, names)` at bring-up time.
  *   2. The engine resolver (`catalog-effects.ts`) — fallback when no
- *      `.seeded-catalog.json` entry exists for the active chain (e.g.
+ *      `generated/catalog.json` entry exists for the active chain (e.g.
  *      vitest, disconnected/trial mode, or Base Sepolia before seeding).
  *
  * When the on-chain registry and this table diverge, **the registry

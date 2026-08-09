@@ -25,7 +25,7 @@
  *   11. ownerCyberpunk.Realm3.registerSchema(clearReceipt)
  *   12. ownerCyberpunk.Realm3.registerSchema(loot)
  *
- * After success, writes `apps/web/lib/contracts/.seeded-realms.json` so the
+ * After success, writes `apps/web/lib/contracts/generated/realms.json` so the
  * play route picks up the addresses + schema IDs on the next reload.
  *
  * Run with:
@@ -284,7 +284,8 @@ const SEEDED_FILE = resolve(
   "..",
   "lib",
   "contracts",
-  ".seeded-realms.json",
+  "generated",
+  "realms.json",
 );
 
 type SchemaPair = { clearReceipt: string; loot: string };
@@ -455,7 +456,7 @@ async function main() {
     }
   }
 
-  // ---- Write .seeded-realms.json ----
+  // ---- Write generated/realms.json ----
   // Schema IDs come from the global SchemaRegistry counter, so each realm
   // has its own pair (fantasy={1,2}, scifi={3,4}, cyberpunk={5,6}). The
   // JSON stores the pair per-preset so consumers can filter `AssetMinted`

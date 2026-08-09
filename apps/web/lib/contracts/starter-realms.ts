@@ -6,7 +6,7 @@ import { getSeededRealm } from "./seeded-realms";
  * Per-preset starter realm config.
  *
  * Split of concerns:
- *   - `realm` (address) lives in `.seeded-realms.json` — written by
+ *   - `realm` (address) lives in `generated/realms.json` — written by
  *     `pnpm seed` (`apps/web/scripts/seed-realms.ts`) and keyed by chainId
  *     so anvil and base-sepolia deploys can coexist in the same file.
  *   - `bossId` lives here — bosses are an engine catalog concept (see
