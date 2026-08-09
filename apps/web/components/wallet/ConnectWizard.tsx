@@ -39,6 +39,43 @@ function getInjected(): InjectedProvider | null {
   return eth ?? null;
 }
 
+/** Loopback/local hosts a browser wallet on another machine can never reach. */
+function isLoopbackHost(host: string): boolean {
+  return (
+    host === "127.0.0.1" ||
+    host === "localhost" ||
+    host === "0.0.0.0" ||
+    host === "::1" ||
+    host === "[::1]"
+  );
+}
+
+/**
+ * The build baked `rpcUrl` in at build time. When it's a loopback address but
+ * the app itself is served from a real (non-local) origin, every wallet is
+ * being handed an RPC it can't reach: Brave silently refuses to add the chain,
+ * MetaMask adds it but then polls the *user's own* port 8545 and reports
+ * "RPC endpoint returned too many errors". Detect that mismatch so we can fail
+ * loudly instead of leaving the button looking dead.
+ */
+function rpcUnreachableFromBrowser(): boolean {
+  if (typeof window === "undefined") return false;
+  let rpcHost: string;
+  try {
+    rpcHost = new URL(rpcUrl).hostname;
+  } catch {
+    return false;
+  }
+  return isLoopbackHost(rpcHost) && !isLoopbackHost(window.location.hostname);
+}
+
+function describeAddError(err: unknown): string {
+  if (err && typeof err === "object" && "message" in err) {
+    return String((err as { message: unknown }).message);
+  }
+  return String(err);
+}
+
 export function ConnectWizard() {
   const { status, isConnected, chainId } = useAccount();
   const { connectors, connect, isPending: connectPending } = useConnect();
@@ -49,6 +86,7 @@ export function ConnectWizard() {
   // Avoid a hydration mismatch: connection state is client-only.
   const [mounted, setMounted] = useState(false);
   const [addStatus, setAddStatus] = useState<"idle" | "adding" | "error">("idle");
+  const [addError, setAddError] = useState<string | null>(null);
   useEffect(() => setMounted(true), []);
 
   // Burner only makes sense on the local anvil chain.
@@ -71,11 +109,24 @@ export function ConnectWizard() {
   }
 
   async function addAnvilNetwork() {
+    setAddError(null);
+
+    // A loopback RPC baked into a publicly-served build can't be reached by any
+    // wallet — bail with an actionable message instead of a silent no-op.
+    if (rpcUnreachableFromBrowser()) {
+      setAddStatus("error");
+      setAddError(
+        `This site was built with a local RPC (${rpcUrl}) that your wallet can't reach. ` +
+          "The operator needs to set NEXT_PUBLIC_RPC_URL to the public RPC and rebuild.",
+      );
+      return;
+    }
+
     const eth = getInjected();
     if (eth) {
       setAddStatus("adding");
       try {
-        // MetaMask adds the chain and switches to it in one prompt.
+        // Add the chain (MetaMask also switches here; Brave often doesn't).
         await eth.request({
           method: "wallet_addEthereumChain",
           params: [
@@ -87,14 +138,30 @@ export function ConnectWizard() {
             },
           ],
         });
+        // Explicitly switch — Brave adds without switching, so the wizard would
+        // otherwise sit here forever waiting for the chain to flip.
+        try {
+          await eth.request({
+            method: "wallet_switchEthereumChain",
+            params: [{ chainId: HEX_CHAIN_ID }],
+          });
+        } catch (switchErr) {
+          // 4902 = chain not added; the add above should have handled it, but
+          // if the wallet disagrees, surface it rather than swallow it.
+          const code = (switchErr as { code?: number })?.code;
+          if (code !== 4902) throw switchErr;
+        }
         setAddStatus("idle");
         return;
-      } catch {
-        setAddStatus("idle");
+      } catch (err) {
+        setAddStatus("error");
+        setAddError(describeAddError(err));
+        return;
       }
     }
-    // No injected provider, or the add was rejected — fall back to wagmi's
-    // switch (which adds-then-switches on connectors that support it).
+    // No injected provider — fall back to wagmi's switch (which adds-then-switches
+    // on connectors that support it).
+    setAddStatus("idle");
     switchChain({ chainId: anvil.id });
   }
 
@@ -207,6 +274,16 @@ export function ConnectWizard() {
                 Use a different wallet
               </Button>
             </div>
+
+            {addStatus === "error" && addError && (
+              <p
+                role="alert"
+                className="text-xs leading-relaxed text-[var(--color-danger)]"
+              >
+                Couldn&apos;t add the network: {addError} You can also add it by
+                hand using the details above.
+              </p>
+            )}
           </>
         )}
       </Panel>

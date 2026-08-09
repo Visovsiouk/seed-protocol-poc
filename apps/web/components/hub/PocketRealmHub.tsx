@@ -25,7 +25,9 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { useAccount } from "wagmi";
+import { useAccount, useReadContract } from "wagmi";
+import { ecosystemFactoryAbi } from "@abis/generated";
+import { getAddress } from "@/lib/contracts/addresses";
 import {
   RealmSelector,
   type RealmSelection,
@@ -176,6 +178,20 @@ export function PocketRealmHub() {
   // inside GenesisLedger; this only decides whether the station is reachable.
   const altarOpen = progress.starterClears > 0 || progress.hasSeed;
 
+  // 1 Seed = 1 Ecosystem: once this wallet founds a realm the factory pins it
+  // in `ecosystemOf(owner)` (zero until then). A non-zero value means the Seed
+  // is spent and `createEcosystem()` would revert — so the Forge (the creation
+  // room) has nothing left to do. Mirror the read the /create page gates on.
+  const ZERO = "0x0000000000000000000000000000000000000000" as const;
+  const foundedQuery = useReadContract({
+    address: getAddress("ecosystemFactory"),
+    abi: ecosystemFactoryAbi,
+    functionName: "ecosystemOf",
+    args: address ? [address] : undefined,
+    query: { enabled: !!address },
+  });
+  const alreadyFounded = !!foundedQuery.data && foundedQuery.data !== ZERO;
+
   const [selected, setSelected] = useState<RealmSelection | null>(null);
   const [station, setStation] = useState<Station>("doors");
   const reduced = useReducedMotion();
@@ -216,6 +232,14 @@ export function PocketRealmHub() {
       }),
     [],
   );
+
+  // If the active station gets sealed out from under the player — Forge once
+  // the realm is founded, or the Altar before the first spark — fall back to
+  // the Doors so we never render a station that isn't on the rail.
+  useEffect(() => {
+    if (alreadyFounded && station === "forge") setStation("doors");
+    if (!altarOpen && station === "altar") setStation("doors");
+  }, [alreadyFounded, altarOpen, station]);
 
   // Pre-arc: the world stays small. First the cold-open book (a narrow door
   // with no base chrome); once walked, the player wakes into the base — the
@@ -263,7 +287,13 @@ export function PocketRealmHub() {
     );
   }
 
-  const stations = STATIONS.filter((s) => s.id !== "altar" || altarOpen);
+  const stations = STATIONS.filter(
+    (s) =>
+      (s.id !== "altar" || altarOpen) &&
+      // Forge disappears once the realm is founded — the Seed is spent and the
+      // creation room can't be re-entered. The Altar stays as a Name trophy.
+      (s.id !== "forge" || !alreadyFounded),
+  );
 
   return (
     <div className="flex w-full flex-col gap-5">
