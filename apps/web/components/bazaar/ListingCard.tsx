@@ -201,7 +201,10 @@ export function ListingCard({
       </div>
 
       <footer className="flex flex-col gap-1 pt-1">
-        <div className="flex gap-2">
+        {/* Owner listings show two long-labelled actions (Hail + Withdraw);
+            stack them so neither is squeezed past the card edge in a narrow
+            grid column. Buy-only listings keep a single full-width button. */}
+        <div className="flex flex-col gap-2">
           {!isOwnListing && (
             <Button
               intent="primary"
