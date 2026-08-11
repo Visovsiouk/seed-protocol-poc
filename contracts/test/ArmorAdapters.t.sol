@@ -2,7 +2,7 @@
 pragma solidity ^0.8.24;
 
 import "forge-std/Test.sol";
-import {SeedTypes} from "../src/SeedTypes.sol";
+import {SeedTypes} from "seed-protocol/SeedTypes.sol";
 import {FantasyArmorSchema} from "../src/schemas/FantasyArmorSchema.sol";
 import {SciFiArmorSchema} from "../src/schemas/SciFiArmorSchema.sol";
 import {CyberpunkArmorSchema} from "../src/schemas/CyberpunkArmorSchema.sol";

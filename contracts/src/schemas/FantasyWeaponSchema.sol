@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {SeedTypes} from "../SeedTypes.sol";
+import {SeedTypes} from "seed-protocol/SeedTypes.sol";
 import {DamageDie} from "../DamageDie.sol";
 
 /// @title  FantasyWeaponSchema

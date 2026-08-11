@@ -24,8 +24,10 @@ jobs:
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
 
-      - name: Install forge-std
-        run: forge install foundry-rs/forge-std
+      - name: Install dependencies
+        # Bare `forge install` initializes every .gitmodules dependency
+        # (forge-std + seed-protocol) at the committed submodule revisions.
+        run: forge install
 
       - name: Run Forge build
         run: forge build --sizes

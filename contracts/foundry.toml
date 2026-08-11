@@ -3,6 +3,14 @@ src = "src"
 out = "out"
 libs = ["lib"]
 test = "test"
+# Explicit remappings with auto-detect off: the seed-protocol dependency
+# ships its own lib/ (forge-std, OZ), and auto-detection would surface
+# those nested paths as ambiguous candidates.
+auto_detect_remappings = false
+remappings = [
+    "forge-std/=lib/forge-std/src/",
+    "seed-protocol/=lib/seed-protocol/src/",
+]
 solc = "0.8.24"
 optimizer = true
 # Deploy-cost-biased default for the PoC (12 adapters deploy per fresh chain);

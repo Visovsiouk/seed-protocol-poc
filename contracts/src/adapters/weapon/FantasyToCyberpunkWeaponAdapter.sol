@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {IAdapter} from "../../interfaces/IAdapter.sol";
-import {SeedTypes} from "../../SeedTypes.sol";
+import {IAdapter} from "seed-protocol/interfaces/IAdapter.sol";
+import {SeedTypes} from "seed-protocol/SeedTypes.sol";
 import {DamageDie} from "../../DamageDie.sol";
 import {FantasyWeaponSchema} from "../../schemas/FantasyWeaponSchema.sol";
 import {CyberpunkWeaponSchema} from "../../schemas/CyberpunkWeaponSchema.sol";

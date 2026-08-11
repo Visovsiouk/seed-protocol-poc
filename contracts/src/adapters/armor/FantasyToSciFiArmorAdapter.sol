@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {IAdapter} from "../../interfaces/IAdapter.sol";
-import {SeedTypes} from "../../SeedTypes.sol";
+import {IAdapter} from "seed-protocol/interfaces/IAdapter.sol";
+import {SeedTypes} from "seed-protocol/SeedTypes.sol";
 import {FantasyArmorSchema} from "../../schemas/FantasyArmorSchema.sol";
 import {SciFiArmorSchema} from "../../schemas/SciFiArmorSchema.sol";
 

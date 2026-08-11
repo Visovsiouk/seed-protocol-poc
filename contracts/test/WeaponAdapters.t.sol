@@ -2,7 +2,7 @@
 pragma solidity ^0.8.24;
 
 import "forge-std/Test.sol";
-import {SeedTypes} from "../src/SeedTypes.sol";
+import {SeedTypes} from "seed-protocol/SeedTypes.sol";
 import {DamageDie} from "../src/DamageDie.sol";
 import {FantasyWeaponSchema} from "../src/schemas/FantasyWeaponSchema.sol";
 import {SciFiWeaponSchema} from "../src/schemas/SciFiWeaponSchema.sol";
