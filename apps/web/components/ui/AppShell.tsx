@@ -21,6 +21,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { ConnectButton } from "@/components/wallet/ConnectButton";
 import { AmbientOrbs } from "./AmbientOrbs";
+import { SiteFooter } from "./SiteFooter";
 
 type Props = {
   children: ReactNode;
@@ -77,6 +78,8 @@ export function AppShell({ children, title, back, actions, width = "default" }: 
       <main id="main" className="min-h-screen px-6 py-10">
         <div className={`mx-auto ${widthClass}`}>{children}</div>
       </main>
+
+      <SiteFooter />
     </>
   );
 }

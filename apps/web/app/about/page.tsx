@@ -55,6 +55,67 @@ export default function AboutPage() {
             real fee split, on chain.
           </p>
         </Panel>
+
+        <Panel as="section" tone="glass-1" className="flex flex-col gap-3 p-6">
+          <Stamp tone="muted">Colophon · who built this</Stamp>
+          <Rule tone="muted" />
+          <p className="text-sm leading-relaxed opacity-80">
+            The Seed Protocol and Realms are designed and built by{" "}
+            <a
+              href="https://www.linkedin.com/in/giourivis/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[var(--color-preset-accent)] hover:underline"
+            >
+              Visovsiouk
+            </a>
+            . The contracts, the game, and the white paper are open for
+            inspection:
+          </p>
+          <ul className="flex flex-col gap-1.5 font-mono text-sm">
+            <li>
+              <a
+                href="https://github.com/Visovsiouk/seed-protocol"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="opacity-70 hover:underline hover:opacity-100"
+              >
+                Protocol contracts · github.com/Visovsiouk/seed-protocol
+              </a>
+            </li>
+            <li>
+              <a
+                href="https://github.com/Visovsiouk/seed-protocol-poc"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="opacity-70 hover:underline hover:opacity-100"
+              >
+                This game&apos;s source · github.com/Visovsiouk/seed-protocol-poc
+              </a>
+            </li>
+            <li>
+              <a
+                href="https://github.com/Visovsiouk/seed-protocol/blob/main/docs/The_Seed_Protocol_WhitePaper_v1.0.pdf"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="opacity-70 hover:underline hover:opacity-100"
+              >
+                White Paper v1.0 · PDF
+              </a>
+            </li>
+          </ul>
+          <p className="text-sm leading-relaxed opacity-80">
+            Found a security issue? Email{" "}
+            <a
+              href="mailto:visovsiouk@gmail.com"
+              className="text-[var(--color-preset-accent)] hover:underline"
+            >
+              visovsiouk@gmail.com
+            </a>{" "}
+            rather than opening a public issue.
+          </p>
+          <Footnote>Signed · the keeper of this ledger</Footnote>
+        </Panel>
       </article>
     </AppShell>
   );
