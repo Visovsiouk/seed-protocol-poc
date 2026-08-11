@@ -27,11 +27,13 @@ import { useCodexStatus } from "@/lib/codex/use-codex";
 import { useCodexToasts } from "@/lib/codex/use-codex-toasts";
 import { fadeRise, withReducedMotion } from "@/lib/ui/motion";
 
-// Lift the dock clear of the fixed demo-banner strip when it's enabled
-// (NEXT_PUBLIC_* is inlined at build time, so this is a static branch).
+// Lift the dock clear of the AppShell footer (49px), and of the fixed
+// demo-banner strip too when it's enabled — the banner adds 24px of footer
+// padding on top of that. (NEXT_PUBLIC_* is inlined at build time, so this
+// is a static branch.)
 const DEMO_BANNER = process.env.NEXT_PUBLIC_DEMO_BANNER === "true";
-const BUTTON_BOTTOM = DEMO_BANNER ? "bottom-10" : "bottom-4";
-const PANEL_BOTTOM = DEMO_BANNER ? "bottom-[5.5rem]" : "bottom-16";
+const BUTTON_BOTTOM = DEMO_BANNER ? "bottom-[5.5rem]" : "bottom-16";
+const PANEL_BOTTOM = DEMO_BANNER ? "bottom-[8.5rem]" : "bottom-28";
 
 type Panel = "codex" | "inventory";
 
