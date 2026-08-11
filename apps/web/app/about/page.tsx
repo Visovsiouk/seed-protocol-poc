@@ -97,10 +97,10 @@ export default function AboutPage() {
           <p className="text-sm leading-relaxed opacity-80">
             Found a security bug? Email me at{" "}
             <a
-              href="mailto:visovsiouk@gmail.com"
+              href="mailto:seed@visovsio.uk"
               className="text-[var(--color-preset-accent)] hover:underline"
             >
-              visovsiouk@gmail.com
+              seed@visovsio.uk
             </a>{" "}
             instead of opening a public issue.
           </p>
