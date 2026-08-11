@@ -22,8 +22,9 @@ export default function AboutPage() {
             >
               Giouri Visovsiouk
             </a>
-            . I designed the Seed Protocol and built Realms to show that it
-            works. All of it is open to read:
+            . I designed the Seed Protocol and built Realms as a personal challenge.
+             There is nothing groundbreaking here, just me having fun. All of it 
+             is open to read:
           </p>
           <ul className="flex flex-col gap-1.5 font-mono text-sm">
             <li>
@@ -63,7 +64,6 @@ export default function AboutPage() {
             Everything you see is real chain state. Nothing is faked to make the
             demo look busier than it is.
           </p>
-
 
           <Footnote>Seed Protocol · proof of concept</Footnote>
         </Panel>
