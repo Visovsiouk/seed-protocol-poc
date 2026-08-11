@@ -10,6 +10,8 @@ Players trade loot on a shared bazaar with perpetual creator royalties, and
 adapters translate it across presets. base-sepolia is the planned migration
 target (see [Security notes](#security-notes)).
 
+**Live demo:** <https://play.seed-protocol.visovsio.uk/>
+
 > Contracts live in a sibling repo (`../seed-protocol`). This repo holds the
 > frontend, the server-side helpers, and the cross-realm adapter Foundry project
 > (`contracts/`).
@@ -244,6 +246,8 @@ methods (see Security notes).
   anvil node plus a co-located server signer. The base-sepolia migration target
   (real testnet RPC, paymaster-sponsored txs) is the intended path off local
   anvil. That work is not yet built.
+- **Found a vulnerability?** Email <seed@visovsio.uk> — see
+  [SECURITY.md](SECURITY.md). Please don't open a public issue for it.
 
 ## Scripts
 
