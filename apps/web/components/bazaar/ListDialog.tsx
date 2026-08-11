@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useAccount } from "wagmi";
-import { parseEther } from "viem";
+import { parseEther, BaseError, UserRejectedRequestError } from "viem";
 import { useInventoryCards } from "@/lib/reads/hooks";
 import { useList } from "@/lib/contracts/exchange";
 // Pure appraisal table (no server-only import) — safe in a client bundle.
@@ -89,9 +89,25 @@ export function ListDialog({
       });
       onClose();
     } catch (e) {
+      // The user waving off the wallet prompt isn't an error — just drop
+      // back to idle rather than dumping the whole request object at them.
+      if (
+        e instanceof BaseError &&
+        e.walk((err) => err instanceof UserRejectedRequestError)
+      ) {
+        setStatus({ kind: "idle" });
+        return;
+      }
+      // viem's shortMessage is the one-liner; the full message dumps the
+      // whole request object (see ListingCard.onBuy).
       setStatus({
         kind: "error",
-        message: e instanceof Error ? e.message : String(e),
+        message:
+          e instanceof BaseError
+            ? e.shortMessage
+            : e instanceof Error
+              ? e.message
+              : String(e),
       });
     }
   };
