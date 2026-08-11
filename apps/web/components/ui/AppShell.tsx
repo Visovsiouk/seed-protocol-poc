@@ -46,7 +46,7 @@ export function AppShell({ children, title, back, actions, width = "default" }: 
   const widthClass = WIDTH[width];
 
   return (
-    <>
+    <div className="flex min-h-dvh flex-col">
       <AmbientOrbs />
 
       <header className="sticky top-0 z-30 border-b border-[var(--border-1)] bg-[color-mix(in_oklab,var(--color-preset-bg)_82%,transparent)] backdrop-blur">
@@ -75,11 +75,11 @@ export function AppShell({ children, title, back, actions, width = "default" }: 
         </div>
       </header>
 
-      <main id="main" className="min-h-screen px-6 py-10">
+      <main id="main" className="flex-1 px-6 py-10">
         <div className={`mx-auto ${widthClass}`}>{children}</div>
       </main>
 
       <SiteFooter />
-    </>
+    </div>
   );
 }
