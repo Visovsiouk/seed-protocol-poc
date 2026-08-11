@@ -9,7 +9,7 @@
  * Pending rows show what to DO; stamped rows flip to what just HAPPENED
  * on-chain, so the codex doubles as the protocol's show-don't-tell tour.
  *
- * Rendered inside the floating `<CodexWidget/>`. CTAs are plain Links to
+ * Rendered inside the floating codex popover (`<CodexPanel/>`). CTAs are plain Links to
  * `/?station=…` (or an app route) paired with the hub-station event so they
  * work both off-hub (fresh mount reads the URL) and on-hub (event switches
  * the live station) — see components/hub/station-event.ts.

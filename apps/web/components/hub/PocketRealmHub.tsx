@@ -279,7 +279,7 @@ export function PocketRealmHub() {
             {/* Once the first spark kindles, the Altar surfaces under the picker
                 so the player watches their sparks accumulate between descents.
                 (The Codex — the journey's map — floats globally as chrome, see
-                CodexWidget.) */}
+                CornerDock.) */}
             {progress.starterClears > 0 && <GenesisLedger />}
           </div>
         )}

@@ -20,7 +20,7 @@
  *     persisted seen-set (`lib/codex/seen.ts`).
  *
  * Steps are monotonic (chain state only accrues), so done→undone never
- * needs handling. Consumed ONLY by `<CodexWidget/>` — a second mount would
+ * needs handling. Consumed ONLY by `<CornerDock/>` — a second mount would
  * double-toast.
  */
 

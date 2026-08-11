@@ -4,7 +4,7 @@ import { useState, type ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { WalletProvider } from "@/components/wallet/WalletProvider";
 import { NotificationProvider } from "@/components/ui/Toast";
-import { CodexWidget } from "@/components/codex/CodexWidget";
+import { CornerDock } from "@/components/dock/CornerDock";
 
 /**
  * Root client-side provider stack.
@@ -33,9 +33,9 @@ export function Providers({ children }: { children: ReactNode }) {
       <WalletProvider>
         <NotificationProvider>
           {children}
-          {/* Floating protocol-codex chrome + its completion-toast watcher —
-              global so the journey map travels with the player. */}
-          <CodexWidget />
+          {/* Floating bottom-right dock (Inventory + Codex) + the codex
+              completion-toast watcher — global so both travel with the player. */}
+          <CornerDock />
         </NotificationProvider>
       </WalletProvider>
     </QueryClientProvider>
