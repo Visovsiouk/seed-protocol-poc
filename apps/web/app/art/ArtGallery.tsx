@@ -25,7 +25,9 @@ import { ItemGlyph } from "@/components/art/ItemGlyph";
 import { CreatureSigil } from "@/components/art/CreatureSigil";
 import { PlayerSigil } from "@/components/art/PlayerSigil";
 import { ImpactLayer } from "@/components/art/ImpactLayer";
+import { GlyphHop } from "@/components/art/GlyphHop";
 import { VARIANTS, gestureForLane } from "@/lib/art/impact";
+import { hopType } from "@/lib/art/hop";
 
 const PRESETS: readonly Preset[] = ["fantasy", "scifi", "cyberpunk"];
 const TIERS = [1, 2, 3, 4, 5] as const;
@@ -401,6 +403,53 @@ export function ArtGallery() {
                   size={40}
                 />
               </Cell>
+            ))}
+          </div>
+        </Section>
+
+        <Section title={`Cross-realm hop — the reveal, animating · element: ${element}`}>
+          <p className="max-w-prose text-xs opacity-70">
+            The same token crossing out of <code>{preset}</code> into each other
+            genre. Watch the ornaments and the element hue hold still while the
+            silhouette changes language — that contrast is the whole beat. The
+            destination archetype is derived locally by lane ordinal, so this
+            needs no chain read and stays right even if the adapter call fails.
+          </p>
+          <div className="flex flex-wrap gap-6">
+            {PRESETS.filter((p) => p !== preset).map((to) => (
+              <div key={to} className="flex flex-col items-center gap-1">
+                <div className="flex h-20 w-20 items-center justify-center rounded-lg border border-[var(--border-1)] bg-[var(--surface-1)]">
+                  <GlyphHop
+                    card={{
+                      tokenId: 4242n,
+                      realm: "0xrealm",
+                      slot: "weapon",
+                      tier: 4,
+                      element,
+                      weaponType: combatWeaponTypesFor(preset)[2],
+                      catalogEffects: [1, 2],
+                    }}
+                    fromPreset={preset}
+                    toPreset={to}
+                    size={56}
+                  />
+                </div>
+                <span className="text-center font-mono text-[9px] opacity-60">
+                  {preset} → {to}
+                  <br />
+                  <span className="opacity-70">
+                    {combatWeaponTypesFor(preset)[2]} →{" "}
+                    {hopType(
+                      {
+                        slot: "weapon",
+                        weaponType: combatWeaponTypesFor(preset)[2],
+                      },
+                      preset,
+                      to,
+                    )}
+                  </span>
+                </span>
+              </div>
             ))}
           </div>
         </Section>

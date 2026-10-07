@@ -24,6 +24,7 @@ import { motion, useReducedMotion } from "framer-motion";
 import { useAccount } from "wagmi";
 import type { AssetCard as AssetCardType, Preset } from "@/lib/engine/types";
 import { AssetCard } from "@/components/inventory/AssetCard";
+import { GlyphHop } from "@/components/art/GlyphHop";
 import {
   presetForRealm,
   useElementLabel,
@@ -159,12 +160,29 @@ function TranslationPair({
       </span>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_auto_1fr] sm:items-center">
         <AssetCard card={card} compact />
-        <span
-          aria-hidden
-          className="hidden sm:block font-mono text-xs uppercase opacity-60 text-center tracking-[0.28em]"
-        >
-          →
-        </span>
+        {/*
+          The separator carries the beat instead of just pointing at it. An
+          arrow states that a translation happened; the glyph hop shows what it
+          did — the ornaments and the element hue holding still while the
+          silhouette changes language. The two flanking cards each show one
+          side, but they sit far enough apart that the eye never compares them;
+          here the comparison happens in one 44px square.
+
+          Falls back to the plain arrow when the hop has nothing to show (same
+          genre, or an unknown preset on either end).
+        */}
+        <div className="flex justify-center sm:block">
+          {fromPreset && toPreset && fromPreset !== toPreset ? (
+            <GlyphHop card={card} fromPreset={fromPreset} toPreset={toPreset} />
+          ) : (
+            <span
+              aria-hidden
+              className="hidden sm:block font-mono text-xs uppercase opacity-60 text-center tracking-[0.28em]"
+            >
+              →
+            </span>
+          )}
+        </div>
         <AssetCard card={card} compact targetRealm={toRealm} hideOriginal />
       </div>
       {hasAdapter && (

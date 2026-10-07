@@ -207,8 +207,16 @@ function OriginalStrip({
           "color-mix(in oklab, var(--color-preset-accent) 35%, transparent)",
       }}
     >
-      <div className="flex items-baseline justify-between gap-2">
-        <span className="text-[10px] uppercase tracking-wider text-[var(--color-preset-accent)]">
+      <div className="flex items-center justify-between gap-2">
+        <span className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-[var(--color-preset-accent)]">
+          {/*
+            The shape it wore at home. The card's own header glyph already
+            shows the local one, so putting the source here is what turns the
+            strip from a stat footnote into a before/after — the same pairing
+            the translation screen makes explicit, available anywhere a
+            translated card appears.
+          */}
+          <CardGlyph card={card} preset={sourcePreset} size={18} />
           Translated from {sourcePreset}
         </span>
         {hasAdapter && (
