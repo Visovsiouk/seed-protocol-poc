@@ -39,6 +39,7 @@ import {
   ProvenanceChip,
   ExplorerLink,
 } from "@/components/ui";
+import { CardGlyph } from "@/components/art/ItemGlyph";
 import {
   AnimatePresence,
   motion,
@@ -534,9 +535,21 @@ export function AssetCard({
           </motion.span>
         )}
       </AnimatePresence>
-      <header className="flex items-baseline justify-between gap-2">
+      <header className="flex items-center justify-between gap-2">
+        {/*
+          The gear's generated mark. Fixed-size and unanimated so the card
+          keeps the uniform height `ChipRail` works to preserve. It derives
+          from the *display* card, so a cross-realm hop re-skins the glyph in
+          the target realm's archetype language alongside the re-worded name.
+        */}
+        <CardGlyph
+          card={displayCard}
+          preset={topLabelPreset ?? sourcePreset ?? "fantasy"}
+          size={26}
+          className="shrink-0"
+        />
         <motion.h4
-          className="font-semibold text-sm truncate"
+          className="min-w-0 flex-1 font-semibold text-sm truncate"
           variants={dramaticReveal ? lineReveal : undefined}
           initial={dramaticReveal ? "hidden" : false}
           animate={dramaticReveal ? "visible" : false}

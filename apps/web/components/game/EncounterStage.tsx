@@ -32,6 +32,9 @@ import type {
   Preset,
 } from "@/lib/engine/types";
 import { useElementLabel } from "@/lib/contracts/adapters";
+import { creatureSpec } from "@/lib/art/creature";
+import { familyFor } from "@/lib/art/families";
+import { CreatureEcho, CreatureSigil } from "@/components/art/CreatureSigil";
 import { elementColor } from "@/lib/ui/loot-visuals";
 import { faceGhost, holdPulse, washShift, withReducedMotion } from "@/lib/ui/motion";
 import { Chip } from "@/components/ui";
@@ -61,6 +64,11 @@ function useHpFloats(value: number, reduced: boolean | null) {
   const prev = useRef(value);
   const idRef = useRef(0);
   const [floats, setFloats] = useState<DamageFloat[]>([]);
+  // Monotonic count of *hits* (HP losses only, not heals). The creature sigil
+  // re-keys its one-shot recoil off this, so it flinches on the same beat the
+  // bar shakes — reusing the damage observation already happening here rather
+  // than watching HP a second time.
+  const [hitNonce, setHitNonce] = useState(0);
   // Each float owns its own expiry timer. We keep them in a ref and clear
   // them only on unmount — NOT in an effect-cleanup, because that cleanup
   // runs on every HP change and would cancel the *previous* float's removal,
@@ -93,6 +101,7 @@ function useHpFloats(value: number, reduced: boolean | null) {
       timers.current.delete(t);
     }, 950);
     timers.current.add(t);
+    if (hurt) setHitNonce((n) => n + 1);
     if (hurt && !reduced) {
       void controls.start({
         x: [0, -9, 8, -6, 4, 0],
@@ -101,7 +110,7 @@ function useHpFloats(value: number, reduced: boolean | null) {
     }
   }, [value, controls, reduced]);
 
-  return { controls, floats };
+  return { controls, floats, hitNonce };
 }
 
 function FloatLayer({ floats }: { floats: DamageFloat[] }) {
@@ -139,6 +148,39 @@ function ThreatChip({
   return <Chip color={elementColor(element)} label={label} sub={elementLabel} />;
 }
 
+/**
+ * Derive the enemy's generated likeness from the live encounter.
+ *
+ * Reads only *traits* off the monster — never `combat.monsterHp` — so the
+ * sigil is stable for the whole fight and identical for every instance of a
+ * species. The one state-derived input is the boss phase, and it selects
+ * which traits apply (phase-2 attack die, `turned` variant) rather than
+ * feeding state into the geometry. `creatureSpec` memoizes on those inputs,
+ * so calling this on every render is a map lookup.
+ */
+function sigilFor(combat: CombatState, activePreset: Preset | null) {
+  const monster = combat.monster;
+  const isBoss = "bakedEffects" in monster;
+  const turned = isBoss && (combat.bossPhase ?? 0) >= 2;
+  const preset = activePreset ?? "fantasy";
+  return {
+    turned,
+    spec: creatureSpec({
+      preset,
+      id: monster.id,
+      family: familyFor(preset, monster.id),
+      hp: isBoss ? monster.baseHp : monster.hp,
+      attackDie: turned && isBoss ? monster.phase2AttackDie : monster.attackDie,
+      ac: monster.ac,
+      element: monster.element,
+      weakTo: monster.weakTo,
+      resistTo: monster.resistTo,
+      isBoss,
+      variant: turned ? ("turned" as const) : ("base" as const),
+    }),
+  };
+}
+
 /** The hostile combat view: the monster, big, with a draining health bar. */
 function CombatStage({
   combat,
@@ -150,12 +192,13 @@ function CombatStage({
   activePreset: Preset | null;
 }) {
   const reduced = useReducedMotion();
-  const { controls, floats } = useHpFloats(combat.monsterHp, reduced);
+  const { controls, floats, hitNonce } = useHpFloats(combat.monsterHp, reduced);
 
   const monster = combat.monster;
   const isBoss = "bakedEffects" in monster;
   const maxHp = isBoss ? monster.baseHp : monster.hp;
   const pct = maxHp <= 0 ? 0 : Math.max(0, Math.min(100, (combat.monsterHp / maxHp) * 100));
+  const { spec: sigil, turned } = sigilFor(combat, activePreset);
 
   const element =
     monster.element && monster.element !== "none" ? monster.element : undefined;
@@ -173,12 +216,50 @@ function CombatStage({
       : "var(--color-danger)";
 
   return (
-    <motion.div animate={controls} className="relative flex flex-col gap-4">
+    <motion.div animate={controls} className="relative flex min-h-0 flex-1 flex-col gap-3">
+      {/*
+        Clamped to three lines. The room's flavor is scene-setting, but the
+        bank's longest narrations run six lines and would otherwise starve the
+        enemy down to a 36px postage stamp — on a screen whose whole job is to
+        render the thing you are facing, big. The clamp is also what makes the
+        sigil's min-height below safe: a bounded intro means the floor can
+        never push content into an inner scroll.
+      */}
       {intro && (
-        <p className="text-sm italic leading-relaxed opacity-80">{intro}</p>
+        <p className="line-clamp-3 shrink-0 text-sm italic leading-relaxed opacity-80">
+          {intro}
+        </p>
       )}
 
-      <div className="flex flex-col gap-2">
+      {/*
+        The enemy itself. `min-h-0 flex-1` lets it claim whatever vertical
+        space the rest of the stage leaves and the SVG scales to fit rather
+        than overflowing — that is what keeps the 22rem slot's zero-jump
+        guarantee without anyone maintaining a pixel budget here. The
+        min-height is a floor so it still reads as a creature in the tightest
+        state rather than dwindling to a bullet point.
+
+        The floor steps up with width, and that is load-bearing. A fixed 88px
+        floor pushes ~26px past the box at 375px (a long boss name wraps to two
+        lines) and ~11px at 660px — neither of which changes the slot's height.
+        They silently start an inner scroll instead, which looks fine and
+        isn't. Note `sm` is a double hit: the stage's own padding goes p-6 →
+        sm:p-8 at the same breakpoint, so 16px of inner height disappears
+        exactly where a bigger floor would land. Hence the real floor waits
+        for `lg`; below that, flex is left to settle on its own, which never
+        overflows.
+      */}
+      <div className="flex min-h-[3rem] flex-1 items-center justify-center sm:min-h-[3.5rem] lg:min-h-[5.5rem]">
+        <CreatureSigil
+          spec={sigil}
+          element={monster.element}
+          hitNonce={hitNonce}
+          turned={turned}
+          className="h-full max-h-full w-auto max-w-full"
+        />
+      </div>
+
+      <div className="flex shrink-0 flex-col gap-2">
         <div className="flex items-end justify-between gap-4">
           <h2 className="font-[family-name:var(--font-display)] text-3xl font-bold leading-none sm:text-4xl">
             {monster.name}
@@ -386,6 +467,19 @@ export function EncounterStage({
         className="absolute inset-0 -z-10 opacity-40"
         style={{ backgroundImage: "var(--preset-texture)" }}
       />
+      {/*
+        The enemy looming at stage scale behind the text — faint, stroke-only,
+        and absolutely positioned, so it costs nothing from the fixed height
+        while giving the screen a presence the foreground sigil can't at the
+        size the layout can spare. Reads as a phosphor afterimage under CRT.
+      */}
+      {combat && (
+        <CreatureEcho
+          spec={sigilFor(combat, activePreset).spec}
+          element={combat.monster.element}
+        />
+      )}
+
       <StageReactions
         intensity={intensity}
         reduced={reduced}

@@ -27,6 +27,7 @@ import { presetForRealm, useTranslatedCard } from "@/lib/contracts/adapters";
 import { cardDisplayName } from "@/lib/loot/card-name";
 import { elementColor } from "@/lib/ui/loot-visuals";
 import { Button, ElementChip, EffectChip, Rule } from "@/components/ui";
+import { CardGlyph } from "@/components/art/ItemGlyph";
 
 function signed(n: number): string {
   return n >= 0 ? `+${n}` : `${n}`;
@@ -263,13 +264,23 @@ function GearSlot({
           </span>
         )}
       </div>
-      <span className="truncate text-sm font-semibold leading-tight">
-        {card && display ? (
-          cardDisplayName(card, sourcePreset, display, displayPreset)
-        ) : (
-          <span className="italic font-normal opacity-25">empty</span>
+      <div className="flex min-w-0 items-center gap-2">
+        {display && (
+          <CardGlyph
+            card={display}
+            preset={displayPreset ?? sourcePreset}
+            size={22}
+            className="shrink-0"
+          />
         )}
-      </span>
+        <span className="min-w-0 flex-1 truncate text-sm font-semibold leading-tight">
+          {card && display ? (
+            cardDisplayName(card, sourcePreset, display, displayPreset)
+          ) : (
+            <span className="italic font-normal opacity-25">empty</span>
+          )}
+        </span>
+      </div>
       {display && (
         <div className="flex flex-wrap items-center gap-1">
           {stat && <span className="font-mono text-[11px] tabular-nums opacity-70">{stat}</span>}
