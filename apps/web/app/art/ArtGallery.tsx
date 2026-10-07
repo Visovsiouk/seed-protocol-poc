@@ -13,11 +13,13 @@ import {
   combatArmorTypesFor,
   combatElementsFor,
   combatWeaponTypesFor,
+  type AssetCard as AssetCardType,
   type CombatState,
   type EncounterState,
   type Preset,
 } from "@/lib/engine/types";
 import { EncounterStage } from "@/components/game/EncounterStage";
+import { GearTranslationScreen } from "@/components/game/GearTranslationScreen";
 import { getFlavorBank } from "@/lib/flavor";
 import { familyFor, isTagged } from "@/lib/art/families";
 import { creatureSpec } from "@/lib/art/creature";
@@ -31,6 +33,52 @@ import { hopType } from "@/lib/art/hop";
 
 const PRESETS: readonly Preset[] = ["fantasy", "scifi", "cyberpunk"];
 const TIERS = [1, 2, 3, 4, 5] as const;
+
+/** The seeded starter realms, for cross-realm surfaces that need real addresses. */
+const SEEDED_REALMS = {
+  fantasy: "0x8dAF17A20c9DBA35f005b6324F493785D239719d",
+  scifi: "0x3Ca8f9C04c7e3E1624Ac2008F92f6F366A869444",
+  cyberpunk: "0x7e2d5FCC5E02cBF2b9f860052C0226104E23F9c7",
+} as const satisfies Record<Preset, `0x${string}`>;
+
+/**
+ * A fantasy-minted card, for driving the descent screen.
+ *
+ * Shaped like real loot rather than minimal: tier 4 with an element, because
+ * the whole point of the hop is watching the ornaments and the hue hold still
+ * while the silhouette changes — a bare tier-1 mundane item would show nothing.
+ */
+function demoCard(slot: "weapon" | "armor"): AssetCardType {
+  const isWeapon = slot === "weapon";
+  return {
+    tokenId: isWeapon ? 4242n : 4243n,
+    schemaId: 1,
+    realm: SEEDED_REALMS.fantasy,
+    realmName: "The Hollow Reach",
+    realmPreset: "fantasy",
+    slot,
+    tier: 4,
+    name: isWeapon ? "Emberline" : "Shade Chain Mail",
+    ...(isWeapon
+      ? {
+          damageDie: 8 as const,
+          attackBonus: 2,
+          damageBonus: 1,
+          element: "fire" as const,
+          weaponType: combatWeaponTypesFor("fantasy")[2],
+        }
+      : {
+          acBonus: 2,
+          hpBonus: 10,
+          resistElement: "unholy" as const,
+          armorType: combatArmorTypesFor("fantasy")[1],
+        }),
+    catalogEffects: [],
+    extraFields: {},
+    metadataURI: "",
+    preseed: true,
+  };
+}
 
 /** Well-known local-chain addresses — handy, recognisable crest fodder. */
 const ANVIL_ACCOUNTS = [
@@ -452,6 +500,26 @@ export function ArtGallery() {
               </div>
             ))}
           </div>
+        </Section>
+
+        <Section title="Descent screen — the hop in its real parent">
+          <p className="max-w-prose text-xs opacity-70">
+            The real <code>GearTranslationScreen</code> with real cross-preset
+            cards. Reachable in the app only after clearing a realm boss, which
+            is why it lives here: this is the one surface where{" "}
+            <code>GlyphHop</code> sits between the two <code>AssetCard</code>s
+            it is meant to reconcile, and where the adapter&apos;s stat read
+            runs for real. Carried gear is fantasy; the destination is sci-fi.
+          </p>
+          <GearTranslationScreen
+            realm={SEEDED_REALMS.scifi}
+            preset="scifi"
+            equipped={{
+              weapon: demoCard("weapon"),
+              armor: demoCard("armor"),
+            }}
+            onDescend={() => {}}
+          />
         </Section>
 
         <Section title="Player crests — anvil accounts, plus the empty state">
