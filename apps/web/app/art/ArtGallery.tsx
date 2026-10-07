@@ -23,9 +23,19 @@ import { familyFor, isTagged } from "@/lib/art/families";
 import { creatureSpec } from "@/lib/art/creature";
 import { ItemGlyph } from "@/components/art/ItemGlyph";
 import { CreatureSigil } from "@/components/art/CreatureSigil";
+import { PlayerSigil } from "@/components/art/PlayerSigil";
 
 const PRESETS: readonly Preset[] = ["fantasy", "scifi", "cyberpunk"];
 const TIERS = [1, 2, 3, 4, 5] as const;
+
+/** Well-known local-chain addresses — handy, recognisable crest fodder. */
+const ANVIL_ACCOUNTS = [
+  "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+  "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+  "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+  "0x90F79bf6EB2c4f870365E785982E1f101E93b906",
+  "0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65",
+] as const;
 
 /** Inert defaults for the per-turn combat flags the stage never reads. */
 const QUIET: Pick<
@@ -259,6 +269,27 @@ export function ArtGallery() {
                   size={40}
                 />
               </Cell>
+            ))}
+          </div>
+        </Section>
+
+        <Section title="Player crests — anvil accounts, plus the empty state">
+          <p className="max-w-prose text-xs opacity-70">
+            Read straight off the address nibbles, no hash. Every crest is
+            mirrored about the vertical axis; all strokes are{" "}
+            <code>currentColor</code>, so the same wallet keeps its shape and
+            changes only hue between realms.
+          </p>
+          <div className="flex flex-wrap gap-4">
+            {[...ANVIL_ACCOUNTS, null].map((addr) => (
+              <div key={addr ?? "none"} className="flex w-24 flex-col items-center gap-1">
+                <div className="flex h-20 w-20 items-center justify-center rounded-lg border border-[var(--border-1)] bg-[var(--surface-1)]">
+                  <PlayerSigil address={addr} size={64} />
+                </div>
+                <span className="break-all text-center font-mono text-[9px] opacity-55">
+                  {addr ? `${addr.slice(0, 6)}…${addr.slice(-4)}` : "no wallet"}
+                </span>
+              </div>
             ))}
           </div>
         </Section>

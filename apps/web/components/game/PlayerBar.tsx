@@ -22,12 +22,14 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { useAccount } from "wagmi";
 import type { AssetCard, CombatState, RunState } from "@/lib/engine/types";
 import { presetForRealm, useTranslatedCard } from "@/lib/contracts/adapters";
 import { cardDisplayName } from "@/lib/loot/card-name";
 import { elementColor } from "@/lib/ui/loot-visuals";
 import { Button, ElementChip, EffectChip, Rule } from "@/components/ui";
 import { CardGlyph } from "@/components/art/ItemGlyph";
+import { PlayerSigil } from "@/components/art/PlayerSigil";
 
 function signed(n: number): string {
   return n >= 0 ? `+${n}` : `${n}`;
@@ -325,6 +327,9 @@ export function PlayerBar({
   const hp = combat?.playerHp ?? run.playerHp;
   const maxHp = combat?.playerMaxHp ?? run.playerMaxHp;
   const ac = combat?.playerAc ?? 10 + (run.equipped.armor?.acBonus ?? 0);
+  // Burner-connector addresses need no special handling — they are ordinary
+  // 20-byte `0x` strings. Undefined yields the dashed placeholder.
+  const { address } = useAccount();
 
   return (
     <section
@@ -340,6 +345,13 @@ export function PlayerBar({
 
       {/* vitals row */}
       <div className="flex flex-wrap items-end gap-x-6 gap-y-3">
+        {/*
+          Your crest, drawn from the connected address. Fixed-size so it adds
+          no layout risk, and `self-center` so it sits against the HP rail's
+          mass rather than its baseline. The bar has no fixed height and lives
+          below the zero-jump slot, so growth here would be harmless anyway.
+        */}
+        <PlayerSigil address={address} size={40} className="shrink-0 self-center" />
         <HpRail hp={hp} max={maxHp} />
         <div className="flex items-end gap-4">
           <MiniStat label="AC" value={String(ac)} />
