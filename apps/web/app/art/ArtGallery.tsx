@@ -24,6 +24,8 @@ import { creatureSpec } from "@/lib/art/creature";
 import { ItemGlyph } from "@/components/art/ItemGlyph";
 import { CreatureSigil } from "@/components/art/CreatureSigil";
 import { PlayerSigil } from "@/components/art/PlayerSigil";
+import { ImpactLayer } from "@/components/art/ImpactLayer";
+import { VARIANTS, gestureForLane } from "@/lib/art/impact";
 
 const PRESETS: readonly Preset[] = ["fantasy", "scifi", "cyberpunk"];
 const TIERS = [1, 2, 3, 4, 5] as const;
@@ -96,6 +98,71 @@ function stageCases(preset: Preset): {
   ];
 }
 
+/**
+ * A live stage — the only place the full hit path can be seen without a chain.
+ *
+ * The static cases above prove geometry; this proves wiring. Dropping the
+ * monster's HP is exactly the signal `useHpFloats` watches, so one click walks
+ * the real chain: HP drop → `hitNonce` → the bar shake, the creature's flinch,
+ * and the impact mark, all off a single observation. `/play` needs a wallet
+ * and a running node, so without this the integration would ship unseen.
+ */
+function LiveStage({ preset }: { preset: Preset }) {
+  const bank = getFlavorBank(preset);
+  const monster = Object.values(bank.monsters).slice(-1)[0]!;
+  const weapons = combatWeaponTypesFor(preset);
+  const [hp, setHp] = useState(monster.hp);
+  const [weapon, setWeapon] = useState(weapons[2]!);
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={() => setHp((v) => (v <= 3 ? monster.hp : v - 3))}
+          className="rounded border px-3 py-1 font-mono text-[11px] uppercase tracking-wider"
+          style={{
+            borderColor: "var(--color-preset-accent)",
+            background: "var(--surface-2)",
+          }}
+        >
+          hit for 3
+        </button>
+        {weapons.map((w, i) => (
+          <button
+            key={w}
+            type="button"
+            onClick={() => setWeapon(w)}
+            className="rounded border px-2 py-0.5 font-mono text-[10px]"
+            style={{
+              borderColor:
+                w === weapon ? "var(--color-preset-accent)" : "var(--border-1)",
+              background: w === weapon ? "var(--surface-2)" : "transparent",
+            }}
+          >
+            {i + 1} {w}
+          </button>
+        ))}
+        <span className="font-mono text-[10px] opacity-60">
+          hp {hp}/{monster.hp}
+        </span>
+      </div>
+      <div className="h-[22rem]" data-stage-case="live">
+        <EncounterStage
+          encounter={{
+            kind: "combat",
+            archetype: "combat",
+            combat: { ...QUIET, monster, monsterHp: hp, turn: 1 },
+          }}
+          intro="It closes the distance."
+          activePreset={preset}
+          equippedWeapon={{ weaponType: weapon, realmPreset: preset }}
+        />
+      </div>
+    </div>
+  );
+}
+
 function Cell({ children, caption }: { children: React.ReactNode; caption: string }) {
   return (
     <div className="flex flex-col items-center gap-1">
@@ -105,6 +172,71 @@ function Cell({ children, caption }: { children: React.ReactNode; caption: strin
       <span className="max-w-16 text-center font-mono text-[9px] leading-tight opacity-60">
         {caption}
       </span>
+    </div>
+  );
+}
+
+/**
+ * Impact bench — the one surface in here that needs a button.
+ *
+ * Impacts are one-shot and end at zero opacity, so there is nothing to look at
+ * until something swings. `strike` bumps the nonce every lane renders off,
+ * which is the same signal `EncounterStage` feeds from an observed HP drop —
+ * so this fires the real component down the real code path, not a mock.
+ *
+ * Successive presses walk the variant cycle, which is the thing actually worth
+ * eyeballing: whether eight marks per lane is enough that a long fight never
+ * looks like the same sticker twice. The geometry stays in the DOM after the
+ * fade, so it can be read numerically without freezing the animation.
+ */
+function ImpactBench({ preset, element }: { preset: Preset; element: string }) {
+  const [nonce, setNonce] = useState(0);
+  // Lane 0 is unarmed; the combat vocabulary omits `"none"`, so the real lane
+  // for `combatWeaponTypesFor(preset)[i]` is `i + 1`.
+  const lanes = [
+    { lane: 0, label: "unarmed" },
+    ...combatWeaponTypesFor(preset).map((type, i) => ({
+      lane: i + 1,
+      label: type,
+    })),
+  ];
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex items-center gap-3">
+        <button
+          type="button"
+          onClick={() => setNonce((n) => n + 1)}
+          className="rounded border px-3 py-1 font-mono text-[11px] uppercase tracking-wider"
+          style={{
+            borderColor: "var(--color-preset-accent)",
+            background: "var(--surface-2)",
+          }}
+        >
+          strike
+        </button>
+        <span className="font-mono text-[10px] opacity-60">
+          hit {nonce} · variant {nonce === 0 ? "—" : nonce % VARIANTS} of{" "}
+          {VARIANTS}
+        </span>
+      </div>
+      <div className="flex flex-wrap gap-4">
+        {lanes.map(({ lane, label }) => (
+          <div key={lane} className="flex w-24 flex-col items-center gap-1">
+            <div
+              className="relative flex h-24 w-24 items-center justify-center rounded-lg border border-[var(--border-1)] bg-[var(--surface-1)]"
+              data-impact-lane={lane}
+            >
+              <ImpactLayer lane={lane} element={element} hitNonce={nonce} />
+            </div>
+            <span className="text-center font-mono text-[9px] leading-tight opacity-60">
+              {lane} {label}
+              <br />
+              <span className="opacity-70">{gestureForLane(lane)}</span>
+            </span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -294,6 +426,26 @@ export function ArtGallery() {
           </div>
         </Section>
 
+        <Section title={`Impacts · lanes × gestures · element: ${element}`}>
+          <p className="max-w-prose text-xs opacity-70">
+            One blow per weapon lane, struck over where the enemy would be.
+            Press strike repeatedly — each press advances the variant cycle, so
+            no two consecutive hits draw the same mark. Hue is the weapon&apos;s
+            element, which is the same value the damage multiplier checks
+            against the monster&apos;s weakness.
+          </p>
+          <ImpactBench preset={preset} element={element} />
+        </Section>
+
+        <Section title="Live stage — the whole hit path, end to end">
+          <p className="max-w-prose text-xs opacity-70">
+            Drop the enemy&apos;s HP and the bar shakes, the creature flinches,
+            and the blow lands — all from one observed HP change. Switch weapons
+            to see the gesture follow the lane.
+          </p>
+          <LiveStage preset={preset} />
+        </Section>
+
         <Section title="Stage harness — the 22rem zero-jump check">
           <p className="max-w-prose text-xs opacity-70">
             The real <code>EncounterStage</code> in its real{" "}
@@ -312,6 +464,15 @@ export function ArtGallery() {
                     encounter={encounter}
                     intro={intro}
                     activePreset={preset}
+                    // Exercises the impact wiring in the real stage. These
+                    // cases are static, so no blow ever fires here — what the
+                    // harness proves is that adding an absolutely-positioned
+                    // layer over the portrait row left the 352px slot and the
+                    // no-inner-scroll invariant alone.
+                    equippedWeapon={{
+                      weaponType: combatWeaponTypesFor(preset)[2],
+                      realmPreset: preset,
+                    }}
                   />
                 </div>
               </div>

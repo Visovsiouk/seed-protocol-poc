@@ -31,10 +31,12 @@ import type {
   EncounterState,
   Preset,
 } from "@/lib/engine/types";
-import { useElementLabel } from "@/lib/contracts/adapters";
+import { presetForRealm, useElementLabel } from "@/lib/contracts/adapters";
 import { creatureSpec } from "@/lib/art/creature";
 import { familyFor } from "@/lib/art/families";
+import { weaponLane } from "@/lib/art/archetypes";
 import { CreatureEcho, CreatureSigil } from "@/components/art/CreatureSigil";
+import { ImpactLayer } from "@/components/art/ImpactLayer";
 import { elementColor } from "@/lib/ui/loot-visuals";
 import { faceGhost, holdPulse, washShift, withReducedMotion } from "@/lib/ui/motion";
 import { Chip } from "@/components/ui";
@@ -181,15 +183,53 @@ function sigilFor(combat: CombatState, activePreset: Preset | null) {
   };
 }
 
+/**
+ * What the stage needs to know about the player's weapon to draw its blows.
+ * Structurally a subset of an engine `AssetCard`, so a call site can pass one
+ * straight through.
+ */
+export type StageWeapon = {
+  readonly weaponType?: string;
+  readonly element?: Element;
+  readonly realm?: `0x${string}`;
+  readonly realmPreset?: Preset;
+};
+
+/**
+ * Archetype lane for the equipped weapon, for picking an impact gesture.
+ *
+ * Read against the weapon's **own** realm preset, not the realm being delved.
+ * A fantasy `"sword"` is simply absent from the cyberpunk vocabulary, so
+ * resolving it against the active realm would score every carried weapon as
+ * lane 0 and make it swing like a bare fist the moment it left home.
+ *
+ * Using the source preset is also sufficient, not just necessary: lanes are
+ * ordinals that the uint8 cast and the cross-realm adapters agree on
+ * (`adapters.ts` translates by `weaponTypeIndex` → `weaponTypeFromIndex`), so
+ * the ordinal is the same number whichever side of a hop you read it from. A
+ * translated katana and the sword it came from land the same blow — correctly,
+ * because the gesture describes the weapon's physicality, not its genre skin.
+ */
+function laneFor(weapon: StageWeapon | undefined): number {
+  if (!weapon?.weaponType) return 0;
+  const preset =
+    weapon.realmPreset ??
+    (weapon.realm ? presetForRealm(weapon.realm) : null) ??
+    "fantasy";
+  return weaponLane(preset, weapon.weaponType);
+}
+
 /** The hostile combat view: the monster, big, with a draining health bar. */
 function CombatStage({
   combat,
   intro,
   activePreset,
+  equippedWeapon,
 }: {
   combat: CombatState;
   intro: string;
   activePreset: Preset | null;
+  equippedWeapon?: StageWeapon;
 }) {
   const reduced = useReducedMotion();
   const { controls, floats, hitNonce } = useHpFloats(combat.monsterHp, reduced);
@@ -249,13 +289,26 @@ function CombatStage({
         for `lg`; below that, flex is left to settle on its own, which never
         overflows.
       */}
-      <div className="flex min-h-[3rem] flex-1 items-center justify-center sm:min-h-[3.5rem] lg:min-h-[5.5rem]">
+      <div className="relative flex min-h-[3rem] flex-1 items-center justify-center sm:min-h-[3.5rem] lg:min-h-[5.5rem]">
         <CreatureSigil
           spec={sigil}
           element={monster.element}
           hitNonce={hitNonce}
           turned={turned}
           className="h-full max-h-full w-auto max-w-full"
+        />
+        {/*
+          The blow, struck over the enemy. Absolute inside this row so it adds
+          nothing to the flex measurement the comment above depends on — the
+          impact cannot be what pushes content into an inner scroll. It is
+          `relative` on the row (not the sigil) deliberately: the mark spans
+          the full row width rather than the sigil's narrower aspect box, so a
+          cleave reads as sweeping across the enemy instead of being boxed in.
+        */}
+        <ImpactLayer
+          lane={laneFor(equippedWeapon)}
+          element={equippedWeapon?.element}
+          hitNonce={hitNonce}
         />
       </div>
 
@@ -417,12 +470,18 @@ export function EncounterStage({
   intro,
   activePreset = null,
   ghostReveal = 0,
+  equippedWeapon,
 }: {
   encounter: EncounterState | null;
   /** Narration line emitted when the room was generated. */
   intro: string;
   /** Active realm preset, for element-label vocabulary. */
   activePreset?: Preset | null;
+  /**
+   * The weapon the player descended with, for the shape and hue of its
+   * impact marks. Absent → unarmed, which still shows a blow.
+   */
+  equippedWeapon?: StageWeapon;
   /**
    * A monotonically-bumped nonce. When it changes the kept-reader ghost blooms
    * again — the caller pulses it on boss-start so the face surfaces under the
@@ -503,6 +562,7 @@ export function EncounterStage({
             combat={encounter.combat}
             intro={intro}
             activePreset={activePreset}
+            equippedWeapon={equippedWeapon}
           />
         ) : (
           <QuietStage intro={intro} />
