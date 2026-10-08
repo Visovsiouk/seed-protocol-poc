@@ -27,6 +27,18 @@ import type { Family } from "./families";
 import { MID, memoize, artRng, lerp, norm, polar, r2 } from "./seed";
 import type { Rng } from "@/lib/engine/rng";
 
+/**
+ * A trait mark plus the role it reads as.
+ *
+ * The role is carried in the data rather than implied by position: weakness
+ * and resistance are independently optional, so a lone mark can be either and
+ * the renderer has no way to tell them apart from the array alone.
+ */
+export type CreatureMark = {
+  readonly role: "weak" | "resist";
+  readonly shape: Shape;
+};
+
 export type CreatureSpec = {
   readonly family: Family;
   /** Main silhouette mass. */
@@ -37,8 +49,8 @@ export type CreatureSpec = {
   readonly plates: readonly Shape[];
   /** Mirrored eye pair. */
   readonly eyes: readonly Shape[];
-  /** Vulnerability fracture and/or resistance arc. */
-  readonly marks: readonly Shape[];
+  /** Vulnerability fracture and/or resistance arc, each tagged with its role. */
+  readonly marks: readonly CreatureMark[];
   /** Soft glow behind the silhouette, for elemental foes. */
   readonly aura: { cx: number; cy: number; r: number } | null;
 };
@@ -346,25 +358,31 @@ function buildMarks(
   i: CreatureSpecInput,
   g: (typeof SHAPE)[Family],
   halfW: number,
-): Shape[] {
-  const out: Shape[] = [];
+): CreatureMark[] {
+  const out: CreatureMark[] = [];
   const hasWeak = !!i.weakTo && i.weakTo !== "none";
   const hasResist = !!i.resistTo && i.resistTo !== "none";
 
   if (hasWeak) {
     // A fracture running down the flank — where it breaks.
     out.push({
-      kind: "path",
-      d: `M${r2(MID - halfW * 0.5)} ${r2(g.cy - 8)} L${r2(MID - halfW * 0.2)} ${r2(g.cy)} L${r2(MID - halfW * 0.55)} ${r2(g.cy + 7)}`,
-      weight: 2,
+      role: "weak",
+      shape: {
+        kind: "path",
+        d: `M${r2(MID - halfW * 0.5)} ${r2(g.cy - 8)} L${r2(MID - halfW * 0.2)} ${r2(g.cy)} L${r2(MID - halfW * 0.55)} ${r2(g.cy + 7)}`,
+        weight: 2,
+      },
     });
   }
   if (hasResist) {
     // A closed arc over the shoulder — where it holds.
     out.push({
-      kind: "path",
-      d: `M${r2(MID + halfW * 0.2)} ${r2(g.cy - 12)} Q${r2(MID + halfW * 1.15)} ${r2(g.cy - 6)} ${r2(MID + halfW * 0.35)} ${r2(g.cy + 6)}`,
-      weight: 2,
+      role: "resist",
+      shape: {
+        kind: "path",
+        d: `M${r2(MID + halfW * 0.2)} ${r2(g.cy - 12)} Q${r2(MID + halfW * 1.15)} ${r2(g.cy - 6)} ${r2(MID + halfW * 0.35)} ${r2(g.cy + 6)}`,
+        weight: 2,
+      },
     });
   }
   return out;

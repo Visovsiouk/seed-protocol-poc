@@ -4,7 +4,7 @@
  * CreatureSigil — the thing you are facing, drawn.
  *
  * Renders a generated `CreatureSpec` as inline SVG with four motion layers:
- * an idle breathe, an element aura, a hit flinch re-keyed off the caller's
+ * an idle breathe, an element aura, a hit flinch replayed off the caller's
  * damage nonce, and a one-shot bloom when a warden turns. Geometry comes from
  * `lib/art/creature.ts`; every colour resolves through `lib/art/palette.ts`.
  *
@@ -22,7 +22,13 @@
  * and the creature slides off its feet on every breath.
  */
 
-import { motion, useReducedMotion, type Variants } from "framer-motion";
+import { useEffect } from "react";
+import {
+  motion,
+  useAnimationControls,
+  useReducedMotion,
+  type Variants,
+} from "framer-motion";
 import type { Shape } from "@/lib/art/archetypes";
 import type { CreatureSpec } from "@/lib/art/creature";
 import { compileSprite, type Sprite } from "@/lib/art/pixels";
@@ -56,7 +62,13 @@ const auraPulse: Variants = {
   },
 };
 
-/** One-shot recoil when struck — re-keyed on the caller's hit nonce. */
+/**
+ * One-shot recoil when struck, replayed imperatively on each new hit nonce.
+ *
+ * Driven by controls rather than by re-keying the group: a changing `key`
+ * remounts the whole subtree, which also restarts the idle breathe and
+ * re-fires the warden's once-only `turn` bloom on every blow.
+ */
 const flinch: Variants = {
   rest: { x: 0, scale: 1 },
   hit: {
@@ -153,6 +165,16 @@ export function CreatureSigil({
   const ink = entityInk(element);
   const aura = auraInk(element, 50);
 
+  // Replay the recoil on each new hit without remounting the subtree, so the
+  // breathe keeps its phase and the `turn` bloom stays the one-shot it claims
+  // to be. `start` restarts the keyframes even if the previous blow is still
+  // fading, and they begin and end at rest, so back-to-back hits are safe.
+  const flinchControls = useAnimationControls();
+  useEffect(() => {
+    if (reduced || hitNonce <= 0) return;
+    void flinchControls.start("hit");
+  }, [hitNonce, reduced, flinchControls]);
+
   return (
     <svg
       viewBox="0 0 100 100"
@@ -182,11 +204,10 @@ export function CreatureSigil({
 
       {/* flinch (outermost) → turn bloom → breathe → the drawn creature. */}
       <motion.g
-        key={`hit:${hitNonce}`}
         style={SVG_ORIGIN}
         variants={reduced ? undefined : flinch}
         initial="rest"
-        animate={reduced || hitNonce === 0 ? "rest" : "hit"}
+        animate={flinchControls}
       >
         <motion.g
           key={`phase:${turned ? "2" : "1"}`}
@@ -210,9 +231,11 @@ export function CreatureSigil({
                 {spec.crown.map((s, n) => draw(s, `c${n}`, ink))}
                 {spec.eyes.map((s, n) => draw(s, `e${n}`, turned ? WEAK_INK : ink))}
                 {/* Weakness reads as damage, resistance as protection —
-                    independent of the creature's own element. */}
-                {spec.marks.map((s, n) =>
-                  draw(s, `m${n}`, n === 0 && spec.marks.length > 1 ? WEAK_INK : RESIST_INK),
+                    independent of the creature's own element. The role comes
+                    off the mark itself: both are optional, so a lone mark can
+                    be either and position cannot tell us which. */}
+                {spec.marks.map((m, n) =>
+                  draw(m.shape, `m${n}`, m.role === "weak" ? WEAK_INK : RESIST_INK),
                 )}
               </g>
             )}

@@ -35,7 +35,7 @@ function coords(spec: Spec): number[] {
     ...spec.crown,
     ...spec.plates,
     ...spec.eyes,
-    ...spec.marks,
+    ...spec.marks.map((m) => m.shape),
   ]) {
     if (s.kind === "circle") out.push(s.cx - s.r, s.cx + s.r, s.cy - s.r, s.cy + s.r);
     else for (const n of s.d.match(/-?\d+(\.\d+)?/g) ?? []) out.push(Number(n));
@@ -188,6 +188,23 @@ describe("creatureSpec", () => {
     ).toHaveLength(2);
   });
 
+  // Each mark must name its own role. The renderer inks weakness as damage and
+  // resistance as protection, so a mislabelled mark tells the player the
+  // opposite of the truth — and because both are optional, a lone mark's role
+  // cannot be recovered from its position in the array.
+  it("tags every mark with the trait it stands for", () => {
+    const roles = (i: Partial<CreatureSpecInput>) =>
+      creatureSpec(input(i)).marks.map((m) => m.role);
+
+    expect(roles({ id: "r0", weakTo: "fire" })).toEqual(["weak"]);
+    expect(roles({ id: "r1", resistTo: "ice" })).toEqual(["resist"]);
+    expect(roles({ id: "r2", weakTo: "holy", resistTo: "unholy" })).toEqual([
+      "weak",
+      "resist",
+    ]);
+    expect(roles({ id: "r3", weakTo: "none", resistTo: "none" })).toEqual([]);
+  });
+
   it("visibly changes form when a warden turns", () => {
     const base = creatureSpec(input({ id: "lich", isBoss: true, attackDie: 6, variant: "base" }));
     const turned = creatureSpec(input({ id: "lich", isBoss: true, attackDie: 8, variant: "turned" }));
@@ -204,7 +221,12 @@ describe("creatureSpec", () => {
   it("emits only parseable path data", () => {
     for (const i of roster()) {
       const spec = creatureSpec(i);
-      for (const s of [...spec.body, ...spec.crown, ...spec.plates, ...spec.marks]) {
+      for (const s of [
+        ...spec.body,
+        ...spec.crown,
+        ...spec.plates,
+        ...spec.marks.map((m) => m.shape),
+      ]) {
         if (s.kind === "path") expect(s.d).toMatch(/^[MLCQAZHVmlcqazhv0-9 .,-]+$/);
       }
     }
