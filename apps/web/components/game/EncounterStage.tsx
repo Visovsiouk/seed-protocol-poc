@@ -36,7 +36,7 @@ import { creatureSpec } from "@/lib/art/creature";
 import { familyFor } from "@/lib/art/families";
 import { spriteFor } from "@/lib/art/sprites";
 import { weaponLane } from "@/lib/art/archetypes";
-import { CreatureEcho, CreatureSigil } from "@/components/art/CreatureSigil";
+import { CreatureSigil } from "@/components/art/CreatureSigil";
 import { ImpactLayer } from "@/components/art/ImpactLayer";
 import { elementColor } from "@/lib/ui/loot-visuals";
 import { faceGhost, holdPulse, washShift, withReducedMotion } from "@/lib/ui/motion";
@@ -532,19 +532,6 @@ export function EncounterStage({
         className="absolute inset-0 -z-10 opacity-40"
         style={{ backgroundImage: "var(--preset-texture)" }}
       />
-      {/*
-        The enemy looming at stage scale behind the text — faint, stroke-only,
-        and absolutely positioned, so it costs nothing from the fixed height
-        while giving the screen a presence the foreground sigil can't at the
-        size the layout can spare. Reads as a phosphor afterimage under CRT.
-      */}
-      {combat && (
-        <CreatureEcho
-          spec={sigilFor(combat, activePreset).spec}
-          element={combat.monster.element}
-        />
-      )}
-
       <StageReactions
         intensity={intensity}
         reduced={reduced}

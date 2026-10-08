@@ -26,13 +26,7 @@ import { motion, useReducedMotion, type Variants } from "framer-motion";
 import type { Shape } from "@/lib/art/archetypes";
 import type { CreatureSpec } from "@/lib/art/creature";
 import { compileSprite, type Sprite } from "@/lib/art/pixels";
-import {
-  RESIST_INK,
-  WEAK_INK,
-  auraInk,
-  echoInk,
-  entityInk,
-} from "@/lib/art/palette";
+import { RESIST_INK, WEAK_INK, auraInk, entityInk } from "@/lib/art/palette";
 
 /** Side of the sigil's square coordinate field. Matches the root `viewBox`. */
 const FIELD = 100;
@@ -229,36 +223,13 @@ export function CreatureSigil({
   );
 }
 
-/**
- * The backdrop echo — the same creature at stage scale, faint, behind the
- * text. Purely atmospheric: stroke-only, low alpha, `aria-hidden`, and
- * absolutely positioned so it contributes no layout whatsoever. This is what
- * gives the stage presence without spending any of the 352px budget.
+/*
+ * The backdrop echo lived here: a large faint copy of the generated silhouette
+ * behind the stage text, for atmosphere the foreground sigil was too small to
+ * provide. It was removed when creatures became authored sprites — the echo
+ * drew from the *generated* spec, so once a sprite replaced the foreground the
+ * two no longer agreed and a different creature showed through from behind.
+ *
+ * Reinstating it would mean deriving a large silhouette from the sprite grid
+ * instead, which is possible but is a new thing rather than this one.
  */
-export function CreatureEcho({
-  spec,
-  element,
-}: {
-  spec: CreatureSpec;
-  element?: string | null;
-}) {
-  // Carries most of the stage's presence, because it is the only layer that
-  // can be large: the foreground sigil is capped by the 352px budget it has
-  // to share with prose, a name, a health bar and chips. `meet` (not `slice`)
-  // so the whole creature shows at stage height — `slice` crops a wide stage
-  // to the middle band and decapitates it.
-  const ink = echoInk(element, 30);
-  return (
-    <svg
-      aria-hidden
-      viewBox="0 0 100 100"
-      preserveAspectRatio="xMidYMid meet"
-      className="pointer-events-none absolute inset-0 -z-10 h-full w-full"
-    >
-      <g strokeLinecap="round" strokeLinejoin="round">
-        {spec.body.map((s, n) => draw(s, `eb${n}`, ink))}
-        {spec.crown.map((s, n) => draw(s, `ec${n}`, ink))}
-      </g>
-    </svg>
-  );
-}

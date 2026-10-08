@@ -48,15 +48,6 @@ export function auraInk(element: MaybeElement, strength = 45): string {
   return `color-mix(in oklab, ${entityInk(element)} ${strength}%, transparent)`;
 }
 
-/**
- * Faint wash for the backdrop echo — the large, out-of-focus copy of a
- * creature that looms behind the stage text. Low enough to never fight the
- * prose for contrast.
- */
-export function echoInk(element: MaybeElement, strength = 14): string {
-  return `color-mix(in oklab, ${entityInk(element)} ${strength}%, transparent)`;
-}
-
 /** Vulnerability mark — always reads as damage, regardless of element. */
 export const WEAK_INK = "var(--color-danger)";
 
