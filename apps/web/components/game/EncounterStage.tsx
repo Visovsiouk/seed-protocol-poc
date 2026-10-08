@@ -31,7 +31,13 @@ import type {
   EncounterState,
   Preset,
 } from "@/lib/engine/types";
-import { useElementLabel } from "@/lib/contracts/adapters";
+import { presetForRealm, useElementLabel } from "@/lib/contracts/adapters";
+import { creatureSpec } from "@/lib/art/creature";
+import { familyFor } from "@/lib/art/families";
+import { spriteFor } from "@/lib/art/sprites";
+import { weaponLane } from "@/lib/art/archetypes";
+import { CreatureSigil } from "@/components/art/CreatureSigil";
+import { ImpactLayer } from "@/components/art/ImpactLayer";
 import { elementColor } from "@/lib/ui/loot-visuals";
 import { faceGhost, holdPulse, washShift, withReducedMotion } from "@/lib/ui/motion";
 import { Chip } from "@/components/ui";
@@ -61,6 +67,11 @@ function useHpFloats(value: number, reduced: boolean | null) {
   const prev = useRef(value);
   const idRef = useRef(0);
   const [floats, setFloats] = useState<DamageFloat[]>([]);
+  // Monotonic count of *hits* (HP losses only, not heals). The creature sigil
+  // re-keys its one-shot recoil off this, so it flinches on the same beat the
+  // bar shakes — reusing the damage observation already happening here rather
+  // than watching HP a second time.
+  const [hitNonce, setHitNonce] = useState(0);
   // Each float owns its own expiry timer. We keep them in a ref and clear
   // them only on unmount — NOT in an effect-cleanup, because that cleanup
   // runs on every HP change and would cancel the *previous* float's removal,
@@ -93,6 +104,7 @@ function useHpFloats(value: number, reduced: boolean | null) {
       timers.current.delete(t);
     }, 950);
     timers.current.add(t);
+    if (hurt) setHitNonce((n) => n + 1);
     if (hurt && !reduced) {
       void controls.start({
         x: [0, -9, 8, -6, 4, 0],
@@ -101,7 +113,7 @@ function useHpFloats(value: number, reduced: boolean | null) {
     }
   }, [value, controls, reduced]);
 
-  return { controls, floats };
+  return { controls, floats, hitNonce };
 }
 
 function FloatLayer({ floats }: { floats: DamageFloat[] }) {
@@ -139,23 +151,99 @@ function ThreatChip({
   return <Chip color={elementColor(element)} label={label} sub={elementLabel} />;
 }
 
+/**
+ * Derive the enemy's generated likeness from the live encounter.
+ *
+ * Reads only *traits* off the monster — never `combat.monsterHp` — so the
+ * sigil is stable for the whole fight and identical for every instance of a
+ * species. The one state-derived input is the boss phase, and it selects
+ * which traits apply (phase-2 attack die, `turned` variant) rather than
+ * feeding state into the geometry. `creatureSpec` memoizes on those inputs,
+ * so calling this on every render is a map lookup.
+ */
+function sigilFor(combat: CombatState, activePreset: Preset | null) {
+  const monster = combat.monster;
+  const isBoss = "bakedEffects" in monster;
+  const turned = isBoss && (combat.bossPhase ?? 0) >= 2;
+  const preset = activePreset ?? "fantasy";
+  return {
+    turned,
+    // Authored art when this creature has it, otherwise null and the sigil
+    // falls back to the generated silhouette. Converting the roster is
+    // therefore incremental — no flag day, no half-drawn bestiary.
+    sprite: spriteFor(preset, monster.id),
+    spec: creatureSpec({
+      preset,
+      id: monster.id,
+      family: familyFor(preset, monster.id),
+      hp: isBoss ? monster.baseHp : monster.hp,
+      attackDie: turned && isBoss ? monster.phase2AttackDie : monster.attackDie,
+      ac: monster.ac,
+      element: monster.element,
+      weakTo: monster.weakTo,
+      resistTo: monster.resistTo,
+      isBoss,
+      variant: turned ? ("turned" as const) : ("base" as const),
+    }),
+  };
+}
+
+/**
+ * What the stage needs to know about the player's weapon to draw its blows.
+ * Structurally a subset of an engine `AssetCard`, so a call site can pass one
+ * straight through.
+ */
+export type StageWeapon = {
+  readonly weaponType?: string;
+  readonly element?: Element;
+  readonly realm?: `0x${string}`;
+  readonly realmPreset?: Preset;
+};
+
+/**
+ * Archetype lane for the equipped weapon, for picking an impact gesture.
+ *
+ * Read against the weapon's **own** realm preset, not the realm being delved.
+ * A fantasy `"sword"` is simply absent from the cyberpunk vocabulary, so
+ * resolving it against the active realm would score every carried weapon as
+ * lane 0 and make it swing like a bare fist the moment it left home.
+ *
+ * Using the source preset is also sufficient, not just necessary: lanes are
+ * ordinals that the uint8 cast and the cross-realm adapters agree on
+ * (`adapters.ts` translates by `weaponTypeIndex` → `weaponTypeFromIndex`), so
+ * the ordinal is the same number whichever side of a hop you read it from. A
+ * translated katana and the sword it came from land the same blow — correctly,
+ * because the gesture describes the weapon's physicality, not its genre skin.
+ */
+function laneFor(weapon: StageWeapon | undefined): number {
+  if (!weapon?.weaponType) return 0;
+  const preset =
+    weapon.realmPreset ??
+    (weapon.realm ? presetForRealm(weapon.realm) : null) ??
+    "fantasy";
+  return weaponLane(preset, weapon.weaponType);
+}
+
 /** The hostile combat view: the monster, big, with a draining health bar. */
 function CombatStage({
   combat,
   intro,
   activePreset,
+  equippedWeapon,
 }: {
   combat: CombatState;
   intro: string;
   activePreset: Preset | null;
+  equippedWeapon?: StageWeapon;
 }) {
   const reduced = useReducedMotion();
-  const { controls, floats } = useHpFloats(combat.monsterHp, reduced);
+  const { controls, floats, hitNonce } = useHpFloats(combat.monsterHp, reduced);
 
   const monster = combat.monster;
   const isBoss = "bakedEffects" in monster;
   const maxHp = isBoss ? monster.baseHp : monster.hp;
   const pct = maxHp <= 0 ? 0 : Math.max(0, Math.min(100, (combat.monsterHp / maxHp) * 100));
+  const { spec: sigil, sprite, turned } = sigilFor(combat, activePreset);
 
   const element =
     monster.element && monster.element !== "none" ? monster.element : undefined;
@@ -173,12 +261,64 @@ function CombatStage({
       : "var(--color-danger)";
 
   return (
-    <motion.div animate={controls} className="relative flex flex-col gap-4">
+    <motion.div animate={controls} className="relative flex min-h-0 flex-1 flex-col gap-3">
+      {/*
+        Clamped to three lines. The room's flavor is scene-setting, but the
+        bank's longest narrations run six lines and would otherwise starve the
+        enemy down to a 36px postage stamp — on a screen whose whole job is to
+        render the thing you are facing, big. The clamp is also what makes the
+        sigil's min-height below safe: a bounded intro means the floor can
+        never push content into an inner scroll.
+      */}
       {intro && (
-        <p className="text-sm italic leading-relaxed opacity-80">{intro}</p>
+        <p className="line-clamp-3 shrink-0 text-sm italic leading-relaxed opacity-80">
+          {intro}
+        </p>
       )}
 
-      <div className="flex flex-col gap-2">
+      {/*
+        The enemy itself. `min-h-0 flex-1` lets it claim whatever vertical
+        space the rest of the stage leaves and the SVG scales to fit rather
+        than overflowing — that is what keeps the 22rem slot's zero-jump
+        guarantee without anyone maintaining a pixel budget here. The
+        min-height is a floor so it still reads as a creature in the tightest
+        state rather than dwindling to a bullet point.
+
+        The floor steps up with width, and that is load-bearing. A fixed 88px
+        floor pushes ~26px past the box at 375px (a long boss name wraps to two
+        lines) and ~11px at 660px — neither of which changes the slot's height.
+        They silently start an inner scroll instead, which looks fine and
+        isn't. Note `sm` is a double hit: the stage's own padding goes p-6 →
+        sm:p-8 at the same breakpoint, so 16px of inner height disappears
+        exactly where a bigger floor would land. Hence the real floor waits
+        for `lg`; below that, flex is left to settle on its own, which never
+        overflows.
+      */}
+      <div className="relative flex min-h-[3rem] flex-1 items-center justify-center sm:min-h-[3.5rem] lg:min-h-[5.5rem]">
+        <CreatureSigil
+          spec={sigil}
+          sprite={sprite}
+          element={monster.element}
+          hitNonce={hitNonce}
+          turned={turned}
+          className="h-full max-h-full w-auto max-w-full"
+        />
+        {/*
+          The blow, struck over the enemy. Absolute inside this row so it adds
+          nothing to the flex measurement the comment above depends on — the
+          impact cannot be what pushes content into an inner scroll. It is
+          `relative` on the row (not the sigil) deliberately: the mark spans
+          the full row width rather than the sigil's narrower aspect box, so a
+          cleave reads as sweeping across the enemy instead of being boxed in.
+        */}
+        <ImpactLayer
+          lane={laneFor(equippedWeapon)}
+          element={equippedWeapon?.element}
+          hitNonce={hitNonce}
+        />
+      </div>
+
+      <div className="flex shrink-0 flex-col gap-2">
         <div className="flex items-end justify-between gap-4">
           <h2 className="font-[family-name:var(--font-display)] text-3xl font-bold leading-none sm:text-4xl">
             {monster.name}
@@ -336,12 +476,18 @@ export function EncounterStage({
   intro,
   activePreset = null,
   ghostReveal = 0,
+  equippedWeapon,
 }: {
   encounter: EncounterState | null;
   /** Narration line emitted when the room was generated. */
   intro: string;
   /** Active realm preset, for element-label vocabulary. */
   activePreset?: Preset | null;
+  /**
+   * The weapon the player descended with, for the shape and hue of its
+   * impact marks. Absent → unarmed, which still shows a blow.
+   */
+  equippedWeapon?: StageWeapon;
   /**
    * A monotonically-bumped nonce. When it changes the kept-reader ghost blooms
    * again — the caller pulses it on boss-start so the face surfaces under the
@@ -409,6 +555,7 @@ export function EncounterStage({
             combat={encounter.combat}
             intro={intro}
             activePreset={activePreset}
+            equippedWeapon={equippedWeapon}
           />
         ) : (
           <QuietStage intro={intro} />
