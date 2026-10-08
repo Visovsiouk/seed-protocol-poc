@@ -25,6 +25,7 @@ import { familyFor, isTagged } from "@/lib/art/families";
 import { creatureSpec } from "@/lib/art/creature";
 import { ItemGlyph } from "@/components/art/ItemGlyph";
 import { CreatureSigil } from "@/components/art/CreatureSigil";
+import { spriteFor, spriteIds } from "@/lib/art/sprites";
 import { PlayerSigil } from "@/components/art/PlayerSigil";
 import { ImpactLayer } from "@/components/art/ImpactLayer";
 import { GlyphHop } from "@/components/art/GlyphHop";
@@ -597,6 +598,39 @@ export function ArtGallery() {
           </div>
         </Section>
 
+        <Section title="Authored sprites — hand-drawn, replacing the generated silhouette">
+          <div className="flex flex-wrap gap-6">
+            {spriteIds(preset).length === 0 ? (
+              <p className="text-xs opacity-60">
+                No authored sprites for {preset} yet — every creature below is
+                still generated.
+              </p>
+            ) : (
+              spriteIds(preset).map((id) => (
+                <div key={id} className="flex flex-col items-center gap-1">
+                  <div className="flex h-40 w-40 items-center justify-center rounded-lg border border-[var(--border-1)] bg-[var(--surface-1)]">
+                    <CreatureSigil
+                      spec={creatureSpec({
+                        preset,
+                        id,
+                        family: familyFor(preset, id),
+                        hp: 12,
+                        attackDie: 6,
+                        ac: 12,
+                        isBoss: false,
+                        variant: "base",
+                      })}
+                      sprite={spriteFor(preset, id)}
+                      className="h-full w-full"
+                    />
+                  </div>
+                  <span className="font-mono text-[10px] opacity-70">{id}</span>
+                </div>
+              ))
+            )}
+          </div>
+        </Section>
+
         <Section title="Adversaries — the whole roster">
           <div className="flex flex-wrap gap-4">
             {[
@@ -628,6 +662,7 @@ export function ArtGallery() {
                         isBoss: boss,
                         variant: "base",
                       })}
+                      sprite={spriteFor(preset, def.id)}
                       element={def.element}
                       className="h-full w-full"
                     />
@@ -636,7 +671,7 @@ export function ArtGallery() {
                     {def.name}
                   </span>
                   <span className="font-mono text-[9px] opacity-50">
-                    {familyFor(preset, def.id)}
+                    {spriteFor(preset, def.id) ? "sprite" : familyFor(preset, def.id)}
                     {isTagged(preset, def.id) ? "" : "*"} · {hp}hp d{def.attackDie} ac{def.ac}
                   </span>
                 </div>

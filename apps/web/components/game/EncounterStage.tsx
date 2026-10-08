@@ -34,6 +34,7 @@ import type {
 import { presetForRealm, useElementLabel } from "@/lib/contracts/adapters";
 import { creatureSpec } from "@/lib/art/creature";
 import { familyFor } from "@/lib/art/families";
+import { spriteFor } from "@/lib/art/sprites";
 import { weaponLane } from "@/lib/art/archetypes";
 import { CreatureEcho, CreatureSigil } from "@/components/art/CreatureSigil";
 import { ImpactLayer } from "@/components/art/ImpactLayer";
@@ -167,6 +168,10 @@ function sigilFor(combat: CombatState, activePreset: Preset | null) {
   const preset = activePreset ?? "fantasy";
   return {
     turned,
+    // Authored art when this creature has it, otherwise null and the sigil
+    // falls back to the generated silhouette. Converting the roster is
+    // therefore incremental — no flag day, no half-drawn bestiary.
+    sprite: spriteFor(preset, monster.id),
     spec: creatureSpec({
       preset,
       id: monster.id,
@@ -238,7 +243,7 @@ function CombatStage({
   const isBoss = "bakedEffects" in monster;
   const maxHp = isBoss ? monster.baseHp : monster.hp;
   const pct = maxHp <= 0 ? 0 : Math.max(0, Math.min(100, (combat.monsterHp / maxHp) * 100));
-  const { spec: sigil, turned } = sigilFor(combat, activePreset);
+  const { spec: sigil, sprite, turned } = sigilFor(combat, activePreset);
 
   const element =
     monster.element && monster.element !== "none" ? monster.element : undefined;
@@ -292,6 +297,7 @@ function CombatStage({
       <div className="relative flex min-h-[3rem] flex-1 items-center justify-center sm:min-h-[3.5rem] lg:min-h-[5.5rem]">
         <CreatureSigil
           spec={sigil}
+          sprite={sprite}
           element={monster.element}
           hitNonce={hitNonce}
           turned={turned}

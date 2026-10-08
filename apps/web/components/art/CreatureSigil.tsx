@@ -25,6 +25,7 @@
 import { motion, useReducedMotion, type Variants } from "framer-motion";
 import type { Shape } from "@/lib/art/archetypes";
 import type { CreatureSpec } from "@/lib/art/creature";
+import { compileSprite, type Sprite } from "@/lib/art/pixels";
 import {
   RESIST_INK,
   WEAK_INK,
@@ -32,6 +33,9 @@ import {
   echoInk,
   entityInk,
 } from "@/lib/art/palette";
+
+/** Side of the sigil's square coordinate field. Matches the root `viewBox`. */
+const FIELD = 100;
 
 /** Origin fix for every animated SVG group. See the header note. */
 const SVG_ORIGIN = {
@@ -105,8 +109,32 @@ function draw(shape: Shape, key: string, ink: string) {
   );
 }
 
+/**
+ * The authored sprite, scaled from its own 32-unit grid into the sigil's
+ * 100-unit field. Scaling here rather than switching the root `viewBox` keeps
+ * the aura, the motion wrappers and the echo working off one coordinate space,
+ * so a sprite drops in without touching any of the layout reasoning above.
+ */
+function SpriteBody({ sprite }: { sprite: Sprite }) {
+  const layers = compileSprite(sprite);
+  const scale = FIELD / sprite.w;
+  return (
+    <g transform={`scale(${scale})`} shapeRendering="crispEdges">
+      {layers.map((layer) => (
+        <path key={layer.fill} d={layer.d} fill={layer.fill} />
+      ))}
+    </g>
+  );
+}
+
 type Props = {
   spec: CreatureSpec;
+  /**
+   * Authored pixel art for this creature. When present it replaces the
+   * generated silhouette; the generated `spec` is still read for the aura, so
+   * element glow and the backdrop echo behave identically either way.
+   */
+  sprite?: Sprite | null;
   /** Drives hue and aura. `null`/`"none"` falls back to inherited ink. */
   element?: string | null;
   /** Bumped by the caller on every HP loss; re-keys the flinch. */
@@ -120,6 +148,7 @@ type Props = {
 
 export function CreatureSigil({
   spec,
+  sprite,
   element,
   hitNonce = 0,
   turned = false,
@@ -178,17 +207,21 @@ export function CreatureSigil({
             initial="rest"
             animate={reduced ? "rest" : "live"}
           >
-            <g strokeLinecap="round" strokeLinejoin="round">
-              {spec.body.map((s, n) => draw(s, `b${n}`, ink))}
-              {spec.plates.map((s, n) => draw(s, `p${n}`, ink))}
-              {spec.crown.map((s, n) => draw(s, `c${n}`, ink))}
-              {spec.eyes.map((s, n) => draw(s, `e${n}`, turned ? WEAK_INK : ink))}
-              {/* Weakness reads as damage, resistance as protection —
-                  independent of the creature's own element. */}
-              {spec.marks.map((s, n) =>
-                draw(s, `m${n}`, n === 0 && spec.marks.length > 1 ? WEAK_INK : RESIST_INK),
-              )}
-            </g>
+            {sprite ? (
+              <SpriteBody sprite={sprite} />
+            ) : (
+              <g strokeLinecap="round" strokeLinejoin="round">
+                {spec.body.map((s, n) => draw(s, `b${n}`, ink))}
+                {spec.plates.map((s, n) => draw(s, `p${n}`, ink))}
+                {spec.crown.map((s, n) => draw(s, `c${n}`, ink))}
+                {spec.eyes.map((s, n) => draw(s, `e${n}`, turned ? WEAK_INK : ink))}
+                {/* Weakness reads as damage, resistance as protection —
+                    independent of the creature's own element. */}
+                {spec.marks.map((s, n) =>
+                  draw(s, `m${n}`, n === 0 && spec.marks.length > 1 ? WEAK_INK : RESIST_INK),
+                )}
+              </g>
+            )}
           </motion.g>
         </motion.g>
       </motion.g>
