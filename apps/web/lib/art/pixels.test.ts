@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { INK, compileSprite, inkedPixels, validateSprite, type Sprite } from "./pixels";
 import { spriteFor, spriteIds } from "./sprites";
+import { getFlavorBank } from "@/lib/flavor";
 import type { Preset } from "@/lib/engine/types";
 
 const PRESETS: readonly Preset[] = ["fantasy", "scifi", "cyberpunk"];
@@ -100,5 +101,39 @@ describe("the authored bank", () => {
 
   it("returns null for a creature with no authored art", () => {
     expect(spriteFor("fantasy", "no_such_monster")).toBeNull();
+  });
+});
+
+describe("roster coverage", () => {
+  function rosterIds(preset: Preset): string[] {
+    const bank = getFlavorBank(preset);
+    return [...Object.keys(bank.monsters), ...Object.keys(bank.bosses)];
+  }
+
+  // The failure this exists to catch is silent: a sprite keyed `giant_rat`
+  // when the roster says `giantRat` simply never matches, and the creature
+  // quietly keeps the generated silhouette. Nothing throws, nothing looks
+  // broken, and the art is just missing for one monster in one realm.
+  it("has a sprite for every monster and boss in every bank", () => {
+    const missing: string[] = [];
+    for (const preset of PRESETS) {
+      for (const id of rosterIds(preset)) {
+        if (!spriteFor(preset, id)) missing.push(`${preset}:${id}`);
+      }
+    }
+    expect(missing).toEqual([]);
+  });
+
+  // The other direction: a sprite whose key matches nothing is dead weight
+  // that no amount of play will ever reveal as wrong.
+  it("has no sprite that does not correspond to a roster id", () => {
+    const orphans: string[] = [];
+    for (const preset of PRESETS) {
+      const roster = new Set(rosterIds(preset));
+      for (const id of spriteIds(preset)) {
+        if (!roster.has(id)) orphans.push(`${preset}:${id}`);
+      }
+    }
+    expect(orphans).toEqual([]);
   });
 });

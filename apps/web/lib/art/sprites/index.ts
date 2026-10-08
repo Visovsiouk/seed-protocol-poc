@@ -11,11 +11,13 @@
 import type { Preset } from "@/lib/engine/types";
 import { validateSprite, type Sprite } from "@/lib/art/pixels";
 import { FANTASY_SPRITES } from "./fantasy";
+import { SCIFI_SPRITES } from "./scifi";
+import { CYBERPUNK_SPRITES } from "./cyberpunk";
 
 const BANKS: Readonly<Record<Preset, Readonly<Record<string, Sprite>>>> = {
   fantasy: FANTASY_SPRITES,
-  scifi: {},
-  cyberpunk: {},
+  scifi: SCIFI_SPRITES,
+  cyberpunk: CYBERPUNK_SPRITES,
 };
 
 // Validate every grid once at module load. A ragged row is the dominant

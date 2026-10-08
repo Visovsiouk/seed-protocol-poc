@@ -87,8 +87,11 @@ export const INK: Readonly<Record<string, string>> = {
   // Light and energy
   e: "#fff2b0", // eye glow / highlight
   x: "#e5484d", // hostile red
+  X: "#a32b2f", // hostile red, shadow
   o: "#f08b2e", // fire orange
+  O: "#a85d14", // fire orange, shadow
   y: "#f5d547", // yellow
+  Y: "#a8900f", // yellow, shadow
   t: "#4dd4e0", // tech cyan
   T: "#2b8d99", // tech cyan, shadow
   p: "#ff4fd8", // neon magenta
