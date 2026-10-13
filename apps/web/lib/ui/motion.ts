@@ -53,7 +53,7 @@ export const escrowFly: Variants = {
 // ── Cinematic vocabulary (story beats) ────────────────────────────────────
 // Used by `CinematicBeatPlayer` and the warden/loot reveals. Scalar-opacity
 // variants flatten correctly through `withReducedMotion`; the keyframe-array
-// ones (holdPulse/faceGhost/lootGlow) do NOT — guard those with an explicit
+// ones (holdPulse/faceGhost/lootGlow/impactStrike) do NOT — guard those with an explicit
 // `!reduced` check on the `animate` prop, the way EncounterStage/AssetCard do.
 
 /** Per-line dramatic rise — a body line lifting into place. Lives inside a
@@ -98,6 +98,23 @@ export const faceGhost: Variants = {
   bloom: {
     opacity: [0, 0.16, 0.05],
     transition: { duration: 2.8, ease: "easeOut", times: [0, 0.4, 1] },
+  },
+};
+
+/**
+ * One-shot impact mark: snaps in, blooms outward, and clears itself.
+ *
+ * It ends at `opacity: 0` on purpose, so the caller needs no removal timer and
+ * no `AnimatePresence` — re-keying the element on a hit counter replays the
+ * whole thing. Keyframe array, so `!reduced` only; there is no resting state
+ * to fall back to, which is why reduced-motion callers skip the mark entirely
+ * rather than flattening it to a static one that would never leave.
+ */
+export const impactStrike: Variants = {
+  struck: {
+    opacity: [0, 1, 0.85, 0],
+    scale: [0.82, 1.04, 1.1, 1.16],
+    transition: { duration: 0.42, ease: "easeOut", times: [0, 0.15, 0.4, 1] },
   },
 };
 

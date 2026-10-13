@@ -492,6 +492,9 @@ export function EncounterFrame({
             intro={intro}
             activePreset={activePreset}
             ghostReveal={ghostReveal}
+            // Gear is locked for the delve (see the note above), so this is
+            // the weapon every blow in this run is struck with.
+            equippedWeapon={state.equipped.weapon}
           />
         ) : atDecision ? (
           <EscrowTray

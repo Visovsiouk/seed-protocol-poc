@@ -39,6 +39,7 @@ import {
   ProvenanceChip,
   ExplorerLink,
 } from "@/components/ui";
+import { CardGlyph } from "@/components/art/ItemGlyph";
 import {
   AnimatePresence,
   motion,
@@ -206,8 +207,16 @@ function OriginalStrip({
           "color-mix(in oklab, var(--color-preset-accent) 35%, transparent)",
       }}
     >
-      <div className="flex items-baseline justify-between gap-2">
-        <span className="text-[10px] uppercase tracking-wider text-[var(--color-preset-accent)]">
+      <div className="flex items-center justify-between gap-2">
+        <span className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-[var(--color-preset-accent)]">
+          {/*
+            The shape it wore at home. The card's own header glyph already
+            shows the local one, so putting the source here is what turns the
+            strip from a stat footnote into a before/after — the same pairing
+            the translation screen makes explicit, available anywhere a
+            translated card appears.
+          */}
+          <CardGlyph card={card} preset={sourcePreset} size={18} />
           Translated from {sourcePreset}
         </span>
         {hasAdapter && (
@@ -534,9 +543,21 @@ export function AssetCard({
           </motion.span>
         )}
       </AnimatePresence>
-      <header className="flex items-baseline justify-between gap-2">
+      <header className="flex items-center justify-between gap-2">
+        {/*
+          The gear's generated mark. Fixed-size and unanimated so the card
+          keeps the uniform height `ChipRail` works to preserve. It derives
+          from the *display* card, so a cross-realm hop re-skins the glyph in
+          the target realm's archetype language alongside the re-worded name.
+        */}
+        <CardGlyph
+          card={displayCard}
+          preset={topLabelPreset ?? sourcePreset ?? "fantasy"}
+          size={26}
+          className="shrink-0"
+        />
         <motion.h4
-          className="font-semibold text-sm truncate"
+          className="min-w-0 flex-1 font-semibold text-sm truncate"
           variants={dramaticReveal ? lineReveal : undefined}
           initial={dramaticReveal ? "hidden" : false}
           animate={dramaticReveal ? "visible" : false}
