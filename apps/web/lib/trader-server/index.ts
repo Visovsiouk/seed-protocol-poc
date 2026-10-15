@@ -19,11 +19,8 @@ import { getServerEnv } from "@/lib/env";
 import { loadTraderClient } from "./client";
 import { enforceFloat, FloatLowError } from "./float";
 import { sendTraderTx } from "./send";
-import {
-  enforceRateLimit,
-  getClientIp,
-  RateLimitError,
-} from "./rate-limit";
+import { enforceRateLimit, RateLimitError } from "./rate-limit";
+import { getClientIp } from "@/lib/server/client-ip";
 
 /**
  * Shared response envelope.

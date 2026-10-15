@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 import { createPublicClient, createTestClient, http } from "viem";
 import { activeChain } from "@/lib/chain";
 import { faucetEnabled, getServerEnv } from "@/lib/env";
-import { getClientIp } from "@/lib/trader-server/rate-limit";
+import { getClientIp } from "@/lib/server/client-ip";
 import {
   enforceFaucetRateLimit,
   faucetBodySchema,

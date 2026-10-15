@@ -6,6 +6,7 @@ import { getPlayerRealm } from "@/lib/server/realm-db";
 import { fetchRealmTierProgress } from "@/lib/reads/realm-tier";
 import { getSeededSchemaIds } from "@/lib/contracts/seeded-realms";
 import { isHexAddress } from "@/lib/validation/schemas";
+import { withRealmGuards } from "@/lib/server/realm-guards";
 
 /**
  * `GET /api/realm/[address]/meta`
@@ -23,7 +24,7 @@ import { isHexAddress } from "@/lib/validation/schemas";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET(
+async function handleMeta(
   _req: Request,
   { params }: { params: Promise<{ address: string }> },
 ) {
@@ -73,3 +74,6 @@ export async function GET(
     },
   });
 }
+
+// Rate limit + JSON-guaranteed error envelope. See lib/server/realm-guards.ts.
+export const GET = withRealmGuards("read", handleMeta);

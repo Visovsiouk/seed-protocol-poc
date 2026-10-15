@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 
 import { derivePlayerRealmSignerAddress } from "@/lib/server/realm-signer";
 import { getNextSignerIndex } from "@/lib/server/realm-db";
+import { withRealmGuards } from "@/lib/server/realm-guards";
 
 /**
  * `GET /api/realm/next-signer`
@@ -28,7 +29,7 @@ import { getNextSignerIndex } from "@/lib/server/realm-db";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+async function handleNextSigner() {
   try {
     const index = getNextSignerIndex();
     const address = derivePlayerRealmSignerAddress(index);
@@ -44,3 +45,6 @@ export async function GET() {
     );
   }
 }
+
+// Rate limit + JSON-guaranteed error envelope. See lib/server/realm-guards.ts.
+export const GET = withRealmGuards("read", handleNextSigner);

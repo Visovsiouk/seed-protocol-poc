@@ -6,6 +6,7 @@ import { z } from "zod";
 import { ecosystemTemplateAbi } from "@abis/generated";
 import { getOwnerSigner, getPublicClient } from "@/lib/server/realm-signer";
 import { withSignerLock } from "@/lib/server/signer-nonce-lock";
+import { withRealmGuards } from "@/lib/server/realm-guards";
 import { fetchBossClears } from "@/lib/reads/boss-clears";
 import {
   buildContributionProof,
@@ -67,7 +68,7 @@ function presetForRealm(realm: `0x${string}`): Preset | undefined {
   )?.preset;
 }
 
-export async function POST(req: Request) {
+async function handleClaimSeed(req: Request) {
   let body: Body;
   try {
     const raw = await req.json();
@@ -182,3 +183,6 @@ export async function POST(req: Request) {
 
   return reply(200, { ok: true, txHash: hash, realm });
 }
+
+// Rate limit + JSON-guaranteed error envelope. See lib/server/realm-guards.ts.
+export const POST = withRealmGuards("write", handleClaimSeed);

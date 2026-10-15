@@ -1,9 +1,11 @@
 /**
- * Caller-IP resolution. Deliberately NOT marked `server-only` and free of env
- * / RPC imports, so the parsing rules below are unit-testable without a live
- * chain or a parsed environment — the same split as `./hail-guards.ts` and
- * `lib/faucet-server/guards.ts`. Re-exported from `./rate-limit.ts`, which is
- * where callers import it from.
+ * Caller-IP resolution, shared by every rate-limited surface: trader, faucet,
+ * and the realm routes via `./realm-guards.ts`.
+ *
+ * Deliberately NOT marked `server-only` and free of env / RPC imports, so the
+ * parsing rules below are unit-testable without a live chain or a parsed
+ * environment — the same split as `lib/trader-server/hail-guards.ts` and
+ * `lib/faucet-server/guards.ts`.
  */
 
 /**

@@ -10,6 +10,7 @@ import {
   getPublicClient,
 } from "@/lib/server/realm-signer";
 import { withSignerLock } from "@/lib/server/signer-nonce-lock";
+import { withRealmGuards } from "@/lib/server/realm-guards";
 import {
   getSeededRealm,
   getSeededSchemaIds,
@@ -100,7 +101,7 @@ function reply(
   return NextResponse.json(body, { status });
 }
 
-export async function POST(req: Request) {
+async function handleBossCleared(req: Request) {
   let body: Body;
   try {
     const raw = await req.json();
@@ -282,3 +283,6 @@ export async function POST(req: Request) {
 
   return reply(200, { ok: true, tokenId: tokenId.toString(), txHash: hash });
 }
+
+// Rate limit + JSON-guaranteed error envelope. See lib/server/realm-guards.ts.
+export const POST = withRealmGuards("write", handleBossCleared);

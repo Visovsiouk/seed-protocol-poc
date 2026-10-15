@@ -15,6 +15,7 @@ import {
   insertPlayerRealm,
 } from "@/lib/server/realm-db";
 import { playerRealmMaxTier } from "@/lib/reads/realm-tier";
+import { withRealmGuards } from "@/lib/server/realm-guards";
 import { getFlavorBank } from "@/lib/flavor";
 import { isAllowedAccent } from "@/lib/ui/accents";
 import { isCleanRealmName } from "@/lib/ui/realm-name";
@@ -118,7 +119,7 @@ function reply(status: number, body: ReplyOk | ReplyErr) {
   return NextResponse.json(body, { status });
 }
 
-export async function POST(req: Request) {
+async function handleRegister(req: Request) {
   let body: Body;
   try {
     body = bodySchema.parse(await req.json());
@@ -329,3 +330,6 @@ export async function POST(req: Request) {
     },
   });
 }
+
+// Rate limit + JSON-guaranteed error envelope. See lib/server/realm-guards.ts.
+export const POST = withRealmGuards("write", handleRegister);
