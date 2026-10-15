@@ -36,13 +36,7 @@ export function enforceRateLimit(ip: string): void {
   buckets.set(ip, recent);
 }
 
-/**
- * Resolves the caller IP from a Next.js request. `x-forwarded-for` is the
- * first hop in front of Vercel; falls back to "unknown" if not present
- * (e.g. local dev).
- */
-export function getClientIp(req: Request): string {
-  const fwd = req.headers.get("x-forwarded-for");
-  if (fwd) return fwd.split(",")[0]!.trim();
-  return req.headers.get("x-real-ip") ?? "unknown";
-}
+// Lives in ./client-ip.ts so the (security-relevant) XFF parsing rules stay
+// unit-testable — `server-only` above makes this module unimportable from
+// vitest. Re-exported so existing call sites keep their import path.
+export { getClientIp } from "./client-ip";

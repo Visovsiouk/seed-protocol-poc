@@ -3,7 +3,19 @@
 # rpc-guard allowlist proxy is exposed.
 
 play.example.com {
-	reverse_proxy 127.0.0.1:3000
+	reverse_proxy 127.0.0.1:3000 {
+		# Caddy APPENDS to an inbound X-Forwarded-For rather than replacing it,
+		# so without these a request carrying `X-Forwarded-For: 1.2.3.4` reaches
+		# the app as `1.2.3.4, <real ip>`. The app's per-IP rate limits (trader,
+		# faucet) key off this header, and a forgeable key means no limit at all.
+		#
+		# Overwrite both headers with the actual TCP peer so nothing
+		# caller-supplied survives the hop. `lib/trader-server/rate-limit.ts`
+		# independently reads the LAST XFF entry, so the limits hold even if this
+		# block is dropped — belt and braces, since they fail open.
+		header_up X-Forwarded-For {remote_host}
+		header_up X-Real-IP {remote_host}
+	}
 }
 
 rpc.example.com {

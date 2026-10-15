@@ -5,6 +5,7 @@ import { z } from "zod";
 
 import { ecosystemTemplateAbi } from "@abis/generated";
 import { getOwnerSigner, getPublicClient } from "@/lib/server/realm-signer";
+import { withSignerLock } from "@/lib/server/signer-nonce-lock";
 import { fetchBossClears } from "@/lib/reads/boss-clears";
 import {
   buildContributionProof,
@@ -114,22 +115,37 @@ export async function POST(req: Request) {
   const owner = getOwnerSigner(preset);
   const publicClient = getPublicClient();
 
+  // Serialize the nonce read + broadcast against every other tx signed by
+  // this same starter-owner key. `getOwnerSigner(preset)` is the identical
+  // key `/api/realm/mint-loot` uses on its starter path, so a seed claim
+  // racing a starter-realm loot mint would otherwise have both read the
+  // same `pending` nonce and the loser revert "nonce too low". Letting viem
+  // resolve the nonce internally does NOT avoid this — it just moves the
+  // read inside `writeContract`, still outside the lock. Receipt waiting
+  // stays outside the lock. See lib/server/signer-nonce-lock.ts.
   let hash: `0x${string}`;
   try {
-    hash = await owner.wallet.writeContract({
-      address: realm,
-      abi: ecosystemTemplateAbi,
-      functionName: "triggerSeedMint",
-      args: [
-        player,
-        {
-          metricHashes: [...proof.metricHashes],
-          timestamps: [...proof.timestamps],
-          eventReferences: [...proof.eventReferences],
-        },
-      ],
-      account: owner.account,
-      chain: owner.wallet.chain,
+    hash = await withSignerLock(owner.account.address, async () => {
+      const nonce = await publicClient.getTransactionCount({
+        address: owner.account.address,
+        blockTag: "pending",
+      });
+      return owner.wallet.writeContract({
+        address: realm,
+        abi: ecosystemTemplateAbi,
+        functionName: "triggerSeedMint",
+        args: [
+          player,
+          {
+            metricHashes: [...proof.metricHashes],
+            timestamps: [...proof.timestamps],
+            eventReferences: [...proof.eventReferences],
+          },
+        ],
+        account: owner.account,
+        chain: owner.wallet.chain,
+        nonce,
+      });
     });
   } catch (e) {
     return reply(500, {
@@ -139,8 +155,24 @@ export async function POST(req: Request) {
     });
   }
 
-  const receipt = await publicClient.waitForTransactionReceipt({ hash });
-  if (receipt.status !== "success") {
+  // RPC timeout / network drop while waiting for the receipt. The tx was
+  // already broadcast (we have `hash`), so surface it instead of throwing:
+  // an unhandled throw here yields a bodyless 500 that crashes the client's
+  // `res.json()` parse with "Unexpected end of JSON input" — and this is the
+  // Seed claim, the one action a player cannot simply retry blind. Mirrors
+  // the receipt handling in `/api/realm/mint-loot`.
+  let receiptStatus: "success" | "reverted";
+  try {
+    const receipt = await publicClient.waitForTransactionReceipt({ hash });
+    receiptStatus = receipt.status;
+  } catch (e) {
+    return reply(504, {
+      ok: false,
+      reason: "receipt_timeout",
+      message: `waitForTransactionReceipt failed for tx ${hash}: ${e instanceof Error ? e.message : String(e)}`,
+    });
+  }
+  if (receiptStatus !== "success") {
     return reply(502, {
       ok: false,
       reason: "tx_reverted",

@@ -4,6 +4,17 @@ import "server-only";
  * Per-signer serialization of the `read-nonce → broadcast` critical
  * section.
  *
+ * EVERY server-side write must go through this lock. A mutex only holds
+ * if all writers on a key participate — a single path that lets viem
+ * resolve the nonce internally silently breaks the invariant for all the
+ * others, because that read still happens outside the lock. Current
+ * participants:
+ *
+ *   - `/api/realm/mint-loot`     — starter owner or per-realm delegate
+ *   - `/api/realm/boss-cleared`  — same keys as above
+ *   - `/api/realm/claim-seed`    — starter owner (shared with mint-loot)
+ *   - all four trader actions    — via `lib/trader-server/send.ts`
+ *
  * `/api/realm/mint-loot` and `/api/realm/boss-cleared` both sign
  * `mintAsset` from the same realm-owner / player-realm delegate key.
  * At end-of-descent the client fires the loot batch and the boss
