@@ -71,7 +71,6 @@ function sanitizeNames(names: readonly string[]): CatalogEffectName[] {
     if ((CATALOG_EFFECT_NAMES as readonly string[]).includes(n)) {
       out.push(n as CatalogEffectName);
     } else if (typeof console !== "undefined" && n !== "") {
-      // eslint-disable-next-line no-console
       console.warn(`[catalog-effects] dropping unknown effect name "${n}"`);
     }
   }

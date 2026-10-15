@@ -16,7 +16,6 @@
  * entry, 25th/75th percentile HP at boss entry (so we can see if "you
  * arrived chipped" is reliable or random), and death-depth histogram.
  */
-/* eslint-disable no-console */
 
 import type {
   AssetCard,

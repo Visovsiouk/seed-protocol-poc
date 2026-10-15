@@ -25,7 +25,6 @@
  * Output is a markdown table — paste it straight into a tuning
  * note when adjusting bank stats.
  */
-/* eslint-disable no-console */
 
 import type {
   AssetCard,

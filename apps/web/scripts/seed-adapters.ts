@@ -62,7 +62,6 @@ import {
   buildSeederClients,
   type PublicClientT,
   type Signer,
-  type WalletClientT,
 } from "./lib/seeder-client";
 
 // ---------------------------------------------------------------------------
