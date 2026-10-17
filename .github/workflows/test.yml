@@ -60,6 +60,14 @@ jobs:
       - name: Configure env (dev defaults, no secrets)
         run: cp apps/web/.env.example apps/web/.env.local
 
+      # `pnpm lint` exists but was never wired in here, so ESLint drift was
+      # invisible to CI. The script pins `--max-warnings 3`, which is the
+      # current baseline: three pre-existing react-hooks/exhaustive-deps
+      # findings. Any NEW warning fails the build. Decrement the ceiling as
+      # those three are fixed — the target is 0.
+      - name: Lint
+        run: pnpm lint
+
       - name: Typecheck
         run: pnpm typecheck
 

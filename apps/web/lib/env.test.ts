@@ -1,11 +1,12 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 // lib/env parses publicSchema at module load, so the public vars must exist
 // before the import — hence the dynamic import below rather than a static one.
 process.env.NEXT_PUBLIC_CHAIN = "anvil";
 process.env.NEXT_PUBLIC_RPC_URL = "http://127.0.0.1:8545";
 
-const { getServerEnv, isPlaceholderPrivateKey } = await import("@/lib/env");
+const { getRealmRateLimits, getServerEnv, isPlaceholderPrivateKey } =
+  await import("@/lib/env");
 
 const ZERO_KEY = `0x${"0".repeat(64)}`;
 // Anvil default account #8 — safe to hardcode in a test.
@@ -40,5 +41,36 @@ describe("getServerEnv", () => {
   it("accepts a real TRADER_PRIVATE_KEY", () => {
     stubServerEnv(REAL_KEY);
     expect(getServerEnv().TRADER_PRIVATE_KEY).toBe(REAL_KEY);
+  });
+});
+
+describe("getRealmRateLimits", () => {
+  it("falls back to defaults when unset", () => {
+    delete process.env.REALM_WRITE_RATE_LIMIT_PER_IP_PER_10MIN;
+    delete process.env.REALM_READ_RATE_LIMIT_PER_IP_PER_10MIN;
+    expect(getRealmRateLimits()).toEqual({
+      REALM_WRITE_RATE_LIMIT_PER_IP_PER_10MIN: 60,
+      REALM_READ_RATE_LIMIT_PER_IP_PER_10MIN: 300,
+    });
+  });
+
+  it("resolves even when the full server env is unusable", async () => {
+    // Regression guard. `withRealmGuards` wraps /api/realm/list and
+    // /[address]/meta, neither of which needs a trader or signer key. Reading
+    // the limits through getServerEnv() would couple them to
+    // TRADER_PRIVATE_KEY and 500 those routes on any install that has not run
+    // `pnpm seed:trader` — a rate limit must not stop working because an
+    // unrelated secret is unset.
+    //
+    // Needs a fresh module: the suite above already cached a successful
+    // getServerEnv() parse, so the shared instance would never throw here.
+    stubServerEnv(ZERO_KEY);
+    vi.resetModules();
+    const fresh = await import("@/lib/env");
+
+    expect(() => fresh.getServerEnv()).toThrow();
+    expect(
+      fresh.getRealmRateLimits().REALM_WRITE_RATE_LIMIT_PER_IP_PER_10MIN,
+    ).toBeGreaterThan(0);
   });
 });

@@ -6,7 +6,7 @@
     "dev": "node scripts/ensure-generated.mjs && next dev",
     "build": "node scripts/ensure-generated.mjs && next build",
     "start": "next start",
-    "lint": "next lint",
+    "lint": "node scripts/ensure-generated.mjs && eslint . --max-warnings 3",
     "typecheck": "node scripts/ensure-generated.mjs && tsc --noEmit",
     "test": "node scripts/ensure-generated.mjs && vitest run",
     "test:watch": "node scripts/ensure-generated.mjs && vitest",
@@ -38,6 +38,7 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@eslint/eslintrc": "^3.3.7",
     "@playwright/test": "^1.48.0",
     "@tailwindcss/postcss": "^4.0.0",
     "@types/better-sqlite3": "^7.6.13",

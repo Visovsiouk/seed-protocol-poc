@@ -5,6 +5,7 @@ import { NextResponse } from "next/server";
 import { listPlayerRealms } from "@/lib/server/realm-db";
 import { fetchRealmTierProgress } from "@/lib/reads/realm-tier";
 import { getSeededSchemaIds } from "@/lib/contracts/seeded-realms";
+import { withRealmGuards } from "@/lib/server/realm-guards";
 
 /**
  * `GET /api/realm/list`
@@ -21,7 +22,7 @@ import { getSeededSchemaIds } from "@/lib/contracts/seeded-realms";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+async function handleList() {
   const rows = listPlayerRealms();
   // Tier is earned per-realm from each realm's on-chain distinct-clearer
   // count, so this fans out one scan per realm. The scan is memoized
@@ -54,3 +55,6 @@ export async function GET() {
   );
   return NextResponse.json({ ok: true as const, realms });
 }
+
+// Rate limit + JSON-guaranteed error envelope. See lib/server/realm-guards.ts.
+export const GET = withRealmGuards("read", handleList);

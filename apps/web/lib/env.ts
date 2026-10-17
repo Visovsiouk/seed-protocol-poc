@@ -88,6 +88,50 @@ const serverSchema = z.object({
     .default(5),
 });
 
+/**
+ * Realm-route rate limits (see `lib/server/realm-guards.ts`).
+ *
+ * Parsed SEPARATELY from `serverSchema` on purpose. `getServerEnv()` validates
+ * the whole server surface — including `TRADER_PRIVATE_KEY`, whose all-zeros
+ * placeholder is deliberately rejected — so reading the limits through it
+ * would make `/api/realm/list` and `/api/realm/[address]/meta` fail on any
+ * install that hasn't run `pnpm seed:trader`. Those two routes need neither a
+ * trader nor a signer key today, and a rate limit must not stop working
+ * because an unrelated secret is unset.
+ *
+ * Split write/read so UI polling of the read routes can never exhaust the
+ * budget for the routes that sign transactions. The write default is
+ * deliberately generous: end-of-descent fires a batch of `mint-loot` calls
+ * plus one `boss-cleared`, so a single run can spend several. 60 leaves room
+ * for repeated back-to-back runs while still bounding a tampered client,
+ * which previously had no ceiling at all. Lower it if the demo is ever
+ * fronted by a shared NAT where one IP is many players.
+ */
+const realmRateLimitSchema = z.object({
+  REALM_WRITE_RATE_LIMIT_PER_IP_PER_10MIN: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(60),
+  REALM_READ_RATE_LIMIT_PER_IP_PER_10MIN: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(300),
+});
+
+export type RealmRateLimits = z.infer<typeof realmRateLimitSchema>;
+
+let cachedRealmRateLimits: RealmRateLimits | null = null;
+
+/** Lazily parse the realm rate limits. Both fields have defaults, so this
+ * cannot throw on a bare environment. */
+export function getRealmRateLimits(): RealmRateLimits {
+  if (cachedRealmRateLimits) return cachedRealmRateLimits;
+  cachedRealmRateLimits = realmRateLimitSchema.parse(process.env);
+  return cachedRealmRateLimits;
+}
+
 export const publicEnv = publicSchema.parse({
   NEXT_PUBLIC_CHAIN: process.env.NEXT_PUBLIC_CHAIN,
   NEXT_PUBLIC_RPC_URL: process.env.NEXT_PUBLIC_RPC_URL,

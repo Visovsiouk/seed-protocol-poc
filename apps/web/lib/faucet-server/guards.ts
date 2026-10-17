@@ -1,6 +1,10 @@
 import { z } from "zod";
 
 import { addressSchema } from "@/lib/validation/schemas";
+import {
+  createSlidingWindowLimiter,
+  type SlidingWindowLimiter,
+} from "@/lib/server/rate-limit";
 
 /**
  * Pure faucet guards — no `server-only`, no RPC, no env. Kept dependency-free
@@ -22,13 +26,15 @@ export const faucetBodySchema = z.object({
 export type FaucetBody = z.infer<typeof faucetBodySchema>;
 
 /**
- * Per-IP sliding-window rate limit, mirroring lib/trader-server/rate-limit.ts
- * but with its own in-process bucket so faucet calls don't share a budget with
- * trader calls. `max` is passed in (from env) to keep this module env-free.
+ * Per-IP faucet rate limit. Window and key-eviction mechanics come from
+ * `lib/server/rate-limit.ts` (shared with the trader and realm routes), but
+ * the faucet keeps its OWN limiter instance so faucet calls don't share a
+ * budget with trader calls. `max` is still passed in (from env) to keep this
+ * module env-free and testable.
+ *
+ * The bucket this replaced pruned timestamps within a key but never dropped
+ * the keys themselves, so the Map grew for the life of the process.
  */
-const buckets = new Map<string, number[]>();
-const WINDOW_MS = 10 * 60 * 1000;
-
 export class FaucetRateLimitError extends Error {
   constructor() {
     super("Faucet rate limit exceeded");
@@ -36,22 +42,17 @@ export class FaucetRateLimitError extends Error {
   }
 }
 
+// `max` arrives per call (the route reads it from env), so it is passed to
+// `allow` rather than baked in at construction. Rebuilding the limiter when
+// the ceiling changed would drop every bucket and hand a fresh budget to
+// everyone currently throttled.
+const limiter: SlidingWindowLimiter = createSlidingWindowLimiter({ max: 0 });
+
 export function enforceFaucetRateLimit(ip: string, max: number): void {
-  const now = Date.now();
-  const cutoff = now - WINDOW_MS;
-
-  const history = buckets.get(ip) ?? [];
-  const recent = history.filter((t) => t > cutoff);
-
-  if (recent.length >= max) {
-    throw new FaucetRateLimitError();
-  }
-
-  recent.push(now);
-  buckets.set(ip, recent);
+  if (!limiter.allow(ip, max)) throw new FaucetRateLimitError();
 }
 
 /** Test-only: clears the rate-limit buckets between cases. */
 export function __resetFaucetRateLimit(): void {
-  buckets.clear();
+  limiter.reset();
 }

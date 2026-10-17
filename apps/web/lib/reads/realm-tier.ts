@@ -1,5 +1,6 @@
 import { ecosystemTemplateAbi } from "@abis/generated";
 import type { Tier } from "@/lib/engine/types";
+import { mapWithConcurrency } from "@/lib/util/concurrency";
 
 /**
  * Per-realm earned tier (replaces the old global count-driven curve).
@@ -50,6 +51,37 @@ const clearerCache = new Map<
 >();
 
 /**
+ * Cap on memoized realms. Keys are registered realms, which only grow (every
+ * Seed holder can author one), and nothing here ever expired a key — entries
+ * were overwritten on refresh but never removed, so the Map was monotonic for
+ * the life of the process. Eviction only costs a re-scan.
+ */
+const CLEARER_CACHE_MAX_KEYS = 512;
+
+/**
+ * Drops expired entries, then least-recently-written ones until the cache is
+ * back under its ceiling. Map iteration is insertion-ordered and every write
+ * deletes before re-inserting, so the front is always the oldest write.
+ */
+function evictClearerCache(now: number): void {
+  for (const [key, entry] of clearerCache) {
+    if (entry.expiry <= now) clearerCache.delete(key);
+  }
+  while (clearerCache.size > CLEARER_CACHE_MAX_KEYS) {
+    const oldest = clearerCache.keys().next();
+    if (oldest.done) break;
+    clearerCache.delete(oldest.value);
+  }
+}
+
+/**
+ * Concurrency ceiling for the per-token schemaId hydration below. One request
+ * previously issued one RPC call per `AssetMinted` event in a realm's entire
+ * history, all at once.
+ */
+const HYDRATE_CONCURRENCY = 8;
+
+/**
  * Scans the realm clone's full `AssetMinted` history (UNCAPPED — the loot
  * cap must be accurate; do not reuse realm-stats' `scanLimit` window) once,
  * yielding both the raw mint count and the distinct-clearer count (hydrating
@@ -84,8 +116,15 @@ async function fetchRealmActivityCounts(args: {
   const clearId = Number(clearReceiptSchemaId);
   const clearers = new Set<string>();
 
-  await Promise.all(
-    events.map(async (ev) => {
+  // The event scan above stays UNCAPPED (the tier cap must be accurate), but
+  // the per-token hydration below is throttled: `Promise.all(events.map(...))`
+  // turned one unauthenticated request into one concurrent RPC call per event
+  // in the realm's whole history. The fan-out grew with realm popularity, and
+  // `/api/realm/list` nested it once per realm. Bounding concurrency keeps the
+  // count exact while making the load independent of history length.
+  await mapWithConcurrency(
+    events,
+    async (ev) => {
       const a = ev.args as { tokenId?: bigint; recipient?: `0x${string}` };
       if (a.tokenId === undefined || a.recipient === undefined) return;
       try {
@@ -97,14 +136,19 @@ async function fetchRealmActivityCounts(args: {
         // Token hydration failed (e.g. revert on an unindexed token) — skip
         // it. A missed read can only undercount, never inflate the cap.
       }
-    }),
+    },
+    HYDRATE_CONCURRENCY,
   );
 
   const value: RealmActivityCounts = {
     distinctClearers: clearers.size,
     totalMints: events.length,
   };
+  // Delete before set so insertion order tracks write recency, which is what
+  // `evictClearerCache` relies on to pick its victim.
+  clearerCache.delete(key);
   clearerCache.set(key, { value, expiry: now + CLEARER_TTL_MS });
+  if (clearerCache.size > CLEARER_CACHE_MAX_KEYS) evictClearerCache(now);
   return value;
 }
 

@@ -3,13 +3,15 @@ import "server-only";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { ecosystemTemplateAbi } from "@abis/generated";
+import { ecosystemTemplateAbi, universalAssetAbi } from "@abis/generated";
+import { getAddress } from "@/lib/contracts/addresses";
 import {
   getOwnerSigner,
   getPlayerRealmSigner,
   getPublicClient,
 } from "@/lib/server/realm-signer";
 import { withSignerLock } from "@/lib/server/signer-nonce-lock";
+import { withRealmGuards } from "@/lib/server/realm-guards";
 import {
   getSeededRealm,
   getSeededSchemaIds,
@@ -67,9 +69,14 @@ export const dynamic = "force-dynamic";
  * run-seed commitment; until that ships, the server trusts the body and
  * mints on the player's behalf.
  *
- * Deterministic tokenId derivation means re-submitting the same body is
- * idempotent against `UniversalAsset.create` — the chain will either
- * mint or no-op, but the player can't conjure duplicates by retrying.
+ * Idempotency: the tokenId is derived deterministically from
+ * `(realm, runSeed, depth, nameSeed)`, so a replay of the same body targets
+ * the same tokenId. That alone does NOT make the mint idempotent —
+ * `mintAsset` is an ERC-1155 mint of amount 1, so a replay *adds* a second
+ * copy rather than no-op'ing. (An earlier version of this comment claimed
+ * the chain would no-op; it does not. Verified against anvil: replaying one
+ * body drove `balanceOf` 4 → 7.) Replay is therefore blocked here, by the
+ * `balanceOf` probe below — the same guard `/api/realm/boss-cleared` uses.
  *
  * Hardening — current state:
  *
@@ -220,7 +227,7 @@ function reply(
   return NextResponse.json(body, { status });
 }
 
-export async function POST(req: Request) {
+async function handleMintLoot(req: Request) {
   let body: Body;
   try {
     const raw = await req.json();
@@ -387,20 +394,53 @@ export async function POST(req: Request) {
     : getOwnerSigner(body.preset);
   const publicClient = getPublicClient();
 
-  // Serialize the nonce read + broadcast against every other mint signed
-  // by this same key (sibling loot mints in the batch loop, and the boss
-  // clear-receipt mint that fires alongside it). The lock keeps
+  // Serialize the replay probe + nonce read + broadcast against every other
+  // mint signed by this same key (sibling loot mints in the batch loop, and
+  // the boss clear-receipt mint that fires alongside it). The lock keeps
   // `getTransactionCount(pending)` and `writeContract` atomic per signer
   // so two concurrent routes can't both grab the same nonce and revert
   // "nonce too low". Receipt waiting stays outside the lock.
-  let hash: `0x${string}`;
+  //
+  // The `balanceOf` probe lives INSIDE the lock on purpose. Outside it, N
+  // concurrent replays of one body would every one of them read a zero
+  // balance before any had broadcast, and every one would mint — the
+  // duplication hole, just parallelised. Serializing check-and-mint per
+  // signer is what actually closes it.
+  let outcome: { kind: "already_minted" } | { kind: "sent"; hash: `0x${string}` };
   try {
-    hash = await withSignerLock(signer.account.address, async () => {
+    outcome = await withSignerLock(signer.account.address, async () => {
+      // Replay guard. `mintAsset` is an ERC-1155 mint of amount 1, so a
+      // second call with the same deterministic tokenId adds a copy instead
+      // of no-op'ing — a captured request could otherwise be replayed to
+      // farm unlimited copies of a valid item (and loot is tradeable on the
+      // bazaar with royalties).
+      //
+      // Read at `pending`, not `latest`: the sibling mint ahead of us in
+      // this queue has broadcast but may not be mined yet. anvil automines
+      // so `latest` would usually do, but base-sepolia (the stated migration
+      // target) would leave a window.
+      //
+      // Fails OPEN on a read error, matching `/api/realm/boss-cleared`: the
+      // probe talks to our own RPC over loopback, so a caller cannot force
+      // it to fail, and a broken mint flow is worse than a rare duplicate.
+      try {
+        const existing = (await publicClient.readContract({
+          address: getAddress("universalAsset"),
+          abi: universalAssetAbi,
+          functionName: "balanceOf",
+          args: [body.recipient as `0x${string}`, tokenId],
+          blockTag: "pending",
+        })) as bigint;
+        if (existing > 0n) return { kind: "already_minted" } as const;
+      } catch {
+        // RPC read failed — fall through and attempt the mint.
+      }
+
       const nonce = await publicClient.getTransactionCount({
         address: signer.account.address,
         blockTag: "pending",
       });
-      return signer.wallet.writeContract({
+      const sent = await signer.wallet.writeContract({
         address: realm,
         abi: ecosystemTemplateAbi,
         functionName: "mintAsset",
@@ -418,6 +458,7 @@ export async function POST(req: Request) {
         chain: signer.wallet.chain,
         nonce,
       });
+      return { kind: "sent", hash: sent } as const;
     });
   } catch (e) {
     return reply(500, {
@@ -426,6 +467,18 @@ export async function POST(req: Request) {
       message: e instanceof Error ? e.message : String(e),
     });
   }
+
+  // Replay of an already-minted tokenId. Reported as success — the caller's
+  // intended end state holds — with an empty txHash, since this request
+  // broadcast nothing. Mirrors `/api/realm/boss-cleared`.
+  if (outcome.kind === "already_minted") {
+    return reply(200, {
+      ok: true,
+      tokenId: tokenId.toString(),
+      txHash: "0x" as `0x${string}`,
+    });
+  }
+  const hash = outcome.hash;
 
   let receiptStatus: "success" | "reverted";
   try {
@@ -452,3 +505,6 @@ export async function POST(req: Request) {
 
   return reply(200, { ok: true, tokenId: tokenId.toString(), txHash: hash });
 }
+
+// Rate limit + JSON-guaranteed error envelope. See lib/server/realm-guards.ts.
+export const POST = withRealmGuards("write", handleMintLoot);

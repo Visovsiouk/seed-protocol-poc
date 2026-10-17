@@ -10,6 +10,7 @@ import {
   getPublicClient,
 } from "@/lib/server/realm-signer";
 import { withSignerLock } from "@/lib/server/signer-nonce-lock";
+import { withRealmGuards } from "@/lib/server/realm-guards";
 import {
   getSeededRealm,
   getSeededSchemaIds,
@@ -100,7 +101,7 @@ function reply(
   return NextResponse.json(body, { status });
 }
 
-export async function POST(req: Request) {
+async function handleBossCleared(req: Request) {
   let body: Body;
   try {
     const raw = await req.json();
@@ -195,42 +196,50 @@ export async function POST(req: Request) {
     : getOwnerSigner(body.preset);
   const publicClient = getPublicClient();
 
-  // Idempotency: a deterministic tokenId means re-submitting the same run
-  // (e.g. double-tap, network retry) must not produce a second on-chain mint.
-  // Fail open on RPC error — the mintAsset call below will still revert if the
-  // contract enforces uniqueness, and a duplicate receipt is preferable to a
-  // broken mint flow.
+  // Serialize the replay probe + nonce read + broadcast against every other
+  // mint signed by this same key (the end-of-descent loot batch in
+  // particular). The lock keeps `getTransactionCount(pending)` and
+  // `writeContract` atomic per signer so two concurrent routes can't both
+  // grab the same nonce and revert "nonce too low". Receipt waiting stays
+  // outside the lock.
+  let outcome: { kind: "already_minted" } | { kind: "sent"; hash: `0x${string}` };
   try {
-    const existingBalance = await publicClient.readContract({
-      address: getAddress("universalAsset"),
-      abi: universalAssetAbi,
-      functionName: "balanceOf",
-      args: [player, tokenId],
-    });
-    if (existingBalance > 0n) {
-      return reply(200, {
-        ok: true,
-        tokenId: tokenId.toString(),
-        txHash: "0x" as `0x${string}`,
-      });
-    }
-  } catch {
-    // RPC read failed — proceed to mint attempt.
-  }
+    outcome = await withSignerLock(signer.account.address, async () => {
+      // Idempotency: a deterministic tokenId means re-submitting the same run
+      // (e.g. double-tap, network retry) must not produce a second on-chain
+      // mint. `mintAsset` is an ERC-1155 mint of amount 1 — it adds a copy
+      // rather than no-op'ing — so this probe is the only thing stopping a
+      // replay.
+      //
+      // Moved INSIDE the lock (it used to run before it): outside, N
+      // concurrent replays of one body would all read a zero balance before
+      // any had broadcast, and all would mint. Sequential replays were
+      // blocked, concurrent ones were not.
+      //
+      // Read at `pending`, not `latest`, so a sibling mint ahead of us in
+      // this queue is visible even before it is mined.
+      //
+      // Fails open on RPC error — the probe talks to our own RPC over
+      // loopback, so a caller cannot force it to fail, and a duplicate
+      // receipt is preferable to a broken mint flow.
+      try {
+        const existingBalance = (await publicClient.readContract({
+          address: getAddress("universalAsset"),
+          abi: universalAssetAbi,
+          functionName: "balanceOf",
+          args: [player, tokenId],
+          blockTag: "pending",
+        })) as bigint;
+        if (existingBalance > 0n) return { kind: "already_minted" } as const;
+      } catch {
+        // RPC read failed — proceed to mint attempt.
+      }
 
-  // Serialize the nonce read + broadcast against every other mint signed
-  // by this same key (the end-of-descent loot batch in particular). The
-  // lock keeps `getTransactionCount(pending)` and `writeContract` atomic
-  // per signer so two concurrent routes can't both grab the same nonce
-  // and revert "nonce too low". Receipt waiting stays outside the lock.
-  let hash: `0x${string}`;
-  try {
-    hash = await withSignerLock(signer.account.address, async () => {
       const nonce = await publicClient.getTransactionCount({
         address: signer.account.address,
         blockTag: "pending",
       });
-      return signer.wallet.writeContract({
+      const sent = await signer.wallet.writeContract({
         address: realm,
         abi: ecosystemTemplateAbi,
         functionName: "mintAsset",
@@ -248,6 +257,7 @@ export async function POST(req: Request) {
         chain: signer.wallet.chain,
         nonce,
       });
+      return { kind: "sent", hash: sent } as const;
     });
   } catch (e) {
     return reply(500, {
@@ -256,6 +266,17 @@ export async function POST(req: Request) {
       message: e instanceof Error ? e.message : String(e),
     });
   }
+
+  // Replay of an already-minted receipt: success, empty txHash (nothing was
+  // broadcast by this request).
+  if (outcome.kind === "already_minted") {
+    return reply(200, {
+      ok: true,
+      tokenId: tokenId.toString(),
+      txHash: "0x" as `0x${string}`,
+    });
+  }
+  const hash = outcome.hash;
 
   let receiptStatus: "success" | "reverted";
   try {
@@ -282,3 +303,6 @@ export async function POST(req: Request) {
 
   return reply(200, { ok: true, tokenId: tokenId.toString(), txHash: hash });
 }
+
+// Rate limit + JSON-guaranteed error envelope. See lib/server/realm-guards.ts.
+export const POST = withRealmGuards("write", handleBossCleared);

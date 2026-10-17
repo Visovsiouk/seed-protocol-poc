@@ -105,7 +105,6 @@ export function useRovingGrid({
     const withinGrid = refs.current.some((r) => r && r === active);
     if (!withinGrid && didAutoFocus.current) return;
     el.focus({ preventScroll: false });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected]);
 
   /** Find the next enabled index from `from` stepping by `delta`, within

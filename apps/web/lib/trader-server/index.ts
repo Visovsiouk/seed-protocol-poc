@@ -18,11 +18,9 @@ import { getAddress } from "@/lib/contracts/addresses";
 import { getServerEnv } from "@/lib/env";
 import { loadTraderClient } from "./client";
 import { enforceFloat, FloatLowError } from "./float";
-import {
-  enforceRateLimit,
-  getClientIp,
-  RateLimitError,
-} from "./rate-limit";
+import { sendTraderTx } from "./send";
+import { enforceRateLimit, RateLimitError } from "./rate-limit";
+import { getClientIp } from "@/lib/server/client-ip";
 
 /**
  * Shared response envelope.
@@ -253,15 +251,18 @@ export async function doTraderBuy(body: z.infer<typeof buyBodySchema>) {
 
   const tier = await enforceAppraisal(publicClient, tokenId, price);
 
-  const txHash = await wallet.writeContract({
-    address: EXCHANGE(),
-    abi: protocolExchangeAbi,
-    functionName: "purchase",
-    args: [listingId],
-    value: price,
-    account,
-    chain: wallet.chain,
-  });
+  const txHash = await sendTraderTx((nonce) =>
+    wallet.writeContract({
+      address: EXCHANGE(),
+      abi: protocolExchangeAbi,
+      functionName: "purchase",
+      args: [listingId],
+      value: price,
+      account,
+      chain: wallet.chain,
+      nonce,
+    }),
+  );
   await publicClient.waitForTransactionReceipt({ hash: txHash });
   return { txHash, extra: { price: price.toString(), tier } };
 }
@@ -302,14 +303,17 @@ export async function doTraderList(body: z.infer<typeof listBodySchema>) {
     );
   }
 
-  const txHash = await wallet.writeContract({
-    address: EXCHANGE(),
-    abi: protocolExchangeAbi,
-    functionName: "list",
-    args: [tokenId, amount, price],
-    account,
-    chain: wallet.chain,
-  });
+  const txHash = await sendTraderTx((nonce) =>
+    wallet.writeContract({
+      address: EXCHANGE(),
+      abi: protocolExchangeAbi,
+      functionName: "list",
+      args: [tokenId, amount, price],
+      account,
+      chain: wallet.chain,
+      nonce,
+    }),
+  );
   const receipt = await publicClient.waitForTransactionReceipt({
     hash: txHash,
   });
@@ -349,14 +353,17 @@ export async function doTraderCancel(
     throw new Error("Trader is not the seller of this listing");
   }
 
-  const txHash = await wallet.writeContract({
-    address: EXCHANGE(),
-    abi: protocolExchangeAbi,
-    functionName: "cancel",
-    args: [listingId],
-    account,
-    chain: wallet.chain,
-  });
+  const txHash = await sendTraderTx((nonce) =>
+    wallet.writeContract({
+      address: EXCHANGE(),
+      abi: protocolExchangeAbi,
+      functionName: "cancel",
+      args: [listingId],
+      account,
+      chain: wallet.chain,
+      nonce,
+    }),
+  );
   await publicClient.waitForTransactionReceipt({ hash: txHash });
   return { txHash };
 }
@@ -436,15 +443,18 @@ export async function doTraderHail(body: z.infer<typeof hailBodySchema>) {
     );
   }
 
-  const txHash = await wallet.writeContract({
-    address: EXCHANGE(),
-    abi: protocolExchangeAbi,
-    functionName: "purchase",
-    args: [listingId],
-    value: price,
-    account,
-    chain: wallet.chain,
-  });
+  const txHash = await sendTraderTx((nonce) =>
+    wallet.writeContract({
+      address: EXCHANGE(),
+      abi: protocolExchangeAbi,
+      functionName: "purchase",
+      args: [listingId],
+      value: price,
+      account,
+      chain: wallet.chain,
+      nonce,
+    }),
+  );
   await publicClient.waitForTransactionReceipt({ hash: txHash });
   return { txHash, extra: { price: price.toString(), tier } };
 }
