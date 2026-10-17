@@ -27,6 +27,7 @@ const RUN_SEED = `0x${"ab".repeat(32)}` as const;
 const writeContract = vi.fn();
 const getTransactionCount = vi.fn();
 const waitForTransactionReceipt = vi.fn();
+const readContract = vi.fn();
 const getPlayerRealm = vi.fn();
 const countDistinctClearers = vi.fn();
 const getCatalogEffectsForSlot = vi.fn();
@@ -40,7 +41,15 @@ vi.mock("@/lib/server/realm-signer", () => ({
     account: { address: DELEGATE },
     wallet: { chain: { id: 31337 }, writeContract },
   }),
-  getPublicClient: () => ({ getTransactionCount, waitForTransactionReceipt }),
+  getPublicClient: () => ({
+    getTransactionCount,
+    waitForTransactionReceipt,
+    readContract,
+  }),
+}));
+
+vi.mock("@/lib/contracts/addresses", () => ({
+  getAddress: () => "0x6666666666666666666666666666666666666666",
 }));
 
 vi.mock("@/lib/server/realm-db", () => ({
@@ -157,6 +166,8 @@ describe("POST /api/realm/mint-loot", () => {
     getTransactionCount.mockResolvedValue(11);
     writeContract.mockResolvedValue(TX);
     waitForTransactionReceipt.mockResolvedValue({ status: "success" });
+    // No pre-existing copy of the tokenId: the replay probe sees zero.
+    readContract.mockResolvedValue(0n);
     getPlayerRealm.mockReturnValue(undefined);
     countDistinctClearers.mockResolvedValue(0);
     // Permissive by default; the registry-check test narrows it.
@@ -386,13 +397,107 @@ describe("POST /api/realm/mint-loot", () => {
     });
 
     it("derives the same tokenId for an identical resubmission", async () => {
-      // Idempotency claim in the route docblock: retrying the same body must
-      // not let a player conjure a second asset.
       const b = body();
       const first = await (await POST(post(b))).json();
       const second = await (await POST(post(b))).json();
 
       expect(first.tokenId).toBe(second.tokenId);
+    });
+  });
+
+  describe("replay guard", () => {
+    it("refuses to re-mint a tokenId the recipient already holds", async () => {
+      // `mintAsset` is an ERC-1155 mint of amount 1: a replay ADDS a copy
+      // rather than no-op'ing, so without this probe a captured request
+      // could be replayed to farm unlimited copies of a valid item.
+      // Measured live before the fix: balanceOf went 4 -> 7 over 3 replays.
+      readContract.mockResolvedValue(1n);
+
+      const res = await POST(post(body()));
+
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json.ok).toBe(true);
+      // Nothing was broadcast by this request.
+      expect(json.txHash).toBe("0x");
+      expect(writeContract).not.toHaveBeenCalled();
+    });
+
+    it("probes at `pending`, so an unmined sibling mint still counts", async () => {
+      // `latest` would miss the mint queued immediately ahead of us. anvil
+      // automines so it would usually pass there; base-sepolia would not.
+      await POST(post(body()));
+
+      expect(readContract).toHaveBeenCalledWith(
+        expect.objectContaining({
+          functionName: "balanceOf",
+          blockTag: "pending",
+        }),
+      );
+    });
+
+    it("blocks CONCURRENT replays, not just sequential ones", async () => {
+      // The reason the probe sits inside withSignerLock. Outside it, all N
+      // requests read zero before any broadcast and all N mint — the same
+      // duplication hole, parallelised. Model the chain: the balance goes
+      // to 1 once a mint has been sent.
+      let minted = 0n;
+      readContract.mockImplementation(async () => minted);
+      writeContract.mockImplementation(async () => {
+        minted = 1n;
+        return TX;
+      });
+
+      const b = body();
+      const results = await Promise.all([
+        POST(post(b)),
+        POST(post(b)),
+        POST(post(b)),
+        POST(post(b)),
+      ]);
+
+      expect(results.every((r) => r.status === 200)).toBe(true);
+      // Exactly one real broadcast across four concurrent identical requests.
+      expect(writeContract).toHaveBeenCalledOnce();
+
+      const bodies = await Promise.all(results.map((r) => r.json()));
+      expect(bodies.filter((j) => j.txHash === TX)).toHaveLength(1);
+      expect(bodies.filter((j) => j.txHash === "0x")).toHaveLength(3);
+      // All four agree on the tokenId.
+      expect(new Set(bodies.map((j) => j.tokenId)).size).toBe(1);
+    });
+
+    it("still mints distinct tokenIds concurrently", async () => {
+      // Guard against the fix over-reaching: a real end-of-descent loot
+      // batch is several DIFFERENT drops on one signer and must all land.
+      const perToken = new Map<string, bigint>();
+      readContract.mockImplementation(async (args: { args: unknown[] }) => {
+        return perToken.get(String(args.args[1])) ?? 0n;
+      });
+      writeContract.mockImplementation(async (args: { args: unknown[] }) => {
+        perToken.set(String(args.args[1]), 1n);
+        return TX;
+      });
+
+      const results = await Promise.all(
+        [0, 1, 2, 3].map((i) =>
+          POST(post(body({ runSeed: `0x${(i + 1).toString().repeat(64).slice(0, 64)}` }))),
+        ),
+      );
+
+      expect(results.every((r) => r.status === 200)).toBe(true);
+      expect(writeContract).toHaveBeenCalledTimes(4);
+    });
+
+    it("fails open and mints when the probe errors", async () => {
+      // The probe talks to our own RPC over loopback, so a caller cannot
+      // force this; a broken mint flow is worse than a rare duplicate.
+      readContract.mockRejectedValue(new Error("rpc down"));
+
+      const res = await POST(post(body()));
+
+      expect(res.status).toBe(200);
+      expect(writeContract).toHaveBeenCalledOnce();
     });
 
     it("502s when the mint reverts", async () => {

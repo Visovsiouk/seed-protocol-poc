@@ -255,6 +255,45 @@ describe("POST /api/realm/boss-cleared", () => {
       expect(res.status).toBe(200);
       expect(writeContract).toHaveBeenCalledOnce();
     });
+
+    it("probes at `pending`, so an unmined sibling mint still counts", async () => {
+      await POST(post(body()));
+
+      expect(readContract).toHaveBeenCalledWith(
+        expect.objectContaining({
+          functionName: "balanceOf",
+          blockTag: "pending",
+        }),
+      );
+    });
+
+    it("blocks CONCURRENT replays, not just sequential ones", async () => {
+      // The probe used to run before withSignerLock, which blocked
+      // sequential replays but not parallel ones: all N read a zero balance
+      // before any had broadcast, so all N minted. It now sits inside the
+      // lock, making check-and-mint atomic per signer.
+      let minted = 0n;
+      readContract.mockImplementation(async () => minted);
+      writeContract.mockImplementation(async () => {
+        minted = 1n;
+        return TX;
+      });
+
+      const b = body();
+      const results = await Promise.all([
+        POST(post(b)),
+        POST(post(b)),
+        POST(post(b)),
+        POST(post(b)),
+      ]);
+
+      expect(results.every((r) => r.status === 200)).toBe(true);
+      expect(writeContract).toHaveBeenCalledOnce();
+
+      const bodies = await Promise.all(results.map((r) => r.json()));
+      expect(bodies.filter((j) => j.txHash === TX)).toHaveLength(1);
+      expect(bodies.filter((j) => j.txHash === "0x")).toHaveLength(3);
+    });
   });
 
   describe("nonce handling", () => {
