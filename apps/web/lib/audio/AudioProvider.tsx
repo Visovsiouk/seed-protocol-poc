@@ -40,7 +40,12 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { applySettings, ensureEngine, isAudioSupported } from "./engine";
+import {
+  applySettings,
+  ensureEngine,
+  getEngine,
+  isAudioSupported,
+} from "./engine";
 import { DEFAULT_TRACK, type SfxId, type TrackId } from "./manifest";
 import * as music from "./music";
 import { play as playSfx, prefetchSfx } from "./sfx";
@@ -155,10 +160,20 @@ export function AudioProvider({ children }: { children: ReactNode }) {
     if (!isAudioSupported()) return;
 
     let done = false;
-    const unlock = () => {
+
+    /**
+     * Commit the unlock — but only once the clock is genuinely running.
+     *
+     * Creating an `AudioContext` is not the same as starting one. A
+     * gesture the browser doesn't trust, or simply declines, leaves it
+     * `suspended`; tearing the listeners down at that point would strand
+     * us silent with no way back. So we stay armed until `resume()` has
+     * actually taken, and every later gesture gets another go.
+     */
+    const finalize = () => {
       if (done) return;
-      const engine = ensureEngine(settingsRef.current);
-      if (!engine) return;
+      const engine = getEngine();
+      if (!engine || engine.ctx.state !== "running") return;
       done = true;
       setUnlocked(true);
       // Music only starts if the player has asked for it — otherwise
@@ -167,6 +182,17 @@ export function AudioProvider({ children }: { children: ReactNode }) {
       if (settingsRef.current.musicEnabled) music.start();
       prefetchSfx();
       remove();
+    };
+
+    const unlock = () => {
+      if (done) return;
+      const engine = ensureEngine(settingsRef.current);
+      if (!engine) return;
+      // Called inside the gesture handler so the browser counts it;
+      // resuming an already-running context is a no-op. The state check
+      // lives in `finalize` because resolution is async.
+      engine.ctx.resume().then(finalize).catch(() => {});
+      finalize();
     };
 
     // Capture phase so we unlock before any handler that might stop

@@ -81,15 +81,60 @@ let pending: Playing | null = null;
 let desired: TrackId = DEFAULT_TRACK;
 let started = false;
 /**
- * Pending retirement of an outgoing source.
+ * Outgoing sources still fading out, each with its own retirement timer.
  *
- * A `setTimeout` rather than `source.stop(when)` because a scheduled
- * stop is irrevocable: if the switch that triggered it gets superseded
- * (see `cancelPending`) we need to keep that source alive. Timer
- * accuracy is irrelevant here — by the time it fires the deck has
- * already been faded to silence.
+ * Per-source rather than one shared handle, which was a bug: two
+ * switches in quick succession made the second `clearTimeout` the
+ * first's retirement, so that source was never stopped. Since the second
+ * switch also reuses the deck the orphan was connected to — and ramps
+ * that deck's gain back to 1 — the abandoned track became audible again
+ * and played on top of the new one indefinitely.
+ *
+ * `setTimeout` rather than `source.stop(when)` because a scheduled stop
+ * is irrevocable, and a superseded switch (see `cancelPending`) needs to
+ * keep its source alive. Timer accuracy is irrelevant: by the time it
+ * fires the deck has already faded to silence.
  */
-let retireTimer: ReturnType<typeof setTimeout> | null = null;
+const retiring = new Map<AudioBufferSourceNode, ReturnType<typeof setTimeout>>();
+
+/**
+ * The source currently attached to each deck. Enforces the invariant the
+ * bug above violated: **at most one source per deck**. Taking a deck
+ * hard-stops whatever was on it.
+ */
+const deckSource: (AudioBufferSourceNode | null)[] = [null, null];
+
+/** Stop and detach a source now, cancelling any pending retirement. */
+function hardStop(src: AudioBufferSourceNode | null): void {
+  if (!src) return;
+  const timer = retiring.get(src);
+  if (timer !== undefined) {
+    clearTimeout(timer);
+    retiring.delete(src);
+  }
+  try {
+    src.stop();
+  } catch {
+    // Never started.
+  }
+  try {
+    src.disconnect();
+  } catch {
+    // Already detached.
+  }
+  for (let i = 0; i < deckSource.length; i++) {
+    if (deckSource[i] === src) deckSource[i] = null;
+  }
+}
+
+/** Retire `src` once its fade has finished. */
+function scheduleRetire(src: AudioBufferSourceNode, afterSeconds: number): void {
+  const timer = setTimeout(() => {
+    retiring.delete(src);
+    hardStop(src);
+  }, afterSeconds * 1000);
+  retiring.set(src, timer);
+}
 /** Set while a `setTrack` call is coalescing into a microtask. */
 let flushQueued = false;
 
@@ -129,15 +174,14 @@ function settle(now: number): void {
  */
 function cancelPending(e: Engine): void {
   if (!pending) return;
-  try {
-    pending.source.stop();
-  } catch {
-    // Never started; stop() on an unstarted source throws.
-  }
+  hardStop(pending.source);
   // Call off the retirement of the outgoing source — we're staying on it.
-  if (retireTimer !== null) {
-    clearTimeout(retireTimer);
-    retireTimer = null;
+  if (current) {
+    const timer = retiring.get(current.source);
+    if (timer !== undefined) {
+      clearTimeout(timer);
+      retiring.delete(current.source);
+    }
   }
   const now = e.ctx.currentTime;
   // Drop the queued fade-in, and restore the outgoing deck that this
@@ -173,6 +217,12 @@ function makeSource(
   timing: TrackTiming,
   deck: 0 | 1,
 ): AudioBufferSourceNode {
+  // Taking a deck evicts whatever was on it. Normally nothing is — but a
+  // rapid second switch can reach here while an earlier source is still
+  // fading out on this very deck, and we are about to ramp its gain back
+  // to 1. Without this the orphan becomes audible again and never stops.
+  hardStop(deckSource[deck]);
+
   const source = e.ctx.createBufferSource();
   source.buffer = buffer;
   source.loop = true;
@@ -182,6 +232,7 @@ function makeSource(
   // passes gapless and on-grid.
   source.loopEnd = timing.loopDuration;
   source.connect(e.decks[deck]);
+  deckSource[deck] = source;
   return source;
 }
 
@@ -259,21 +310,9 @@ function switchTo(e: Engine, trackId: TrackId, buffer: AudioBuffer): void {
   rampDeck(e, deck, 1, at, fade);
   rampDeck(e, from.deck, 0, at, fade);
 
-  // Release the outgoing source once it's inaudible, via a cancellable
-  // timer (see `retireTimer`).
-  if (retireTimer !== null) clearTimeout(retireTimer);
-  const outgoing = from.source;
-  retireTimer = setTimeout(
-    () => {
-      retireTimer = null;
-      try {
-        outgoing.stop();
-      } catch {
-        // Already stopped.
-      }
-    },
-    (plan.delaySeconds + fade + 0.1) * 1000,
-  );
+  // Release the outgoing source once it's inaudible. Its own timer, so a
+  // later switch can't cancel this one (see `retiring`).
+  scheduleRetire(from.source, plan.delaySeconds + fade + 0.1);
 
   pending = {
     trackId,
@@ -381,20 +420,18 @@ export function setEnabled(on: boolean): void {
   evictBuffersExcept([]);
 }
 
-/** Stop everything and reset the clock. Used on teardown/HMR. */
+/**
+ * Stop everything and reset the clock. Used by `setEnabled(false)` and
+ * on teardown/HMR.
+ *
+ * Sweeps the decks and the retiring set, not just `current`/`pending` —
+ * turning music off during a crossfade would otherwise leave the
+ * fading-out source running with nothing tracking it.
+ */
 export function stop(): void {
-  for (const p of [current, pending]) {
-    if (!p) continue;
-    try {
-      p.source.stop();
-    } catch {
-      // Already stopped.
-    }
-  }
-  if (retireTimer !== null) {
-    clearTimeout(retireTimer);
-    retireTimer = null;
-  }
+  for (const p of [current, pending]) hardStop(p?.source ?? null);
+  for (const src of [...retiring.keys()]) hardStop(src);
+  for (const src of [...deckSource]) hardStop(src);
   current = null;
   pending = null;
   started = false;
@@ -417,6 +454,13 @@ export function debugState(): {
   contextState: AudioContextState | null;
   /** Resident decoded audio, MB. Should stay near one track's worth. */
   decodedMB: number;
+  /**
+   * Sources still attached to a deck. Settles back to 1 between
+   * switches; 2 only while a crossfade is actually in flight. Anything
+   * above that, or a 2 that never comes down, is the overlapping-tracks
+   * bug returning.
+   */
+  liveSources: number;
 } {
   const e = getEngine();
   const bars = position();
@@ -431,5 +475,6 @@ export function debugState(): {
     pendingTrack: pending?.trackId ?? null,
     contextState: e?.ctx.state ?? null,
     decodedMB: +(decodedBytes() / 1048576).toFixed(1),
+    liveSources: deckSource.filter(Boolean).length,
   };
 }
