@@ -131,7 +131,15 @@ export default function CreatorRealmPlayPage() {
   useRealmTheme(preset, registered?.accent, "crt");
   // Creator realms inherit their genre's music; a custom accent only
   // retints the palette, not the score.
-  useRealmMusic(preset);
+  //
+  // Gated on `isFetched` because `preset` above folds two different
+  // states into one value: "this realm is unregistered, use the trial
+  // defaults" and "we haven't heard back yet". For the palette that
+  // distinction is invisible — the root default is fantasy either way —
+  // but music is loud about it: entering a cyberpunk realm would start
+  // the medieval score, then cross to cyberpunk a moment later when the
+  // metadata landed. `null` holds the menu theme until we actually know.
+  useRealmMusic(metaQuery.isFetched ? preset : null);
 
   const starterGear = useMemo(
     () => (address ? makeStarterGear(preset, address, realmName) : null),
