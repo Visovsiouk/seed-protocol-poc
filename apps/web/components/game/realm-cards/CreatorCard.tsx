@@ -4,6 +4,7 @@ import Link from "next/link";
 import type { RealmDisplay } from "@/lib/contracts/realm-display";
 import type { PlayerRealmMeta } from "@/lib/reads/hooks";
 import { shortAddress } from "@/lib/utils";
+import { trialRealmName } from "@/lib/contracts/realm-trial";
 import {
   PresetBadge,
   StatusPill,
@@ -30,7 +31,11 @@ export function CreatorCard({
   tabIndex?: number;
 }) {
   const isRegistered = !!meta;
-  const title = meta?.name ?? `Realm ${shortAddress(card.address)}`;
+  // Lowercased so the stand-in label matches the one staging and the play
+  // route derive from the same address.
+  const title =
+    meta?.name ??
+    trialRealmName(card.address.toLowerCase() as `0x${string}`);
   // Preset-themed palette when registered, neutral dashed border for
   // trial-mode (legacy) realms so the visual hierarchy still tells
   // them apart at a glance.

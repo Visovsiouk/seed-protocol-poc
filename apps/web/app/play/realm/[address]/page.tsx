@@ -50,9 +50,14 @@ import {
 } from "@/lib/persistence/use-equipped-hydration";
 import { shortAddress } from "@/lib/utils";
 import { isHexAddress } from "@/lib/validation/schemas";
-
-const TRIAL_PRESET: Preset = "fantasy";
-const TRIAL_BOSS_ID = "forest_hag";
+// Shared with the hub's loadout staging so the preview it shows and the run
+// this page boots agree on the stand-in flavor. See `lib/contracts/realm-trial.ts`.
+import {
+  TRIAL_PRESET,
+  TRIAL_BOSS_ID,
+  TRIAL_MAX_TIER,
+  trialRealmName,
+} from "@/lib/contracts/realm-trial";
 
 type RealmMeta = {
   address: `0x${string}`;
@@ -112,8 +117,9 @@ export default function CreatorRealmPlayPage() {
   const registered = metaQuery.data ?? null;
   const preset: Preset = registered?.preset ?? TRIAL_PRESET;
   const bossId: string = registered?.bossId ?? TRIAL_BOSS_ID;
-  const realmName: string = registered?.name ?? (address ? `Realm ${shortAddress(address)}` : "Unknown realm");
-  const maxTier: Tier = registered?.maxTier ?? 2;
+  const realmName: string =
+    registered?.name ?? (address ? trialRealmName(address) : "Unknown realm");
+  const maxTier: Tier = registered?.maxTier ?? TRIAL_MAX_TIER;
   const isRegistered = !!registered;
 
   const [csprngSeed, setCsprngSeed] = useState<`0x${string}` | null>(null);
