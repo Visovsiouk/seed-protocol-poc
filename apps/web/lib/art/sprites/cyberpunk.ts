@@ -373,41 +373,49 @@ export const CYBERPUNK_SPRITES: Readonly<Record<string, Sprite>> = {
     ],
   },
 
-  // Side profile, same as every other quadruped in the game. Chromed
-  // jaw and one lit optic are the only things separating it from a wolf.
+  // A street samurai, not an animal: "ripper" is the surgery, and the flavor
+  // bank arms it with an arm-blade, mono-claws and a wrist-launcher — all of
+  // which need a person to hang off.
+  //
+  // The one sprite in the bank that breaks bilateral symmetry, deliberately.
+  // Dressed like the punk and the ganger, it would be a third dark biped in
+  // the same stance; the blade swung out past the hip is a silhouette cue that
+  // survives at 32px, where a change of palette does not. Chrome runs up one
+  // side of the skull to the lit optic so the asymmetry reads as surgery
+  // rather than as a drawing mistake.
   ripper: {
     w: 32,
     h: 32,
     rows: [
       "................................",
       "................................",
+      "...........##########...........",
+      "..........#ddddddmmmm#..........",
+      "..........#hhhhhhhmmm#..........",
+      "..........#h##hhhmxxm#..........",
+      "..........#hhhhhhmmmm#..........",
+      "..........#hmmmmmmmmm#..........",
+      "...........#mmmmmmmm#...........",
+      ".........#DDDDDDDDDDDD#.........",
+      "........#hh#dddddddd#mm#........",
+      "........#hh#dmmddmmd#mm#........",
+      "........#hh#dmmddmmd#mm#........",
+      "........#hh#dddddddd#mm#........",
+      "........#hh#DDDDDDDD#mm#........",
+      ".......#hhh#DDDDDDDD#mm#........",
+      ".....#mmmmm#dddddddd#mm#........",
+      ".....#m#m#m#DDDDDDDD#MM#........",
+      "....#M#M#M##dd....dd##mm#.......",
+      "...........#dd....dd#.#mm#......",
+      "...........#dd....dd#.#mM#......",
+      "...........#dd....dd#..#MM#.....",
+      "..........#mmm....mmm#..#M#.....",
+      "..........#MMM....MMM#..........",
+      "..........####....####..........",
       "................................",
       "................................",
       "................................",
-      "......#..#......................",
-      ".....#a#.#a#....................",
-      ".....#aa##aa#...................",
-      "....#aaaaaaaa#..................",
-      "...#aaaaaaaaaa#.................",
-      "..#aaaaaaaaaaaa#................",
-      "..#aappaaaaaaaa#................",
-      ".#aaaaaaaaaaaaaa#...............",
-      "#mmaaaaaaaaaaaaaa#..............",
-      "#m#aaaaaaaaaaaaaaa#.............",
-      ".#aaaaaaaaaaaaa#................",
-      "..#aaaaaaaaaaaa#.....#####......",
-      "..#aaaaaaaaaaaaa#...#aaaaa#.....",
-      "..#aaaaaaaaaaaaaaaaaaaaaaa#.....",
-      "..#aaaaaaaaaaaaaaaaaaaaaaa#mm#..",
-      "...#AAAAAAAAAAAAAAAAAAAAAA#mm#..",
-      "....#AAAAAAAAAAAAAAAAAAAA#MM#...",
-      ".....#AAAAAAAAAAAAAAAAAA#.......",
-      "........#mmm#......#mmm#........",
-      "........#mmm#......#mmm#........",
-      "........#mmm#......#mmm#........",
-      "........#mmm#......#mmm#........",
-      "........#MMM#......#MMM#........",
-      "........#####......#####........",
+      "................................",
       "................................",
       "................................",
       "................................",

@@ -78,13 +78,16 @@ const TAGS: Readonly<Record<string, Family>> = {
   "scifi:oracle": "wisp",
 
   // ── cyberpunk ──────────────────────────────────────────────────────────────
+  // No beasts in this realm: the roster is people and machines. The two entries
+  // once tagged `beast` were both drawn as bipeds anyway — the ripper is a
+  // street samurai, the mascot a costume with a person's outline.
   "cyberpunk:street_punk": "humanoid",
   "cyberpunk:fixer": "humanoid",
-  "cyberpunk:ripper": "beast",
+  "cyberpunk:ripper": "humanoid",
   "cyberpunk:drone_swarm": "swarm",
   "cyberpunk:netrunner": "wisp",
   "cyberpunk:enforcer": "hulk",
-  "cyberpunk:ad_mascot": "beast",
+  "cyberpunk:ad_mascot": "humanoid",
   "cyberpunk:ganger_lieutenant": "humanoid",
   "cyberpunk:chrome_monk": "humanoid",
   "cyberpunk:ice_sentinel": "hulk",
