@@ -655,6 +655,30 @@ export type NarrationLine = {
   emphasis?: "info" | "damage" | "heal" | "drama";
 };
 
+/**
+ * A single swing's mechanical outcome, flattened for presentation.
+ *
+ * `resolveRound` already computes rich `PlayerSwing` / `MonsterSwing`
+ * records but spends them entirely on narration prose, so a UI layer
+ * wanting to react to "that was a crit" had no option but to pattern-
+ * match the English. These beats are the structured residue of each
+ * swing: enough to pick a sound or an animation, and nothing more.
+ *
+ * Purely additive and derived — nothing in the engine reads them back,
+ * and removing them would not change a single roll.
+ */
+export type CombatBeat = {
+  actor: "player" | "monster";
+  hit: boolean;
+  crit: boolean;
+  /** Natural-1 auto-miss. */
+  fumble: boolean;
+  /** Monster swings only: the player evaded, so no attack was rolled. */
+  dodged: boolean;
+  /** Damage dealt to the *other* party. 0 on a miss or dodge. */
+  damage: number;
+};
+
 export type EngineEvent =
   | { type: "RoomCleared"; depth: number }
   | { type: "BossCleared"; finalHp: number; turns: number }
@@ -667,4 +691,9 @@ export type StepResult = {
   /** 1..N narration lines to render after the step. */
   outcome: NarrationLine[];
   events: EngineEvent[];
+  /**
+   * Per-swing mechanical outcomes for this step, in resolution order.
+   * Empty for non-combat steps. Presentation-only — see `CombatBeat`.
+   */
+  beats: CombatBeat[];
 };

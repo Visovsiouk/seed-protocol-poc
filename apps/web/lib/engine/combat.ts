@@ -27,6 +27,7 @@ import type {
   ActionChoice,
   AssetCard,
   BossDef,
+  CombatBeat,
   CombatState,
   Element,
   MonsterDef,
@@ -121,6 +122,11 @@ export type CombatTickResult = {
   monsterDefeated: boolean;
   /** True when the player's HP reached zero during this round. */
   playerDefeated: boolean;
+  /**
+   * Per-swing mechanical outcomes, in resolution order. Presentation
+   * only — the engine never reads these back. See `CombatBeat`.
+   */
+  beats: CombatBeat[];
 };
 
 export type PlayerSwing = {
@@ -519,6 +525,7 @@ export function resolveRound(
   rng: Rng,
 ): CombatTickResult {
   const lines: NarrationLine[] = [];
+  const beats: CombatBeat[] = [];
 
   // --- 1. preTurn hook -----------------------------------------------------
   let s = state;
@@ -593,6 +600,14 @@ export function resolveRound(
       const swing = rollPlayerAttack(s, equipped, rng, {
         focusPrimed: i === 0 && wasFocusPrimed,
       });
+      beats.push({
+        actor: "player",
+        hit: swing.hit,
+        crit: swing.crit,
+        fumble: swing.fumble,
+        dodged: false,
+        damage: swing.hit ? swing.damage : 0,
+      });
       if (!swing.hit) {
         lines.push({
           text:
@@ -649,6 +664,14 @@ export function resolveRound(
     for (let i = 0; i < monsterSwings; i++) {
       if (playerDefeated || monsterDefeated) break;
       const ma = rollMonsterAttack(s, equipped, rng);
+      beats.push({
+        actor: "monster",
+        hit: ma.hit,
+        crit: ma.crit,
+        fumble: ma.fumble,
+        dodged: ma.dodged,
+        damage: ma.hit && !ma.dodged ? ma.damageToPlayer : 0,
+      });
       if (ma.dodged) {
         lines.push({ text: `You dodge ${monsterLower(s.monster)}'s attack.`, emphasis: "info" });
       } else if (!ma.hit) {
@@ -704,5 +727,5 @@ export function resolveRound(
   // Bump turn counter at the very end.
   s = { ...s, turn: s.turn + 1 };
 
-  return { state: s, lines, monsterDefeated, playerDefeated };
+  return { state: s, lines, monsterDefeated, playerDefeated, beats };
 }
