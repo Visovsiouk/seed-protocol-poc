@@ -45,6 +45,26 @@ test-results/
 # sqlite (player-realm metadata) + the pristine genesis snapshot
 apps/web/data/
 
+# audio — deliberately untracked, both the ~19MB of mp3 masters and the
+# ~10MB of built Opus loops the app serves. Deploying them is an rsync, not
+# a git pull; see deploy/README.md § "Audio assets".
+#
+# This is safe because nothing in the deploy path touches untracked files:
+# no script runs `git clean`/`git reset --hard`, and `next build` never reads
+# public/ (there's no `output: "standalone"`, so `next start` serves it live
+# from disk). They survive `git pull` and rebuilds exactly the way
+# apps/web/data/ does.
+#
+# A fresh clone therefore comes up silent, which the app handles — a missing
+# file just fails to decode and nothing plays. Regenerate the loops from the
+# masters with `pnpm --filter web audio:inspect --prepare-loops`, or get a
+# usable dev soundtrack with no masters at all via `--placeholders`.
+#
+# The masters are the ONLY way to re-cut the loops. Back them up somewhere
+# that isn't this working tree.
+apps/web/assets-src/
+apps/web/public/audio/
+
 # generated deploy data: the address book written by scripts/sync-addresses.mjs
 # and the three seeder caches. Committed templates live in
 # apps/web/lib/contracts/defaults/ and are copied in by

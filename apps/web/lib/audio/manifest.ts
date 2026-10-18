@@ -89,11 +89,13 @@ export type TrackDef = {
 /**
  * Cache-buster appended to every music URL.
  *
- * In production Caddy serves `/audio/*` off disk with
- * `max-age=31536000, immutable` (see deploy/Caddyfile) — without a
- * version in the URL that would pin the first download forever, and
- * re-cut loops would never reach anyone who had already loaded the site.
- * Caddy resolves the file ignoring the query, so this costs nothing.
+ * Nothing in front of the app caches hard enough to need this today —
+ * Next serves `public/` as `max-age=0`, so a re-cut propagates on its
+ * own. It's here because these are the only large, long-lived, *mutable*
+ * URLs the app has: put any proxy or CDN in front later and without a
+ * version in the path, returning players would keep the loops they first
+ * downloaded. A query string is the cheapest insurance against that, and
+ * static file servers ignore it when resolving the file.
  *
  * **Bump this whenever you re-run `--prepare-loops`.**
  */
