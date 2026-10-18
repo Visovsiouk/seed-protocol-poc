@@ -147,9 +147,46 @@ export function applySettings(settings: AudioSettings, rampSeconds = 0.08): void
 // Buffer loading
 // ---------------------------------------------------------------------------
 
+/**
+ * Decoded music, keyed by URL.
+ *
+ * These are big. `decodeAudioData` expands to raw float PCM, so at 48kHz
+ * stereo a three-minute track costs `48000 * 2 * 4 * 180` ≈ **70MB** —
+ * about thirty times the 2.4MB file it came from. Holding all four would
+ * be ~300MB of resident memory for background music, which is why
+ * `evictBuffersExcept` exists and why nothing is prefetched speculatively.
+ */
 const buffers = new Map<string, AudioBuffer>();
 /** In-flight decodes, so concurrent requests for one URL share a fetch. */
 const inFlight = new Map<string, Promise<AudioBuffer | null>>();
+
+/** Rough resident size of a decoded buffer, in bytes. */
+function bufferBytes(buf: AudioBuffer): number {
+  return buf.length * buf.numberOfChannels * 4;
+}
+
+/** Total bytes currently held as decoded audio. Exposed for the debug surface. */
+export function decodedBytes(): number {
+  let total = 0;
+  for (const buf of buffers.values()) total += bufferBytes(buf);
+  return total;
+}
+
+/**
+ * Drop every decoded buffer except the given URLs.
+ *
+ * Called by the conductor after a switch settles, keeping only what's
+ * audible (and whatever is mid-crossfade). Re-entering a realm costs a
+ * fresh decode, which is a fair trade against carrying a few hundred MB
+ * for tracks nobody is listening to. Sources already playing hold their
+ * own reference to the buffer, so eviction can never cut off audio.
+ */
+export function evictBuffersExcept(keep: readonly string[]): void {
+  const keepSet = new Set(keep);
+  for (const src of [...buffers.keys()]) {
+    if (!keepSet.has(src)) buffers.delete(src);
+  }
+}
 
 /** A buffer already decoded for `src`, if any. Never triggers a fetch. */
 export function getBuffer(src: string): AudioBuffer | null {
@@ -189,27 +226,6 @@ export function loadBuffer(src: string): Promise<AudioBuffer | null> {
 
   inFlight.set(src, task);
   return task;
-}
-
-/**
- * Warm the cache without blocking anything. Used to prefetch the three
- * realm tracks after the theme is playing, so walking into a portal
- * doesn't wait on a download.
- */
-export function prefetchBuffers(srcs: readonly string[]): void {
-  const run = () => {
-    for (const src of srcs) void loadBuffer(src);
-  };
-  const w = window as unknown as {
-    requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => void;
-  };
-  if (typeof w.requestIdleCallback === "function") {
-    w.requestIdleCallback(run, { timeout: 4000 });
-  } else {
-    // Safari has no requestIdleCallback; a macrotask is close enough for
-    // work this far off the critical path.
-    setTimeout(run, 2000);
-  }
 }
 
 /**

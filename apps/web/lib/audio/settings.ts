@@ -6,9 +6,11 @@
  * still works in-session, it just won't survive a reload, and there's
  * nothing the user can do about it).
  *
- * Defaults assume audio-on: browsers won't let anything play before the
- * visitor's first gesture anyway, so that click is the opt-in. Music
- * sits well under SFX because it's a bed, not a feature.
+ * Music is **off until asked for**. Besides being the polite default, it
+ * is the one that costs nothing: a decoded track is ~75MB of PCM in
+ * memory (see `engine.ts`), so a visitor who never turns music on should
+ * never pay for a download or a decode. SFX stay on — they're short,
+ * tied to a deliberate interaction, and carry no standing cost.
  */
 
 const STORAGE_KEY = "seed-protocol-poc:audio";
@@ -22,6 +24,15 @@ export type AudioSettings = {
   sfx: number;
   /** Hard mute, independent of the volumes so it's reversible. */
   muted: boolean;
+  /**
+   * Whether the player has asked for music at all.
+   *
+   * Distinct from `muted` and from `music === 0`: this is the gate on
+   * *loading* the tracks, not just on hearing them. While false nothing
+   * is fetched or decoded. Turning it on is an explicit act, prompted
+   * once by the dock.
+   */
+  musicEnabled: boolean;
 };
 
 export const DEFAULT_SETTINGS: AudioSettings = {
@@ -29,6 +40,7 @@ export const DEFAULT_SETTINGS: AudioSettings = {
   music: 0.35,
   sfx: 0.6,
   muted: false,
+  musicEnabled: false,
 };
 
 const clamp01 = (n: number): number => (n < 0 ? 0 : n > 1 ? 1 : n);
@@ -49,6 +61,10 @@ function normalize(raw: unknown): AudioSettings {
     music: num(o.music, DEFAULT_SETTINGS.music),
     sfx: num(o.sfx, DEFAULT_SETTINGS.sfx),
     muted: typeof o.muted === "boolean" ? o.muted : DEFAULT_SETTINGS.muted,
+    musicEnabled:
+      typeof o.musicEnabled === "boolean"
+        ? o.musicEnabled
+        : DEFAULT_SETTINGS.musicEnabled,
   };
 }
 

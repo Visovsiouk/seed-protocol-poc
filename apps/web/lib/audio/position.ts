@@ -108,8 +108,13 @@ export function mapBarsToTrackSeconds(bars: number, target: TrackTiming): number
  * for the top of a four-bar phrase. Positions already sitting exactly on
  * a line are returned unchanged, so a switch requested precisely on the
  * beat isn't pushed a whole bar late.
+ *
+ * `every <= 0` means "don't quantize" — used when the outgoing track has
+ * no audible pulse, where waiting for a bar line is a delay the listener
+ * can't hear the point of.
  */
 export function nextBarLine(bars: number, every = 1): number {
+  if (every <= 0) return bars;
   const k = bars / every;
   const nearest = Math.round(k);
   // Snap when we're already on a line to within float noise. The check

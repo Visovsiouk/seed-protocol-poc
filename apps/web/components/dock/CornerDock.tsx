@@ -24,6 +24,7 @@ import { useAccount } from "wagmi";
 import { CodexPanel } from "@/components/codex/CodexPanel";
 import { InventoryPanel } from "@/components/inventory/InventoryPanel";
 import { AudioPanel } from "./AudioPanel";
+import { MusicNudge } from "./MusicNudge";
 import { useCodexStatus } from "@/lib/codex/use-codex";
 import { useCodexToasts } from "@/lib/codex/use-codex-toasts";
 import { useAudio } from "@/lib/audio/AudioProvider";
@@ -133,6 +134,9 @@ export function CornerDock() {
           onClick={() => setOpen(null)}
         />
       )}
+      {/* The one-time offer to turn music on. Shares the panel's slot, so
+          it's suppressed while a panel is open rather than stacking. */}
+      {!open && <MusicNudge bottomClass={PANEL_BOTTOM} />}
       <AnimatePresence>
         {open && (
           <motion.section
@@ -195,12 +199,18 @@ export function CornerDock() {
             onClick={() => toggle("audio")}
             aria-expanded={open === "audio"}
             aria-label={
-              settings.muted ? "Sound settings (muted)" : "Sound settings"
+              settings.muted
+                ? "Sound settings (muted)"
+                : settings.musicEnabled
+                  ? "Sound settings"
+                  : "Sound settings (music off)"
             }
             className={`${PILL_CLASS} !px-3`}
             style={{ opacity: open === "audio" ? 1 : 0.85 }}
           >
-            <Speaker muted={settings.muted} />
+            {/* Slashed while muted *or* while music is off, so the icon
+                answers "why is it quiet?" at a glance either way. */}
+            <Speaker muted={settings.muted || !settings.musicEnabled} />
           </button>
         )}
       </div>

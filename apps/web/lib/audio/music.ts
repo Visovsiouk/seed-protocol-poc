@@ -31,7 +31,6 @@ import {
   DEFAULT_TRACK,
   FADE_SECONDS,
   QUANTIZE_BARS,
-  TRACKS,
   getTrack,
   type TrackId,
 } from "./manifest";
@@ -44,10 +43,11 @@ import {
   type TrackTiming,
 } from "./position";
 import {
+  decodedBytes,
+  evictBuffersExcept,
   getBuffer,
   getEngine,
   loadBuffer,
-  prefetchBuffers,
   type Engine,
 } from "./engine";
 
@@ -109,6 +109,10 @@ function settle(now: number): void {
   if (pending && now >= pending.startedAt) {
     current = pending;
     pending = null;
+    // Release the track we just left. Safe mid-crossfade: the outgoing
+    // AudioBufferSourceNode holds its own reference to its buffer, so
+    // dropping ours frees it only once that source is retired.
+    evictBuffersExcept([getTrack(current.trackId).src]);
   }
 }
 
@@ -234,7 +238,10 @@ function switchTo(e: Engine, trackId: TrackId, buffer: AudioBuffer): void {
     fromBars,
     from: from.timing,
     to,
-    quantizeBars: QUANTIZE_BARS,
+    // Only wait for a bar line if the outgoing track actually has a beat
+    // to land on. Quantizing against an ambient piece just delays the
+    // switch by up to a bar with nothing audible to justify it.
+    quantizeBars: getTrack(from.trackId).beatless ? 0 : QUANTIZE_BARS,
   });
   const at = now + plan.delaySeconds;
 
@@ -340,9 +347,31 @@ export function start(): void {
   if (started) return;
   started = true;
   setTrack(desired);
-  prefetchBuffers(
-    TRACKS.filter((t) => t.id !== desired).map((t) => t.src),
-  );
+  // Nothing is prefetched. Each track is ~70MB once decoded, so warming
+  // the three the player isn't listening to would cost a few hundred MB
+  // and a long decode for a track they may never reach. A cold switch
+  // keeps the current track playing and cuts over at the first bar line
+  // after the download lands, which is a much better trade.
+}
+
+/**
+ * Turn music on or off wholesale.
+ *
+ * `false` stops playback and releases every decoded buffer — this is the
+ * gate that keeps a player who never wants music from paying for it.
+ * `true` starts the track the current route has asked for.
+ *
+ * Distinct from muting, which leaves the clock running so unmuting
+ * resumes in the right musical place. Disabling is a full stop: there is
+ * no position to preserve once the audio is gone.
+ */
+export function setEnabled(on: boolean): void {
+  if (on) {
+    start();
+    return;
+  }
+  stop();
+  evictBuffersExcept([]);
 }
 
 /** Stop everything and reset the clock. Used on teardown/HMR. */
@@ -379,6 +408,8 @@ export function debugState(): {
   bpm: number | null;
   pendingTrack: TrackId | null;
   contextState: AudioContextState | null;
+  /** Resident decoded audio, MB. Should stay near one track's worth. */
+  decodedMB: number;
 } {
   const e = getEngine();
   const bars = position();
@@ -392,5 +423,6 @@ export function debugState(): {
     bpm: current ? derivedBpm(current.timing) : null,
     pendingTrack: pending?.trackId ?? null,
     contextState: e?.ctx.state ?? null,
+    decodedMB: +(decodedBytes() / 1048576).toFixed(1),
   };
 }

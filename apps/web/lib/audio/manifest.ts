@@ -52,6 +52,16 @@ export type TrackDef = {
   loopEndSeconds?: number;
   /** Human label for the settings panel / debug surface. */
   label: string;
+  /**
+   * True when the track has no audible pulse to quantize against.
+   *
+   * Waiting for a "bar line" in an ambient piece delays the switch by up
+   * to a bar for no benefit — there's no downbeat for the listener to
+   * hear it land on, so the pause just reads as lag. Leaving a beatless
+   * track crosses over immediately instead; the incoming track still
+   * starts at its own mapped position.
+   */
+  beatless?: boolean;
 };
 
 /**
@@ -111,6 +121,11 @@ export const TRACKS: readonly TrackDef[] = [
     bars: 89,
     loopEndSeconds: 178.0,
     label: "Theme",
+    // Ambient: tempo detection found no agreement across frequency
+    // bands, which is what a piece with no steady pulse looks like. The
+    // 120 BPM grid above is nominal — it exists so the shared clock has
+    // something to count, not because you can hear it.
+    beatless: true,
   },
   {
     id: "fantasy",

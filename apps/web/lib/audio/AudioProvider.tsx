@@ -59,6 +59,13 @@ type AudioApi = {
   play: (id: SfxId) => void;
   /** Request a music track. Idempotent. */
   setTrack: (id: TrackId) => void;
+  /**
+   * Turn music on or off. Off releases the decoded audio entirely —
+   * see `music.setEnabled`.
+   */
+  setMusicEnabled: (on: boolean) => void;
+  /** The track currently sounding, or null when music is off//loading. */
+  nowPlaying: TrackId | null;
   /** True once the audio context exists and is running. */
   unlocked: boolean;
   /** False where Web Audio is unavailable — hides the settings UI. */
@@ -70,6 +77,8 @@ const AudioContextValue = createContext<AudioApi>({
   setSettings: () => {},
   play: () => {},
   setTrack: () => {},
+  setMusicEnabled: () => {},
+  nowPlaying: null,
   unlocked: false,
   supported: false,
 });
@@ -111,6 +120,36 @@ export function AudioProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  const [nowPlaying, setNowPlaying] = useState<TrackId | null>(null);
+
+  const setMusicEnabled = useCallback(
+    (on: boolean) => {
+      setSettings({ musicEnabled: on });
+      // The toggle itself is a user gesture, so it can unlock the
+      // context — important because with music off by default, turning
+      // it on may well be the first audio-relevant thing a player does.
+      if (on) {
+        ensureEngine({ ...settingsRef.current, musicEnabled: true });
+        setUnlocked(true);
+      }
+      music.setEnabled(on);
+      if (!on) setNowPlaying(null);
+    },
+    [setSettings],
+  );
+
+  // Poll the conductor for what's actually sounding. The track changes
+  // on a bar line up to a couple of seconds after a route asks for it,
+  // so React state can't be the source of truth — the audio clock is.
+  // Only runs while music is on.
+  useEffect(() => {
+    if (!settings.musicEnabled || !unlocked) return;
+    const tick = () => setNowPlaying(music.debugState().track);
+    tick();
+    const id = setInterval(tick, 500);
+    return () => clearInterval(id);
+  }, [settings.musicEnabled, unlocked]);
+
   // --- 1. Unlock on first gesture -----------------------------------------
   useEffect(() => {
     if (!isAudioSupported()) return;
@@ -122,7 +161,10 @@ export function AudioProvider({ children }: { children: ReactNode }) {
       if (!engine) return;
       done = true;
       setUnlocked(true);
-      music.start();
+      // Music only starts if the player has asked for it — otherwise
+      // nothing is fetched or decoded. SFX are always armed; they cost
+      // nothing until something fires one.
+      if (settingsRef.current.musicEnabled) music.start();
       prefetchSfx();
       remove();
     };
@@ -200,10 +242,12 @@ export function AudioProvider({ children }: { children: ReactNode }) {
       setSettings,
       play: playSfx,
       setTrack: music.setTrack,
+      setMusicEnabled,
+      nowPlaying,
       unlocked,
       supported,
     }),
-    [settings, setSettings, unlocked, supported],
+    [settings, setSettings, setMusicEnabled, nowPlaying, unlocked, supported],
   );
 
   return (

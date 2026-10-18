@@ -124,6 +124,13 @@ describe("nextBarLine", () => {
     expect(nextBarLine(12.5, 8)).toBe(16);
   });
 
+  it("does not quantize at all when `every` is 0", () => {
+    // Used for the ambient theme: there's no audible downbeat, so waiting
+    // for one is a delay with nothing to show for it.
+    expect(nextBarLine(7.2, 0)).toBe(7.2);
+    expect(nextBarLine(0.001, 0)).toBe(0.001);
+  });
+
   it("tolerates float fuzz just above a line", () => {
     // A derived bar position is a division result, so it lands a hair off
     // the integer; ceil() alone would cost a whole bar here.
@@ -156,6 +163,21 @@ describe("planTransition", () => {
       fromTheme.targetOffsetSeconds,
       9,
     );
+  });
+
+  it("switches instantly from a beatless track", () => {
+    // quantizeBars: 0 is how the conductor leaves an ambient piece. The
+    // cut is immediate, but the target still lands at its mapped
+    // position rather than restarting.
+    const plan = planTransition({
+      fromBars: 7.3,
+      from: theme,
+      to: medieval,
+      quantizeBars: 0,
+    });
+    expect(plan.atBars).toBe(7.3);
+    expect(plan.delaySeconds).toBe(0);
+    expect(secondsToBars(plan.targetOffsetSeconds, medieval)).toBeCloseTo(7.3, 9);
   });
 
   it("never asks the caller to wait a negative amount of time", () => {
