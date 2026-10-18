@@ -1,16 +1,28 @@
 "use client";
 
 /**
- * MusicNudge — the one-time "there is music, want it?" callout.
+ * MusicNudge — the "there is music, want it?" callout.
  *
  * Music ships off, which solves the problem of ambushing people with
  * sound but creates a quieter one: nobody discovers it. A speaker icon
  * alone doesn't communicate "this game has a score" — it reads as a
  * mute button for sounds you're already hearing.
  *
- * So: a single prompt, anchored to the dock so the pill it's pointing at
- * is unmistakable, offering to turn music on in one click. Dismissed (or
- * accepted) once and never shown again.
+ * So: a prompt anchored to the dock, so the pill it's pointing at is
+ * unmistakable, offering to turn music on in one click.
+ *
+ * ## Why the offer isn't once-and-forever
+ *
+ * It used to be, keyed on a localStorage flag that was also set whenever
+ * music went on by *any* route. That made the only discoverable entry
+ * point disappear permanently the first time it was used — turn music on,
+ * turn it back off later, and the dock's speaker pill was the sole
+ * remaining way in, which is the icon problem above all over again.
+ *
+ * It's now scoped to the page load: dismiss it and it's gone until you
+ * reload. The steady state for someone who wants music is still a single
+ * sighting, because `musicEnabled` persists and the offer never appears
+ * while music is on — it only returns for someone it hasn't convinced.
  *
  * Deliberately not a toast. Toasts stack top-right, auto-retire, and are
  * for things that just happened; this is an offer attached to a specific
@@ -22,8 +34,6 @@ import { motion, useReducedMotion } from "framer-motion";
 import { useAudio } from "@/lib/audio/AudioProvider";
 import { fadeRise, withReducedMotion } from "@/lib/ui/motion";
 
-const STORAGE_KEY = "seed-protocol-poc:audio-nudge";
-
 /**
  * Delay before the offer appears. Long enough that it doesn't collide
  * with first paint or the player's first few clicks — an offer that
@@ -31,23 +41,15 @@ const STORAGE_KEY = "seed-protocol-poc:audio-nudge";
  */
 const APPEAR_AFTER_MS = 6000;
 
-function alreadySeen(): boolean {
-  if (typeof window === "undefined") return false;
-  try {
-    return window.localStorage.getItem(STORAGE_KEY) === "1";
-  } catch {
-    return false;
-  }
-}
-
-function markSeen(): void {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(STORAGE_KEY, "1");
-  } catch {
-    // Storage disabled — worst case the offer returns next visit.
-  }
-}
+/**
+ * Set once the offer has been answered, either way.
+ *
+ * Module scope rather than storage, which is what makes the dismissal
+ * last exactly one page load. It also has to live outside the component:
+ * `CornerDock` unmounts this on panel open, so component state would
+ * forget the dismissal every time a panel was opened and closed.
+ */
+let answered = false;
 
 export function MusicNudge({ bottomClass }: { bottomClass: string }) {
   const { settings, setMusicEnabled, supported } = useAudio();
@@ -55,7 +57,7 @@ export function MusicNudge({ bottomClass }: { bottomClass: string }) {
   const [show, setShow] = useState(false);
 
   useEffect(() => {
-    if (!supported || settings.musicEnabled || alreadySeen()) return;
+    if (!supported || settings.musicEnabled || answered) return;
     const id = setTimeout(() => setShow(true), APPEAR_AFTER_MS);
     return () => clearTimeout(id);
   }, [supported, settings.musicEnabled]);
@@ -64,7 +66,7 @@ export function MusicNudge({ bottomClass }: { bottomClass: string }) {
   // the offer — it has served its purpose.
   useEffect(() => {
     if (settings.musicEnabled) {
-      markSeen();
+      answered = true;
       setShow(false);
     }
   }, [settings.musicEnabled]);
@@ -72,7 +74,7 @@ export function MusicNudge({ bottomClass }: { bottomClass: string }) {
   if (!show) return null;
 
   const dismiss = () => {
-    markSeen();
+    answered = true;
     setShow(false);
   };
 

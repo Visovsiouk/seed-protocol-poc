@@ -134,8 +134,23 @@ export function AudioProvider({ children }: { children: ReactNode }) {
       // context — important because with music off by default, turning
       // it on may well be the first audio-relevant thing a player does.
       if (on) {
-        ensureEngine({ ...settingsRef.current, musicEnabled: true });
-        setUnlocked(true);
+        const engine = ensureEngine({
+          ...settingsRef.current,
+          musicEnabled: true,
+        });
+        // Only claim unlocked once the clock is genuinely running, for
+        // the same reason `finalize` below waits: a context the browser
+        // declined to start is still `suspended`, and reporting
+        // otherwise makes the panel hide the "needs a click" hint and
+        // sit on "Loading…" with no explanation. Never ramps back to
+        // false — the gesture listeners are still armed to try again.
+        if (engine) {
+          const sync = () => {
+            if (engine.ctx.state === "running") setUnlocked(true);
+          };
+          void engine.ctx.resume().then(sync).catch(sync);
+          sync();
+        }
       }
       music.setEnabled(on);
       if (!on) setNowPlaying(null);
