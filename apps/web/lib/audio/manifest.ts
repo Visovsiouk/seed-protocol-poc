@@ -171,7 +171,8 @@ export const DEFAULT_TRACK: TrackId = "theme";
 export const QUANTIZE_BARS = 1;
 
 /**
- * Crossfade length for a genre switch — about 1.4 beats at 120 BPM.
+ * Crossfade length when the incoming track has a beat — about 1.4 beats
+ * at 120 BPM.
  *
  * Longer than the 0.5s a single-arrangement swap would need, for two
  * reasons: these are different compositions, so a slower blend reads as
@@ -179,8 +180,23 @@ export const QUANTIZE_BARS = 1;
  * grid comes from a *measured* tempo, so late in a long track the
  * downbeat can be a couple hundred ms out — a blend this long covers
  * that completely.
+ *
+ * It stays short enough to keep the incoming downbeat crisp. Fading in
+ * over several seconds would soften the very attack the bar-line
+ * quantization exists to land.
  */
 export const CROSSFADE_SECONDS = 0.7;
+
+/**
+ * Crossfade length when the incoming track is `beatless`.
+ *
+ * Arriving at an ambient piece is the opposite problem: there's no
+ * attack to preserve, and dropping into the middle of a pad in 0.7s
+ * reads as a cut. Pads blend into anything, so take the time — the
+ * outgoing track still ends on its own downbeat, and the wash overlaps
+ * it rather than delaying anything.
+ */
+export const AMBIENT_CROSSFADE_SECONDS = 2.2;
 
 /** Fade applied when music starts, stops, or is muted/unmuted. */
 export const FADE_SECONDS = 0.8;

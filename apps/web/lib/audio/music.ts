@@ -27,6 +27,7 @@
  */
 
 import {
+  AMBIENT_CROSSFADE_SECONDS,
   CROSSFADE_SECONDS,
   DEFAULT_TRACK,
   FADE_SECONDS,
@@ -249,8 +250,14 @@ function switchTo(e: Engine, trackId: TrackId, buffer: AudioBuffer): void {
   const source = makeSource(e, buffer, to, deck);
   source.start(at, plan.targetOffsetSeconds);
 
-  rampDeck(e, deck, 1, at, CROSSFADE_SECONDS);
-  rampDeck(e, from.deck, 0, at, CROSSFADE_SECONDS);
+  // Fade length is keyed to what we're arriving at, not what we're
+  // leaving: a beat wants a crisp attack, a pad wants a long wash.
+  const fade = getTrack(trackId).beatless
+    ? AMBIENT_CROSSFADE_SECONDS
+    : CROSSFADE_SECONDS;
+
+  rampDeck(e, deck, 1, at, fade);
+  rampDeck(e, from.deck, 0, at, fade);
 
   // Release the outgoing source once it's inaudible, via a cancellable
   // timer (see `retireTimer`).
@@ -265,7 +272,7 @@ function switchTo(e: Engine, trackId: TrackId, buffer: AudioBuffer): void {
         // Already stopped.
       }
     },
-    (plan.delaySeconds + CROSSFADE_SECONDS + 0.1) * 1000,
+    (plan.delaySeconds + fade + 0.1) * 1000,
   );
 
   pending = {
