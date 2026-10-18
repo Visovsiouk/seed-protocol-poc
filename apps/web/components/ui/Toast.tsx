@@ -26,6 +26,8 @@ import {
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion, useReducedMotion, type Variants } from "framer-motion";
 import { DUR, EASE_OUT, transition, withReducedMotion } from "@/lib/ui/motion";
+import { useAudio } from "@/lib/audio/AudioProvider";
+import type { SfxId } from "@/lib/audio/manifest";
 
 export type ToastTone = "accent" | "ok" | "danger";
 
@@ -46,6 +48,13 @@ const TONE_COLOR: Record<ToastTone, string> = {
   accent: "var(--color-preset-accent)",
   ok: "var(--color-ok)",
   danger: "var(--color-danger)",
+};
+
+/** Each tone gets its own blip, so the three read apart by ear. */
+const TONE_SFX: Record<ToastTone, SfxId> = {
+  accent: "toastAccent",
+  ok: "toastOk",
+  danger: "toastDanger",
 };
 
 const toastMotion: Variants = {
@@ -109,23 +118,32 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const nextId = useRef(1);
   const [mounted, setMounted] = useState(false);
+  const { play } = useAudio();
 
   // Portal target only exists client-side; gate the first render (same
   // pattern as <Dialog/>).
   useEffect(() => setMounted(true), []);
 
-  const notify = useCallback((opts: ToastOptions) => {
-    setToasts((prev) => {
-      const next: Toast = {
-        id: nextId.current++,
-        title: opts.title,
-        description: opts.description,
-        tone: opts.tone ?? "accent",
-        durationMs: opts.durationMs ?? DEFAULT_DURATION_MS,
-      };
-      return [...prev, next].slice(-MAX_STACK);
-    });
-  }, []);
+  const notify = useCallback(
+    (opts: ToastOptions) => {
+      const tone = opts.tone ?? "accent";
+      // A toast is the one notification that can arrive with no click
+      // behind it (codex stamps, a boss turning), so it gets a blip —
+      // otherwise it's easy to miss one while reading the combat log.
+      play(TONE_SFX[tone]);
+      setToasts((prev) => {
+        const next: Toast = {
+          id: nextId.current++,
+          title: opts.title,
+          description: opts.description,
+          tone,
+          durationMs: opts.durationMs ?? DEFAULT_DURATION_MS,
+        };
+        return [...prev, next].slice(-MAX_STACK);
+      });
+    },
+    [play],
+  );
 
   const dismiss = useCallback((id: number) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));

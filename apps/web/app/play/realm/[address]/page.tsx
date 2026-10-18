@@ -33,6 +33,7 @@ import type {
 } from "@/lib/engine/types";
 import { startRun } from "@/lib/engine";
 import { useRealmTheme } from "@/lib/ui/useRealmTheme";
+import { useRealmMusic } from "@/lib/audio/useRealmMusic";
 import {
   CANONICAL_SCHEMAS,
   fallbackSeed,
@@ -128,6 +129,9 @@ export default function CreatorRealmPlayPage() {
   // skin flips the play screen to the amber terminal look (the realm's
   // accent still tints buttons/glow within the terminal).
   useRealmTheme(preset, registered?.accent, "crt");
+  // Creator realms inherit their genre's music; a custom accent only
+  // retints the palette, not the score.
+  useRealmMusic(preset);
 
   const starterGear = useMemo(
     () => (address ? makeStarterGear(preset, address, realmName) : null),

@@ -57,6 +57,8 @@ import { ActionChoices } from "./ActionChoices";
 import { useBankEscrow } from "./BankStatus";
 import { ChoiceRow, type Choice } from "./ChoiceRow";
 import { useNotify } from "@/components/ui/Toast";
+import { useAudio } from "@/lib/audio/AudioProvider";
+import { playBeats, sfxForEvent } from "@/lib/audio/gameplay";
 import { CombatLog } from "./CombatLog";
 import { DefeatOverlay } from "./DefeatOverlay";
 import { EscrowTray } from "./EscrowTray";
@@ -203,6 +205,7 @@ export function EncounterFrame({
   // boss-start so the face suggestion blooms behind the warden.
   const [ghostReveal, setGhostReveal] = useState(0);
   const notify = useNotify();
+  const { play } = useAudio();
   // Open while the player is choosing which carried findings to bank vs
   // discard (the Extract & bank selection overlay). The actual extraction
   // only fires on confirm, with the kept indices.
@@ -254,7 +257,13 @@ export function EncounterFrame({
             : undefined;
         const result = engineStep(state, choice);
         appendLines(result.outcome);
+        // Swing sounds first: they're the response to the click. Event
+        // stings (loot, victory, defeat) land after, matching the order
+        // the fiction resolves in.
+        playBeats(result.beats, play);
         for (const ev of result.events) {
+          const sfx = sfxForEvent(ev);
+          if (sfx) play(sfx);
           onEvent?.(ev);
         }
         const nextPhase =
@@ -276,7 +285,7 @@ export function EncounterFrame({
         setBusy(false);
       }
     },
-    [appendLines, busy, combat, notify, onEvent, state],
+    [appendLines, busy, combat, notify, onEvent, play, state],
   );
 
   // Confirm from the selection overlay: bank the kept findings, discard the
@@ -290,7 +299,11 @@ export function EncounterFrame({
         // the Extract control never renders in either case, so this is safe.
         const result = engineExtract(state, { keep });
         appendLines(result.lines);
-        for (const ev of result.events) onEvent?.(ev);
+        for (const ev of result.events) {
+          const sfx = sfxForEvent(ev);
+          if (sfx) play(sfx);
+          onEvent?.(ev);
+        }
         setState(result.state);
         setSelecting(false);
         // Surfacing ends the delve: once the chosen findings have banked,
@@ -302,7 +315,7 @@ export function EncounterFrame({
         setBusy(false);
       }
     },
-    [appendLines, busy, onEvent, router, runBank, state],
+    [appendLines, busy, onEvent, play, router, runBank, state],
   );
 
   // Boss clear: the engine already banked the boss drop into

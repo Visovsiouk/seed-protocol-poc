@@ -23,8 +23,10 @@ import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { useAccount } from "wagmi";
 import { CodexPanel } from "@/components/codex/CodexPanel";
 import { InventoryPanel } from "@/components/inventory/InventoryPanel";
+import { AudioPanel } from "./AudioPanel";
 import { useCodexStatus } from "@/lib/codex/use-codex";
 import { useCodexToasts } from "@/lib/codex/use-codex-toasts";
+import { useAudio } from "@/lib/audio/AudioProvider";
 import { fadeRise, withReducedMotion } from "@/lib/ui/motion";
 
 // Lift the dock clear of the AppShell footer (49px), and of the fixed
@@ -35,7 +37,13 @@ const DEMO_BANNER = process.env.NEXT_PUBLIC_DEMO_BANNER === "true";
 const BUTTON_BOTTOM = DEMO_BANNER ? "bottom-[5.5rem]" : "bottom-16";
 const PANEL_BOTTOM = DEMO_BANNER ? "bottom-[8.5rem]" : "bottom-28";
 
-type Panel = "codex" | "inventory";
+type Panel = "codex" | "inventory" | "audio";
+
+const PANEL_LABEL: Record<Panel, string> = {
+  codex: "Protocol codex",
+  inventory: "Inventory",
+  audio: "Sound settings",
+};
 
 /** Shared pill styling — a rounded, glowing tab keyed to the preset accent. */
 const PILL_CLASS =
@@ -56,8 +64,40 @@ function Diamond() {
   );
 }
 
+/**
+ * Speaker glyph, with a slash when muted. Hand-rolled to match
+ * `Diamond` above — the dock draws its own marks rather than pulling an
+ * icon set in for two shapes.
+ */
+function Speaker({ muted }: { muted: boolean }) {
+  return (
+    <svg
+      aria-hidden
+      width="14"
+      height="14"
+      viewBox="0 0 14 14"
+      fill="none"
+      stroke="var(--color-preset-accent)"
+      strokeWidth="1.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M3 5.2h1.8L7.4 3v8L4.8 8.8H3z" fill="var(--color-preset-accent)" />
+      {muted ? (
+        <path d="M9.6 5.2l3 3.6M12.6 5.2l-3 3.6" />
+      ) : (
+        <>
+          <path d="M9.6 5.1a2.6 2.6 0 0 1 0 3.8" />
+          <path d="M11.3 3.6a5 5 0 0 1 0 6.8" />
+        </>
+      )}
+    </svg>
+  );
+}
+
 export function CornerDock() {
   const { address } = useAccount();
+  const { settings, supported } = useAudio();
   const { status, isLoading } = useCodexStatus(address);
   useCodexToasts(address, status, isLoading);
 
@@ -101,7 +141,7 @@ export function CornerDock() {
             initial="hidden"
             animate="visible"
             exit="hidden"
-            aria-label={open === "codex" ? "Protocol codex" : "Inventory"}
+            aria-label={PANEL_LABEL[open]}
             className={`fixed right-4 ${PANEL_BOTTOM} z-[35] flex max-h-[70dvh] w-[min(26rem,calc(100vw-2rem))] flex-col gap-3 overflow-y-auto rounded-xl border border-[var(--border-2)] bg-[var(--color-preset-bg)] p-5 shadow-[0_16px_48px_-12px_var(--glow)]`}
           >
             {open === "codex" ? (
@@ -110,8 +150,10 @@ export function CornerDock() {
                 isLoading={isLoading}
                 onAction={() => setOpen(null)}
               />
-            ) : (
+            ) : open === "inventory" ? (
               <InventoryPanel />
+            ) : (
+              <AudioPanel />
             )}
           </motion.section>
         )}
@@ -145,6 +187,22 @@ export function CornerDock() {
           <Diamond />
           <span style={{ color: "var(--color-preset-accent)" }}>Inventory</span>
         </button>
+        {/* Icon-only: a third labelled pill would overflow the row on
+            narrow viewports, and the speaker glyph is self-explanatory. */}
+        {supported && (
+          <button
+            type="button"
+            onClick={() => toggle("audio")}
+            aria-expanded={open === "audio"}
+            aria-label={
+              settings.muted ? "Sound settings (muted)" : "Sound settings"
+            }
+            className={`${PILL_CLASS} !px-3`}
+            style={{ opacity: open === "audio" ? 1 : 0.85 }}
+          >
+            <Speaker muted={settings.muted} />
+          </button>
+        )}
       </div>
     </>,
     document.body,

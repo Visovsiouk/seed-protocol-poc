@@ -15,7 +15,8 @@
     "seed:adapters": "tsx --env-file=.env.local scripts/seed-adapters.ts",
     "seed:catalog": "tsx --env-file=.env.local scripts/seed-catalog-effects.ts",
     "seed:trader": "tsx --env-file=.env.local scripts/provision-trader.ts",
-    "seed:all": "pnpm seed && pnpm seed:adapters && pnpm seed:catalog && pnpm seed:trader"
+    "seed:all": "pnpm seed && pnpm seed:adapters && pnpm seed:catalog && pnpm seed:trader",
+    "audio:inspect": "node scripts/audio-inspect.mjs"
   },
   "dependencies": {
     "@coinbase/wallet-sdk": "^4.3.0",
