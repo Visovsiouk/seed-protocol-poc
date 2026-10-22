@@ -17,18 +17,27 @@
  * Descend persists the chosen pair as the canonical *native* snapshot
  * (`saveEquipped`); the play page's hydration re-reads it and translates
  * per-realm exactly as before.
+ *
+ * Which realm the doorway actually leads to is decided by the pure
+ * `resolveStagingRealm` — including the case where a creator realm is
+ * listed on-chain but has no registry row, which stages (and runs) as a
+ * trial. See `lib/hub/staging-resolve.ts`.
  */
 
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
 import { useAccount, usePublicClient } from "wagmi";
-import type { AssetCard as AssetCardType, Preset } from "@/lib/engine/types";
+import type { AssetCard as AssetCardType } from "@/lib/engine/types";
 import { playerStartHp } from "@/lib/engine";
 import { makeStarterGear } from "@/lib/engine/runtime";
 import { listStarterRealms } from "@/lib/contracts/starter-realms";
 import { translateCardForRealm } from "@/lib/contracts/adapters";
 import { loadEquipped, saveEquipped } from "@/lib/persistence/equipped";
 import { useInventoryCards, usePlayerRealms } from "@/lib/reads/hooks";
+import {
+  resolveStagingRealm,
+  type ResolvedRealm,
+} from "@/lib/hub/staging-resolve";
 import { AssetCard } from "@/components/inventory/AssetCard";
 import { BossIntelStrip } from "@/components/hub/BossIntelStrip";
 import { Panel, Button, Stamp, Rule } from "@/components/ui";
@@ -37,14 +46,6 @@ import { useEnterToActivate } from "@/lib/ui/useEnterToActivate";
 import type { RealmSelection } from "@/components/game/RealmSelector";
 
 const STARTERS = listStarterRealms();
-
-type Resolved = {
-  preset: Preset;
-  realm: `0x${string}`;
-  name: string;
-  /** Creator-chosen accent hex, or null to inherit the genre default. */
-  accent: string | null;
-};
 
 type Loadout = { weapon?: AssetCardType; armor?: AssetCardType };
 
@@ -93,6 +94,54 @@ function Slot({
   );
 }
 
+function BackToBase({ onBack }: { onBack: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onBack}
+      className="text-xs uppercase tracking-widest opacity-70 hover:opacity-100"
+    >
+      ← Back to the base
+    </button>
+  );
+}
+
+/**
+ * Pre-loadout states (waiting on the realm store, or unable to read it).
+ * Always carries the way back: these are the screens with nothing on them
+ * to click, so without it the only exit is the browser's back button.
+ */
+function StagingNotice({
+  label,
+  heading,
+  body,
+  onBack,
+}: {
+  label: string;
+  heading?: string;
+  body: string;
+  onBack: () => void;
+}) {
+  return (
+    <Panel
+      as="section"
+      tone="glass-2"
+      aria-label={label}
+      className="mx-auto flex w-full max-w-md flex-col gap-3 p-6"
+    >
+      {heading && (
+        <h2 className="font-mono text-lg font-medium tracking-[-0.015em]">
+          {heading}
+        </h2>
+      )}
+      <p className="text-sm leading-relaxed opacity-80">{body}</p>
+      <div className="pt-1">
+        <BackToBase onBack={onBack} />
+      </div>
+    </Panel>
+  );
+}
+
 export function LoadoutStaging({
   selection,
   onBack,
@@ -114,22 +163,23 @@ export function LoadoutStaging({
     [selection, playerRealms.data],
   );
 
-  const resolved: Resolved | null = useMemo(() => {
-    if (selection.kind === "starter") {
-      const entry = STARTERS.find((s) => s.preset === selection.preset);
-      if (!entry) return null;
-      // Starter realms carry no custom accent — they inherit the genre default.
-      return { preset: entry.preset, realm: entry.realm, name: entry.name, accent: null };
-    }
-    const meta = playerRealms.data?.get(selection.address.toLowerCase());
-    if (!meta) return null;
-    return {
-      preset: meta.preset,
-      realm: selection.address,
-      name: meta.name,
-      accent: meta.accent,
-    };
-  }, [selection, playerRealms.data]);
+  const resolution = useMemo(
+    () =>
+      resolveStagingRealm({
+        selection,
+        starters: STARTERS,
+        playerRealms: {
+          data: playerRealms.data,
+          isPending: playerRealms.isPending,
+          isError: playerRealms.isError,
+        },
+      }),
+    [selection, playerRealms.data, playerRealms.isPending, playerRealms.isError],
+  );
+
+  const resolved: ResolvedRealm | null =
+    resolution.status === "ready" ? resolution.resolved : null;
+  const isTrial = resolution.status === "ready" && resolution.trial;
 
   const starterGear = useMemo(
     () =>
@@ -225,16 +275,27 @@ export function LoadoutStaging({
     sig: resolved?.realm ?? "",
   });
 
+  if (resolution.status === "error") {
+    return (
+      <StagingNotice
+        label="Doorway unavailable"
+        heading="The doorway won't open."
+        body={resolution.message}
+        onBack={onBack}
+      />
+    );
+  }
+
+  // Genuinely in-flight: the realm store hasn't answered, or the loadout
+  // defaults haven't been reconciled against it yet. Still offers a way out —
+  // a read that never settles must not trap the player on this screen.
   if (!resolved || !starterGear || !selected) {
     return (
-      <Panel
-        as="section"
-        tone="glass-2"
-        aria-label="Preparing loadout"
-        className="mx-auto w-full max-w-md p-6 text-sm opacity-80"
-      >
-        Preparing the doorway…
-      </Panel>
+      <StagingNotice
+        label="Preparing loadout"
+        body="Preparing the doorway…"
+        onBack={onBack}
+      />
     );
   }
 
@@ -280,13 +341,7 @@ export function LoadoutStaging({
         <header className="flex flex-col gap-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <Stamp tone="accent">The doorway holds</Stamp>
-            <button
-              type="button"
-              onClick={onBack}
-              className="text-xs uppercase tracking-widest opacity-70 hover:opacity-100"
-            >
-              ← Back to the base
-            </button>
+            <BackToBase onBack={onBack} />
           </div>
           <Rule />
           <h2 className="font-mono text-2xl font-medium tracking-[-0.015em]">
@@ -297,6 +352,20 @@ export function LoadoutStaging({
             is sealed for the whole delve — there is no changing gear in the
             dark.
           </p>
+          {/* Unregistered realm: say so before the player commits a loadout,
+              since the run won't mint anything it drops. Mirrors the "Trial
+              run" aside on /play/realm/[address]. */}
+          {isTrial && (
+            <p
+              className="text-sm leading-relaxed opacity-80"
+              role="note"
+              aria-label="Trial mode"
+            >
+              <strong>Trial run.</strong> This realm was deployed but never
+              registered, so it runs as a {resolved.preset} stand-in and
+              nothing you find down there will mint.
+            </p>
+          )}
           <div className="flex flex-wrap items-center gap-4 text-sm tabular-nums">
             <span>
               <span className="opacity-65">HP </span>
