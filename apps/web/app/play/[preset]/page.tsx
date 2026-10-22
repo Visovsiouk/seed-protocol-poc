@@ -41,6 +41,7 @@ import type {
 } from "@/lib/engine/types";
 import { startRun } from "@/lib/engine";
 import { useRealmTheme } from "@/lib/ui/useRealmTheme";
+import { useRealmMusic } from "@/lib/audio/useRealmMusic";
 import {
   CANONICAL_SCHEMAS,
   VALID_PRESETS,
@@ -121,6 +122,9 @@ export default function PlayPage() {
   // no custom accent, so the genre default always wins. The "crt" skin
   // flips the play screen to the amber terminal look.
   useRealmTheme(preset, null, "crt");
+  // Hands the music over to this genre's piece, picking up at the bar the
+  // previous track had reached — see lib/audio/position.ts.
+  useRealmMusic(preset);
 
   // startRun is deterministic from the seed. While connected and the
   // on-chain commitment is still resolving, we gate the EncounterFrame

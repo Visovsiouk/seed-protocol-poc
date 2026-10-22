@@ -30,6 +30,7 @@ import { resolveRealmDetail, type RealmDetail } from "@/lib/contracts/realm-deta
 import type { Preset } from "@/lib/engine/types";
 import { AppShell, Panel, Button, Chip, Stamp, Rule } from "@/components/ui";
 import { useRealmTheme } from "@/lib/ui/useRealmTheme";
+import { useRealmMusic } from "@/lib/audio/useRealmMusic";
 import { shortAddress } from "@/lib/utils";
 import { isHexAddress } from "@/lib/validation/schemas";
 
@@ -231,6 +232,9 @@ export default function RealmDashboardPage() {
         ? creatorMeta?.preset ?? null
         : null;
   useRealmTheme(themePreset, creatorMeta?.accent ?? null);
+  // `null` while the realm is unresolved, which holds the menu theme
+  // rather than guessing a genre and switching twice.
+  useRealmMusic(themePreset);
 
   // Effective schema ids the stats/activity/asset readers classify against.
   // Starter realms use the seeded per-preset pair; creator realms register

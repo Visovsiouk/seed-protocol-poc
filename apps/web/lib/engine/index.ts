@@ -386,7 +386,7 @@ export function step(state: RunState, choice: ActionChoice): StepResult {
       SCHEMA_STORE.set(nextState, schemas);
       const bossId = BOSS_STORE.get(state);
       if (bossId) BOSS_STORE.set(nextState, bossId);
-      return { state: nextState, outcome: lines, events };
+      return { state: nextState, outcome: lines, events, beats: result.beats };
     }
 
     if (playerDefeated) {
@@ -408,7 +408,7 @@ export function step(state: RunState, choice: ActionChoice): StepResult {
       SCHEMA_STORE.set(nextState, schemas);
       const bossId = BOSS_STORE.get(state);
       if (bossId) BOSS_STORE.set(nextState, bossId);
-      return { state: nextState, outcome: lines, events };
+      return { state: nextState, outcome: lines, events, beats: result.beats };
     }
 
     const nextState: RunState = {
@@ -418,7 +418,7 @@ export function step(state: RunState, choice: ActionChoice): StepResult {
     SCHEMA_STORE.set(nextState, schemas);
     const bossId = BOSS_STORE.get(state);
     if (bossId) BOSS_STORE.set(nextState, bossId);
-    return { state: nextState, outcome: lines, events };
+    return { state: nextState, outcome: lines, events, beats: result.beats };
   }
 
   throw new Error(`step: unhandled encounter kind`);

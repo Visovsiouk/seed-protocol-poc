@@ -7,3 +7,9 @@
 *.woff binary
 *.woff2 binary
 *.pdf binary
+*.webm binary
+*.mp3 binary
+*.m4a binary
+*.ogg binary
+*.opus binary
+*.wav binary

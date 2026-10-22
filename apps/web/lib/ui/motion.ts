@@ -24,10 +24,30 @@ export const EASE_OUT = [0.22, 1, 0.36, 1] as const;
 export const transition: Transition = { duration: DUR.base, ease: EASE_OUT };
 export const transitionSlow: Transition = { duration: DUR.slow, ease: EASE_OUT };
 
-/** Ledger entries / panels rising into place — the default reveal. */
+/**
+ * Ledger entries / panels rising into place — the default reveal.
+ *
+ * `exit` is a separate state rather than a reuse of `hidden`, for two
+ * reasons. It needs a transition of its own: without one the dismissal
+ * falls back to framer's defaults — a spring on `y` that overshoots past
+ * its target and a 0.3s tween on opacity — against an entrance that is a
+ * 0.24s eased tween, so the two halves of the gesture don't match. And
+ * animating back to the *initial* variant makes framer treat the element
+ * as having returned to its base state, which drops the inline opacity
+ * it had been writing: the node snaps to fully opaque for the one frame
+ * between the animation finishing and React unmounting it. Measured on
+ * the dock's sound panel — opacity 0.01, then 1.00, then gone — and
+ * visible as a blink at the end of the close. `toastMotion` in
+ * `components/ui/Toast.tsx` has always had its own `exit` and has never
+ * shown it.
+ *
+ * Consumers that only reveal (most of them) can ignore `exit` — framer
+ * never uses a variant by that name unless `exit="exit"` is passed.
+ */
 export const fadeRise: Variants = {
   hidden: { opacity: 0, y: 8 },
   visible: { opacity: 1, y: 0, transition },
+  exit: { opacity: 0, y: 8, transition: { duration: DUR.fast, ease: EASE_OUT } },
 };
 
 /** Stagger container for a column of ledger entries (spawn feed, activity). */

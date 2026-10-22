@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { WalletProvider } from "@/components/wallet/WalletProvider";
 import { NotificationProvider } from "@/components/ui/Toast";
 import { CornerDock } from "@/components/dock/CornerDock";
+import { AudioProvider } from "@/lib/audio/AudioProvider";
 
 /**
  * Root client-side provider stack.
@@ -31,12 +32,19 @@ export function Providers({ children }: { children: ReactNode }) {
   return (
     <QueryClientProvider client={queryClient}>
       <WalletProvider>
-        <NotificationProvider>
-          {children}
-          {/* Floating bottom-right dock (Inventory + Codex) + the codex
-              completion-toast watcher — global so both travel with the player. */}
-          <CornerDock />
-        </NotificationProvider>
+        {/* Outside NotificationProvider so toasts can fire SFX through
+            useAudio(). Owns the audio graph, the first-gesture unlock and
+            the delegated click SFX, so it has to sit above everything
+            that makes noise. */}
+        <AudioProvider>
+          <NotificationProvider>
+            {children}
+            {/* Floating bottom-right dock (Inventory + Codex + Sound) + the
+                codex completion-toast watcher — global so they travel with
+                the player. */}
+            <CornerDock />
+          </NotificationProvider>
+        </AudioProvider>
       </WalletProvider>
     </QueryClientProvider>
   );

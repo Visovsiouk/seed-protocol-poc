@@ -225,6 +225,9 @@ intact (your Seed and realm still exist).
   stays clean, and `git pull` never conflicts with it. Never restore that
   directory from `defaults/` on a provisioned host — it would point the app at
   contracts that do not exist on this chain.
+- **Audio assets.** Not in git — shipped by rsync, see the section below. A
+  fresh checkout comes up silent; once the files are on the box, `git pull`
+  and rebuilds never touch them.
 - **Backups.** Nightly snapshots land in `/home/realms/backups` (state file +
   realm registry, last 14 kept). To restore, stop `realms-chain`, copy a
   snapshot over `apps/web/data/anvil-state.json` (and `realms.db`), start.
@@ -235,3 +238,55 @@ intact (your Seed and realm still exist).
   account's ETH (bounded: tier-appraised prices, one deal per seller, ever).
   If the float-low error appears, top the trader account up — on the demo
   chain the faucet route or a direct transfer from a funded account works.
+
+## Audio assets
+
+The four music beds (~10MB of Opus) and the mp3 masters they're cut from
+(~19MB) are **both gitignored**. They're shipped to the VPS with rsync, not
+`git pull`.
+
+This adds nothing to the deploy flow, because nothing in that flow touches
+untracked files: no script runs `git clean` or `git reset --hard`, and
+`next build` never reads `public/` (there is no `output: "standalone"`, so
+`next start` serves it live from disk). The files survive `git pull`,
+`pnpm install`, rebuilds and restarts exactly the way `apps/web/data/` does.
+
+**Shipping them** — only needed when the music actually changes:
+
+```bash
+rsync -av apps/web/public/audio/ \
+  realms@play.example.com:/home/realms/seed-protocol-poc/apps/web/public/audio/
+```
+
+**If they're missing**, the app stays silent: a 404 fails to decode and
+nothing plays. No errors, no broken UI — so a server rebuild that forgets
+this step degrades quietly rather than loudly. Worth checking after one.
+
+**Regenerating the loops.** `apps/web/assets-src/audio/*.mp3` are the masters.
+`pnpm --filter web audio:inspect --prepare-loops` re-cuts them: each track is
+trimmed to a whole number of bars from its first downbeat, with the material
+after the loop end crossfaded back over the head, so it loops seamlessly under
+plain Web Audio looping. Tempos and bar counts live in `LOOP_SPECS` in
+`apps/web/scripts/audio-inspect.mjs`; they were *measured*, not authored, so
+`bpm` is the knob if a genre switch ever lands off the beat.
+
+**After re-cutting, bump `ASSET_VERSION`** in `apps/web/lib/audio/manifest.ts`.
+It appends `?v=N` to each music URL. Nothing caches hard enough today to
+require it — Next answers `public/` with `max-age=0`, so a re-cut propagates
+on its own — but it costs nothing and means putting any proxy or CDN in front
+later can't pin stale audio on returning players.
+
+**Caching, if the audio ever gets heavy.** Next can't fingerprint files in
+`public/`, so it marks all of them always-revalidate: every page load
+re-validates ~10MB of audio through the app process, and an ETag change
+re-downloads it. Serving `/audio/*` off disk from a reverse proxy with a long
+`max-age` is the fix if that ever shows up in practice (the `?v=` above is
+what makes `immutable` safe to use there).
+
+**Working without the masters.** `pnpm --filter web audio:inspect
+--placeholders` writes four metronome loops at known tempos, with an accented
+downbeat. Useful for development, and for hearing whether a transition lands
+on the grid.
+
+> **Back up `assets-src/`.** It is gitignored and exists only in your working
+> tree. Losing it means the loops can never be re-cut.
