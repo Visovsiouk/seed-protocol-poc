@@ -10,11 +10,15 @@
  *
  * Three responsibilities:
  *
- *  1. **Unlock on first gesture.** Browsers refuse to run an
- *     `AudioContext` until the user interacts, so the graph is built
- *     from a capture-phase `pointerdown`/`keydown` listener. That first
- *     click is also the visitor's implicit opt-in — nothing plays before
- *     it, whatever the saved settings say.
+ *  1. **Getting sound running.** Two paths, because browsers refuse to
+ *     run an `AudioContext` until the user interacts. If music is
+ *     already opted in from a previous visit we build the graph on load
+ *     and ask for it anyway (`tryStartMusic`) — some browsers allow that
+ *     for an origin the player keeps coming back to, and where they
+ *     don't, the track is downloaded and decoded by the time the first
+ *     click lands. Otherwise a capture-phase
+ *     `pointerdown`/`keydown`/`touchstart` listener catches that click.
+ *     Either way nothing is fetched unless `musicEnabled` says so.
  *
  *  2. **Delegated click SFX.** One document-level listener covers every
  *     button and link in the app. Deliberately not done inside
@@ -127,36 +131,73 @@ export function AudioProvider({ children }: { children: ReactNode }) {
 
   const [nowPlaying, setNowPlaying] = useState<TrackId | null>(null);
 
+  /**
+   * Build the graph, ask the browser to run it, and start the track the
+   * current route wants.
+   *
+   * Safe to call at any moment, gesture or not. A context the browser
+   * declines to start simply stays `suspended`, which is a normal state:
+   * the sources and gain ramps are scheduled against a clock that isn't
+   * moving yet, and they begin the instant it is. So the only cost of a
+   * refusal is the fetch and decode, which we wanted anyway.
+   *
+   * `unlocked` is only claimed once the clock is genuinely running. A
+   * suspended context reporting otherwise makes the panel hide its
+   * "needs a click" hint and sit on "Loading…" with no explanation. It
+   * never ramps back to false — the gesture listeners stay armed.
+   */
+  const tryStartMusic = useCallback(() => {
+    const engine = ensureEngine({ ...settingsRef.current, musicEnabled: true });
+    if (!engine) return;
+    music.start();
+    const sync = () => {
+      if (engine.ctx.state === "running") setUnlocked(true);
+    };
+    void engine.ctx.resume().then(sync).catch(sync);
+    sync();
+  }, []);
+
   const setMusicEnabled = useCallback(
     (on: boolean) => {
       setSettings({ musicEnabled: on });
       // The toggle itself is a user gesture, so it can unlock the
       // context — important because with music off by default, turning
       // it on may well be the first audio-relevant thing a player does.
+      // Done here rather than left to the effect below so the `resume()`
+      // lands while the click is still the thing the browser is looking
+      // at, which is the case a hostile autoplay policy is most likely
+      // to allow.
       if (on) {
-        const engine = ensureEngine({
-          ...settingsRef.current,
-          musicEnabled: true,
-        });
-        // Only claim unlocked once the clock is genuinely running, for
-        // the same reason `finalize` below waits: a context the browser
-        // declined to start is still `suspended`, and reporting
-        // otherwise makes the panel hide the "needs a click" hint and
-        // sit on "Loading…" with no explanation. Never ramps back to
-        // false — the gesture listeners are still armed to try again.
-        if (engine) {
-          const sync = () => {
-            if (engine.ctx.state === "running") setUnlocked(true);
-          };
-          void engine.ctx.resume().then(sync).catch(sync);
-          sync();
-        }
+        tryStartMusic();
+      } else {
+        music.setEnabled(false);
+        setNowPlaying(null);
       }
-      music.setEnabled(on);
-      if (!on) setNowPlaying(null);
     },
-    [setSettings],
+    [setSettings, tryStartMusic],
   );
+
+  /**
+   * Pick the music back up on load for a player who already turned it on.
+   *
+   * `musicEnabled` persists, so "it was playing when I closed the tab"
+   * should mean "it's playing when I open it again" — without making them
+   * hunt down the speaker pill a second time. We don't wait for a gesture
+   * to try, because waiting is what made the setting look broken: the
+   * engine didn't even exist until the first click, so the first click
+   * then bought a ~2MB download and a decode before anything sounded.
+   *
+   * Whether it actually *sounds* with no interaction is the browser's
+   * call, and there's no API that lets us do better: Chrome permits it
+   * once the origin has enough media-engagement history, Safari and the
+   * stricter privacy browsers never do. When it's refused the first
+   * click starts the music immediately instead of after a wait, and
+   * `MusicNudge` says so rather than leaving the silence unexplained.
+   */
+  useEffect(() => {
+    if (!supported || unlocked || !settings.musicEnabled) return;
+    tryStartMusic();
+  }, [supported, unlocked, settings.musicEnabled, tryStartMusic]);
 
   // Poll the conductor for what's actually sounding. The track changes
   // on a bar line up to a couple of seconds after a route asks for it,
