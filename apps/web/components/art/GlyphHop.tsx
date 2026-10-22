@@ -48,15 +48,35 @@ type HopCard = {
  * the comparison stay legible for as long as they care to look.
  */
 const HOP_SECONDS = 4.4;
-const hop = {
+
+/**
+ * Both layers animate, against each other.
+ *
+ * The glyphs are line art on transparent ground, so a static base layer stays
+ * legible straight through whatever is drawn over it — two weapons at once
+ * rather than one becoming another. Fading the home shape out as the local one
+ * arrives is what makes the hand-off read as a single object changing clothes.
+ *
+ * The keyframes are mirrored on shared `times`, and each ends where it began,
+ * so the infinite repeat loops without a jump.
+ */
+const HOP_TIMES = [0, 0.3, 0.44, 0.78, 1];
+const hopTransition = {
+  duration: HOP_SECONDS,
+  times: HOP_TIMES,
+  ease: "easeInOut" as const,
+  repeat: Infinity,
+};
+const hopFrom = {
+  cycle: {
+    opacity: [1, 1, 0, 0, 1],
+    transition: hopTransition,
+  },
+};
+const hopTo = {
   cycle: {
     opacity: [0, 0, 1, 1, 0],
-    transition: {
-      duration: HOP_SECONDS,
-      times: [0, 0.3, 0.44, 0.78, 1],
-      ease: "easeInOut" as const,
-      repeat: Infinity,
-    },
+    transition: hopTransition,
   },
 };
 
@@ -120,12 +140,19 @@ export function GlyphHop({
       role="img"
       aria-label={`Re-skinned from ${fromPreset} to ${toPreset}`}
     >
-      {/* The home shape sits underneath, always drawn; the local one crosses
-          over it and back. Only one element animates. */}
-      <div className="absolute inset-0">{glyph(fromPreset, sourceType)}</div>
+      {/* The two shapes trade places in the same square: the home one holds,
+          hands off to the local one, and takes it back. */}
       <motion.div
         className="absolute inset-0"
-        variants={hop}
+        variants={hopFrom}
+        initial={{ opacity: 1 }}
+        animate="cycle"
+      >
+        {glyph(fromPreset, sourceType)}
+      </motion.div>
+      <motion.div
+        className="absolute inset-0"
+        variants={hopTo}
         initial={{ opacity: 0 }}
         animate="cycle"
       >
