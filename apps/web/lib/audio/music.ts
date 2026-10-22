@@ -81,6 +81,19 @@ let pending: Playing | null = null;
 let desired: TrackId = DEFAULT_TRACK;
 let started = false;
 /**
+ * Whether the player wants music at all.
+ *
+ * Enforced down here in `flush`, not just at the `setEnabled` door,
+ * because `desired` keeps being updated whether music is on or not:
+ * `useRealmMusic` fires `setTrack` on entering a realm and again on
+ * leaving it, knowing nothing about the setting. Turning music off
+ * stopped whatever was playing but left nothing to stop the *next*
+ * realm change from starting a fresh track — and it would, because the
+ * engine is still alive for SFX, so the `getEngine()` guard below
+ * passes. The result was music playing with the player showing "off".
+ */
+let enabled = false;
+/**
  * Outgoing sources still fading out, each with its own retirement timer.
  *
  * Per-source rather than one shared handle, which was a bug: two
@@ -348,6 +361,10 @@ export function setTrack(trackId: TrackId): void {
 function flush(): void {
   flushQueued = false;
 
+  // `desired` is still recorded while music is off, so turning it on
+  // later picks up the realm the player is actually standing in.
+  if (!enabled) return;
+
   const e = getEngine();
   if (!e) return;
 
@@ -371,9 +388,11 @@ function flush(): void {
   }
 
   void loadBuffer(def.src).then((buf) => {
-    // Re-check: the player may have moved on, or another call may have
-    // already handled this track, while the fetch was in flight.
-    if (!buf || desired !== trackId) return;
+    // Re-check: the player may have moved on, turned music off, or
+    // another call may have handled this track, while the fetch was in
+    // flight. A download outliving the setting that asked for it is the
+    // same bug as above, just slower to show up.
+    if (!buf || !enabled || desired !== trackId) return;
     const e2 = getEngine();
     if (!e2) return;
     settle(e2.ctx.currentTime);
@@ -392,6 +411,7 @@ function flush(): void {
 export function start(): void {
   if (started) return;
   started = true;
+  enabled = true;
   setTrack(desired);
   // Nothing is prefetched. Each track is ~70MB once decoded, so warming
   // the three the player isn't listening to would cost a few hundred MB
@@ -412,6 +432,7 @@ export function start(): void {
  * no position to preserve once the audio is gone.
  */
 export function setEnabled(on: boolean): void {
+  enabled = on;
   if (on) {
     start();
     return;
@@ -435,6 +456,7 @@ export function stop(): void {
   current = null;
   pending = null;
   started = false;
+  enabled = false;
 }
 
 /**
@@ -446,6 +468,8 @@ export function stop(): void {
 export function debugState(): {
   track: TrackId | null;
   desired: TrackId;
+  /** The gate: false means a realm change must not start anything. */
+  enabled: boolean;
   bars: number | null;
   barInLoop: number | null;
   barSeconds: number | null;
@@ -467,6 +491,7 @@ export function debugState(): {
   return {
     track: current?.trackId ?? null,
     desired,
+    enabled,
     bars,
     barInLoop:
       bars !== null && current ? wrapBars(bars, current.timing) : null,

@@ -190,9 +190,10 @@ export function AudioProvider({ children }: { children: ReactNode }) {
    * Whether it actually *sounds* with no interaction is the browser's
    * call, and there's no API that lets us do better: Chrome permits it
    * once the origin has enough media-engagement history, Safari and the
-   * stricter privacy browsers never do. When it's refused the first
-   * click starts the music immediately instead of after a wait, and
-   * `MusicNudge` says so rather than leaving the silence unexplained.
+   * stricter privacy browsers never do. Where it's refused the track is
+   * decoded and waiting, so the player's next click — on anything —
+   * starts it immediately. That needs no explaining to anyone, which is
+   * why nothing explains it.
    */
   useEffect(() => {
     if (!supported || unlocked || !settings.musicEnabled) return;

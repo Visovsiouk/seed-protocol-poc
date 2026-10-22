@@ -105,14 +105,8 @@ function Slider({
 }
 
 export function AudioPanel() {
-  const {
-    settings,
-    setSettings,
-    setMusicEnabled,
-    nowPlaying,
-    supported,
-    unlocked,
-  } = useAudio();
+  const { settings, setSettings, setMusicEnabled, nowPlaying, supported } =
+    useAudio();
 
   if (!supported) {
     return (
@@ -187,13 +181,6 @@ export function AudioPanel() {
       >
         {settings.muted ? "Unmute" : "Mute all"}
       </button>
-
-      {/* Browsers block audio until the page has been interacted with.
-          Until that happens the sliders are still meaningful (they apply
-          the moment sound starts), so explain rather than disable. */}
-      {!unlocked && (
-        <Hint>Sound starts after your first click — browsers require it.</Hint>
-      )}
     </div>
   );
 }

@@ -1,11 +1,7 @@
 "use client";
 
 /**
- * MusicNudge — the dock's callout for when the score isn't playing.
- *
- * Two reasons it might not be, and a card for each.
- *
- * ## "offer" — music is off
+ * MusicNudge — the "there is music, want it?" callout.
  *
  * Music ships off, which solves the problem of ambushing people with
  * sound but creates a quieter one: nobody discovers it. A speaker icon
@@ -14,37 +10,37 @@
  * to the dock, so the pill it's pointing at is unmistakable, offering to
  * turn music on in one click.
  *
- * The offer used to be once-and-forever, keyed on a localStorage flag
- * that was also set whenever music went on by *any* route. That made the
- * only discoverable entry point disappear permanently the first time it
- * was used — turn music on, turn it back off later, and the speaker pill
- * was the sole remaining way in, which is the icon problem all over
- * again. It's now scoped to the page load: dismiss it and it's gone
- * until you reload. Someone who wants music still sees it once, because
+ * This is the only thing that gets a card. There was briefly a second
+ * one explaining that the browser was holding playback until the page
+ * was clicked — true, and useless: by the time anyone finished reading
+ * it they'd have clicked something and fixed it without knowing why.
+ * A message about a condition that resolves itself is just noise.
+ *
+ * ## Why the offer isn't once-and-forever
+ *
+ * It used to be, keyed on a localStorage flag that was also set whenever
+ * music went on by *any* route. That made the only discoverable entry
+ * point disappear permanently the first time it was used — turn music
+ * on, turn it back off later, and the speaker pill was the sole
+ * remaining way in, which is the icon problem all over again.
+ *
+ * It's now scoped to the page load: dismiss it and it's gone until you
+ * reload. Someone who wants music still sees it once, because
  * `musicEnabled` persists and the offer never shows while music is on —
  * it only returns for someone it hasn't convinced.
  *
- * ## "blocked" — music is on, but the browser won't start the clock
- *
- * `AudioProvider` asks for playback on load when music is already opted
- * in, and plenty of browsers refuse without an interaction first. That
- * leaves someone who deliberately turned music on sitting in silence,
- * which looks exactly like the setting not working — the complaint that
- * put this card here. Any click anywhere fixes it, so the card says so
- * and retires itself the moment the clock starts.
- *
  * Deliberately not a toast. Toasts stack top-right, auto-retire, and are
- * for things that just happened; these are offers attached to a specific
- * control, and they should wait as long as it takes to be noticed.
+ * for things that just happened; this is an offer attached to a specific
+ * control, and it should wait as long as it takes to be noticed.
  *
  * ## Modals win
  *
- * Either card waits while a dialog is up. The dock sits *below* dialogs
- * by design (z-[35] against z-40+) so a modal covers it, which is right
- * for the pills and wrong for a callout: it ends up behind a blurred
- * scrim, where it can be neither read nor clicked. On the landing page
- * that's the permanent state until you connect — the offer was being
- * drawn, and buried, every time.
+ * The offer waits while a dialog is up. The dock sits *below* dialogs by
+ * design (z-[35] against z-40+) so a modal covers it, which is right for
+ * the pills and wrong for a callout: it ends up behind a blurred scrim,
+ * where it can be neither read nor clicked. On the landing page that's
+ * the permanent state until you connect — the offer was being drawn, and
+ * buried, every time.
  */
 
 import { useEffect, useState } from "react";
@@ -60,15 +56,6 @@ import { fadeRise, withReducedMotion } from "@/lib/ui/motion";
 const APPEAR_AFTER_MS = 4000;
 
 /**
- * Grace period before admitting the browser blocked playback. Shorter,
- * because this one is answering a question the player is already asking
- * ("I turned music on, why is it quiet?"), but not zero: a browser that
- * *does* allow autoplay resolves `resume()` a moment after mount, and
- * the card shouldn't flash on its way to being right.
- */
-const BLOCKED_AFTER_MS = 1800;
-
-/**
  * Set once the offer has been answered, either way.
  *
  * Module scope rather than storage, which is what makes the dismissal
@@ -77,8 +64,6 @@ const BLOCKED_AFTER_MS = 1800;
  * forget the dismissal every time a panel was opened and closed.
  */
 let answered = false;
-
-type Mode = "none" | "offer" | "blocked";
 
 /** Covers all five full-screen overlays in the app. */
 const DIALOG_SELECTOR = '[role="dialog"], [role="alertdialog"]';
@@ -111,46 +96,31 @@ function useDialogOpen(): boolean {
 }
 
 export function MusicNudge({ bottomClass }: { bottomClass: string }) {
-  const { settings, setMusicEnabled, supported, unlocked } = useAudio();
+  const { settings, setMusicEnabled, supported } = useAudio();
   const reduced = useReducedMotion();
   const dialogOpen = useDialogOpen();
-  const [mode, setMode] = useState<Mode>("none");
+  const [show, setShow] = useState(false);
 
   useEffect(() => {
-    if (!supported) return;
+    // Music on by any route (including the panel itself) retires the
+    // offer — it has served its purpose for this page load.
+    if (settings.musicEnabled) answered = true;
 
     // Hold while a modal is up, and restart the wait once it closes —
     // the player has something more pressing in front of them.
-    if (dialogOpen) {
-      setMode("none");
+    if (!supported || dialogOpen || answered) {
+      setShow(false);
       return;
     }
-
-    if (settings.musicEnabled) {
-      // Asked for and sounding: nothing to say, and the offer has served
-      // its purpose for the rest of this page load.
-      if (unlocked) {
-        answered = true;
-        setMode("none");
-        return;
-      }
-      const id = setTimeout(() => setMode("blocked"), BLOCKED_AFTER_MS);
-      return () => clearTimeout(id);
-    }
-
-    if (answered) {
-      setMode("none");
-      return;
-    }
-    const id = setTimeout(() => setMode("offer"), APPEAR_AFTER_MS);
+    const id = setTimeout(() => setShow(true), APPEAR_AFTER_MS);
     return () => clearTimeout(id);
-  }, [supported, dialogOpen, settings.musicEnabled, unlocked]);
+  }, [supported, dialogOpen, settings.musicEnabled]);
 
-  if (mode === "none") return null;
+  if (!show) return null;
 
   const dismiss = () => {
     answered = true;
-    setMode("none");
+    setShow(false);
   };
 
   return (
@@ -165,25 +135,15 @@ export function MusicNudge({ bottomClass }: { bottomClass: string }) {
         className="font-mono text-[11px] uppercase tracking-[0.2em]"
         style={{ color: "var(--color-preset-accent)" }}
       >
-        {mode === "blocked" ? "The score is ready" : "This world has a score"}
+        This world has a score
       </span>
-      {mode === "blocked" ? (
-        <p className="text-xs leading-relaxed opacity-75">
-          Your browser won&apos;t let sound start until you touch the page.
-          One click — anywhere — and the music picks up.
-        </p>
-      ) : (
-        <p className="text-xs leading-relaxed opacity-75">
-          Each realm carries its own piece, and they hand over to each other as
-          you cross between worlds. It&apos;s off until you say so.
-        </p>
-      )}
+      <p className="text-xs leading-relaxed opacity-75">
+        Each realm carries its own piece, and they hand over to each other as
+        you cross between worlds. It&apos;s off until you say so.
+      </p>
       <div className="flex items-center gap-2">
         <button
           type="button"
-          // Already-on is not a no-op here: the call carries a trusted
-          // gesture into `resume()`, which is the whole point of the
-          // "blocked" card.
           onClick={() => setMusicEnabled(true)}
           className="rounded-md px-3 py-1.5 font-mono text-[11px] font-semibold uppercase tracking-[0.15em] transition-[filter] hover:brightness-110"
           style={{
@@ -191,17 +151,15 @@ export function MusicNudge({ bottomClass }: { bottomClass: string }) {
             color: "var(--color-preset-bg)",
           }}
         >
-          {mode === "blocked" ? "Start the music" : "Play music"}
+          Play music
         </button>
-        {mode === "offer" && (
-          <button
-            type="button"
-            onClick={dismiss}
-            className="rounded-md px-2 py-1.5 font-mono text-[11px] uppercase tracking-[0.15em] opacity-60 transition-opacity hover:opacity-100"
-          >
-            Not now
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={dismiss}
+          className="rounded-md px-2 py-1.5 font-mono text-[11px] uppercase tracking-[0.15em] opacity-60 transition-opacity hover:opacity-100"
+        >
+          Not now
+        </button>
       </div>
     </motion.div>
   );
