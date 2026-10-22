@@ -46,6 +46,9 @@ const PANEL_LABEL: Record<Panel, string> = {
   audio: "Sound settings",
 };
 
+/** See the `onUpdate` on the panel below — its presence is the point. */
+const noop = () => {};
+
 /** Shared pill styling — a rounded, glowing tab keyed to the preset accent. */
 const PILL_CLASS =
   "flex items-center gap-2 rounded-full border border-[var(--border-2)] bg-[var(--color-preset-bg)] px-4 py-2 font-mono text-xs uppercase tracking-widest shadow-[0_0_16px_-6px_var(--glow)] transition-opacity hover:opacity-100";
@@ -144,7 +147,19 @@ export function CornerDock() {
             variants={withReducedMotion(fadeRise, reduced)}
             initial="hidden"
             animate="visible"
-            exit="hidden"
+            exit="exit"
+            // Keeps the fade on the main thread, which is the fix for a
+            // blink on close. framer hands an accelerated opacity
+            // animation to the Web Animations API and leaves the inline
+            // style alone while it runs; on exit it then drops the WAAPI
+            // animation a frame before it commits the final value, so
+            // the panel repaints at the inline `opacity: 1` left over
+            // from its entrance — one frame at full brightness, right as
+            // it should be disappearing. `onUpdate` is what framer's
+            // `AcceleratedAnimation.supports()` checks to opt out, and
+            // it writes every frame inline instead. The cost is a tween
+            // on one small element.
+            onUpdate={noop}
             aria-label={PANEL_LABEL[open]}
             className={`fixed right-4 ${PANEL_BOTTOM} z-[35] flex max-h-[70dvh] w-[min(26rem,calc(100vw-2rem))] flex-col gap-3 overflow-y-auto rounded-xl border border-[var(--border-2)] bg-[var(--color-preset-bg)] p-5 shadow-[0_16px_48px_-12px_var(--glow)]`}
           >
