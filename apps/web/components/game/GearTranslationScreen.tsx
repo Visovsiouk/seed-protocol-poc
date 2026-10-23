@@ -88,7 +88,7 @@ export function GearTranslationScreen({
           The world re-makes what you carried.
         </h3>
         <Body size="sm">
-          These were a fallen aspirant&apos;s tools before they were yours —
+          These were a fallen borrower&apos;s tools before they were yours —
           things carried as far as their last hand could carry them. This world
           is made of a different substance than the one that forged them, so a
           true tool re-makes itself to the new world&apos;s law as you cross: the

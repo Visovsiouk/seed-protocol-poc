@@ -5,6 +5,7 @@ import {
   IBM_Plex_Mono,
   VT323,
   JetBrains_Mono,
+  Caveat,
 } from "next/font/google";
 import "./globals.css";
 import { Providers } from "./providers";
@@ -49,6 +50,16 @@ const jetbrainsMono = JetBrains_Mono({
   variable: "--font-jetbrains-mono",
   display: "swap",
 });
+// The margins. A former borrower's pen — the one cursive in the app, so a
+// margin note reads as somebody else's handwriting without being labelled.
+// Not themed by [data-theme="crt"]: a note found during a run is the same
+// hand as one read in the Book, and the CRT voices would flatten that.
+const caveat = Caveat({
+  subsets: ["latin"],
+  weight: ["400", "600"],
+  variable: "--font-caveat",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   title: "Realms — Seed Protocol PoC",
@@ -64,7 +75,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${spaceGrotesk.variable} ${inter.variable} ${plexMono.variable} ${vt323.variable} ${jetbrainsMono.variable}`}
+      className={`${spaceGrotesk.variable} ${inter.variable} ${plexMono.variable} ${vt323.variable} ${jetbrainsMono.variable} ${caveat.variable}`}
     >
       {/* Default to the entry world (fantasy) palette so the chrome —
           nav, wallet, landing — reads in-world from first paint instead of

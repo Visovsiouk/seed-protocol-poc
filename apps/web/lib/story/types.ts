@@ -16,6 +16,28 @@
 /** Backdrop wash tint keyed behind a beat's frame (aria-hidden layer). */
 export type BeatWash = "accent" | "danger" | "void" | "warm";
 
+/**
+ * Which voice speaks a beat. The two are never mixed — the whole point of
+ * splitting them is that a reader can tell who is talking without being told,
+ * which is what the single-register prose could never do.
+ *
+ *   - `book`   — second person, flat, present. Describes only, never
+ *     explains. Rendered with the ledger `Body` voice (hanging em-dash).
+ *   - `margin` — a former borrower, first person, dated and signed.
+ *     Opinionated, frightened, funny, sometimes wrong. Handwriting styling,
+ *     and explicitly *not* the em-dash tic, which belongs to the Book.
+ *
+ * There is deliberately no voice for the antagonist. A third register that
+ * rendered him as typography — struck-through lines, redaction bars — was
+ * built and cut: without an established convention to read it against, an
+ * edit happening on screen reads as a glitch, not as a hand. He is carried by
+ * what's missing from the artifact instead (an unsigned first entry, a word
+ * written under the player's name by nobody), which needs no convention.
+ *
+ * Omitted means `book`, so every existing beat literal keeps its voice.
+ */
+export type BeatVoice = "book" | "margin";
+
 /** Optional cinematic timing for a beat. All fields are opt-in. */
 export type BeatTiming = {
   /** Reveal body lines one at a time on a slow stagger instead of together. */
@@ -40,7 +62,16 @@ export type BeatTiming = {
 export type CinematicBeat = {
   /** Small-caps eyebrow stamp at the top of the page. */
   stamp: string;
-  /** Body paragraphs — each its own line in the staggered reveal. */
+  /**
+   * Body paragraphs — each its own line in the staggered reveal.
+   *
+   * Stays `string[]` on purpose. Widening it to `(string | BeatLine)[]` to
+   * carry per-line annotations would break the dwell's reveal estimate (which
+   * counts `body.length`), force narrowing at the one render site, and cost
+   * the invariant this file's header states — that the prose reads correctly
+   * with every annotation stripped. `voice` rides alongside as a side-car
+   * instead.
+   */
   body: string[];
   /** Optional right-aligned attribution at the foot of the page. */
   footnote?: string;
@@ -50,4 +81,16 @@ export type CinematicBeat = {
   wash?: BeatWash;
   /** Optional cinematic timing. */
   timing?: BeatTiming;
+  /** Who speaks this beat. Omitted = `"book"`. */
+  voice?: BeatVoice;
+  /**
+   * Require a deliberate act before the beat will advance.
+   *
+   * The opening asks the player to *do* three things — pull the card, read
+   * their own handwriting on it, sign it — rather than read about doing them.
+   * While a beat is gated, Enter is disarmed and the auto-advance dwell never
+   * starts; the frame calls `satisfyGate()` when the act is performed. Reduced
+   * motion is unaffected: the gate is an interaction requirement, not motion.
+   */
+  gate?: "interaction";
 };

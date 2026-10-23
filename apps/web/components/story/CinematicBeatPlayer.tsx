@@ -30,7 +30,8 @@ import {
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { Body } from "@/components/ui";
-import type { BeatWash, CinematicBeat } from "@/lib/story/types";
+import type { BeatVoice, BeatWash, CinematicBeat } from "@/lib/story/types";
+import { MarginLine } from "@/components/story/voices";
 import {
   DUR,
   fadeToBlack,
@@ -63,6 +64,18 @@ export type RenderFrameArgs = {
   children: ReactNode;
   /** The single forward action — wire to the CTA button's onClick. */
   advance: () => void;
+  /**
+   * True while a `gate: "interaction"` beat is still waiting on the player's
+   * act. `advance` is inert and Enter is disarmed until `satisfyGate` runs, so
+   * a frame should render the act's affordance instead of the CTA.
+   */
+  gated: boolean;
+  /**
+   * Record that the gated act was performed. Idempotent, and a no-op on an
+   * ungated beat. Does not advance — the player still chooses to move on,
+   * which keeps the act and the page turn as two separate decisions.
+   */
+  satisfyGate: () => void;
 };
 
 export function CinematicBeatPlayer({
@@ -94,7 +107,21 @@ export function CinematicBeatPlayer({
     advancingRef.current = false;
   }, [index]);
 
+  // Interaction gate. Re-armed per beat exactly like `advancingRef`, so a
+  // satisfied gate on one beat can't carry into the next.
+  const [gateMet, setGateMet] = useState(false);
+  useEffect(() => {
+    setGateMet(false);
+  }, [index]);
+
+  const gated = beat.gate === "interaction" && !gateMet;
+
+  const satisfyGate = useCallback(() => setGateMet(true), []);
+
   const advance = useCallback(() => {
+    // Checked ahead of the idempotency latch so a blocked call doesn't burn
+    // it — the player must still be able to advance once the gate is met.
+    if (gated) return;
     if (advancingRef.current) return;
     advancingRef.current = true;
 
@@ -112,7 +139,7 @@ export function CinematicBeatPlayer({
     } else {
       go();
     }
-  }, [beat, isLast, reduced, onComplete]);
+  }, [beat, gated, isLast, reduced, onComplete]);
 
   // Keep a live ref so the dwell timer always calls the current `advance`.
   const advanceRef = useRef(advance);
@@ -120,12 +147,25 @@ export function CinematicBeatPlayer({
 
   // Enter fires the forward action. Re-keyed per beat so a held Enter that
   // advanced the previous beat must be released before it can fire again.
-  useEnterToActivate({ onActivate: advance, sig: `${sigPrefix}:${index}` });
+  //
+  // `enabled` is the hook's own parameter and only controls listener
+  // *registration* — the `useActivationArmed(sig)` state machine underneath
+  // is untouched, so the held-Enter disarm still applies across the gate
+  // opening and closing. That's why this is the safe way to suspend Enter
+  // rather than swapping the callback for a no-op.
+  useEnterToActivate({
+    onActivate: advance,
+    enabled: !gated,
+    sig: `${sigPrefix}:${index}`,
+  });
 
   // Auto-advance dwell. Never starts while an activation key is held; under
   // reduced motion it's disabled entirely (CTA remains the manual path).
   useEffect(() => {
     if (reduced) return;
+    // A gated beat must never advance itself — the whole point is that the
+    // player performs the act. The effect re-runs when the gate opens.
+    if (gated) return;
     const dwellMs = beat.timing?.dwellMs;
     if (!dwellMs) return;
 
@@ -134,10 +174,9 @@ export function CinematicBeatPlayer({
     let releaseOff: (() => void) | undefined;
 
     // Approximate when the staggered lines finish revealing, so the dwell is
-    // measured from the moment the page is fully readable.
-    const revealMs = beat.timing?.lineStagger
-      ? beat.body.length * 500 + 700
-      : 700;
+    // measured from the moment the page is fully readable rather than from
+    // mount. The 500 matches `lineStagger`'s `staggerChildren`.
+    const revealMs = beat.timing?.lineStagger ? beat.body.length * 500 + 700 : 700;
 
     const armDwell = () => {
       if (cancelled) return;
@@ -162,35 +201,30 @@ export function CinematicBeatPlayer({
       if (dwellTimer) window.clearTimeout(dwellTimer);
       releaseOff?.();
     };
-  }, [index, reduced, beat]);
+  }, [index, reduced, gated, beat]);
+
+  const staggered = !reduced && !!beat.timing?.lineStagger;
+  const voice = beat.voice ?? "book";
 
   const body = (
     <motion.div
       key={index}
       className="flex flex-col gap-3"
-      variants={
-        reduced || !beat.timing?.lineStagger
-          ? undefined
-          : lineStagger
-      }
-      initial={reduced || !beat.timing?.lineStagger ? false : "hidden"}
-      animate={reduced || !beat.timing?.lineStagger ? false : "visible"}
+      variants={staggered ? lineStagger : undefined}
+      initial={staggered ? "hidden" : false}
+      animate={staggered ? "visible" : false}
     >
       {beat.body.map((line, i) => {
         const held = !reduced && beat.timing?.hold?.line === i;
+
         return (
-          <motion.div
-            key={i}
-            variants={
-              reduced || !beat.timing?.lineStagger ? undefined : lineReveal
-            }
-          >
+          <motion.div key={i} variants={staggered ? lineReveal : undefined}>
             <motion.div
               variants={held ? holdPulse : undefined}
               initial={held ? "rest" : false}
               animate={held ? "pulse" : false}
             >
-              <Body>{line}</Body>
+              <VoiceLine voice={voice}>{line}</VoiceLine>
             </motion.div>
           </motion.div>
         );
@@ -227,11 +261,25 @@ export function CinematicBeatPlayer({
         isLast,
         children: body,
         advance,
+        gated,
+        satisfyGate,
       })}
 
       <FadeToBlack active={fading} reduced={!!reduced} />
     </div>
   );
+}
+
+/**
+ * One body line, in the beat's voice.
+ *
+ * The Book keeps the kit's `Body` (mono italic, hanging em-dash) — that tic
+ * is its signature, and it's exactly why the margin voice can't share the
+ * component. See `components/story/voices.tsx`.
+ */
+function VoiceLine({ voice, children }: { voice: BeatVoice; children: ReactNode }) {
+  if (voice === "margin") return <MarginLine>{children}</MarginLine>;
+  return <Body>{children}</Body>;
 }
 
 /** Full-viewport black cut, portaled so it covers the frame and chrome. */

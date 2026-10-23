@@ -36,6 +36,7 @@ import { creatureSpec } from "@/lib/art/creature";
 import { familyFor } from "@/lib/art/families";
 import { spriteFor } from "@/lib/art/sprites";
 import { weaponLane } from "@/lib/art/archetypes";
+import { bookmarkLore } from "@/lib/story/bookmarks";
 import { CreatureSigil } from "@/components/art/CreatureSigil";
 import { ImpactLayer } from "@/components/art/ImpactLayer";
 import { elementColor } from "@/lib/ui/loot-visuals";
@@ -330,6 +331,14 @@ function CombatStage({
           </span>
         </div>
 
+        {/* Who this was. Bosses only — a bookmark is a borrower the Colophon
+            filed into the page to hold it open, and the breath between the
+            name landing and the first swing is the only moment the player is
+            looking straight at it and not yet counting hit points. On the
+            turn to phase 2 the line switches to the borrower surfacing
+            through, so the mirror sharpens exactly when the fight does. */}
+        {isBoss && <BookmarkNote bossId={monster.id} phase={combat.bossPhase ?? 1} />}
+
         {/*
           Thick enemy health bar with element/danger glow. The damage
           float is anchored to this bar (not the stage centre) so the hit
@@ -562,5 +571,41 @@ export function EncounterStage({
         )}
       </div>
     </section>
+  );
+}
+
+/**
+ * Who the boss was, held under its name.
+ *
+ * A bookmark is a borrower the Colophon filed into a page to hold it open
+ * for revision, so every boss has a person behind it. This is the only place
+ * that fact is stated in the run, and it is deliberately one or two
+ * sentences: it has to land in the breath between the name appearing and the
+ * first swing, competing with a health bar.
+ *
+ * On the turn to phase 2 the line swaps to `turn` — the borrower surfacing
+ * through the thing for a moment. That is the mirror the whole bestiary is
+ * built on (this is the player, if the player stops), and it sharpens at
+ * exactly the point the fight gets worse.
+ *
+ * The attribution line only renders for the three bookmarks the date-due
+ * card names; community-realm bosses get the prose without a false
+ * provenance, which is the same restraint `bookmarkLore`'s fallback shows.
+ */
+function BookmarkNote({ bossId, phase }: { bossId: string; phase: 1 | 2 }) {
+  const lore = bookmarkLore(bossId);
+  const line = phase >= 2 ? lore.turn : lore.intro;
+
+  return (
+    <div className="flex flex-col gap-0.5">
+      <p className="font-mono text-[12px] italic leading-[1.6] opacity-75">
+        {line}
+      </p>
+      {lore.borrower && (
+        <p className="font-mono text-[9.5px] uppercase tracking-[0.18em] opacity-45">
+          {lore.borrower.name} · filed {lore.borrower.year}
+        </p>
+      )}
+    </div>
   );
 }

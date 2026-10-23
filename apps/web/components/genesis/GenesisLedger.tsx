@@ -1,14 +1,18 @@
 "use client";
 
 /**
- * The Name credential, presented as the *three sparks that kindle your
- * true-name*. Each founding world gives up one spark
- * when its warden falls; the Altar is where the three sparks kindle the
- * Name — the self-naming that is the real on-chain SeedSBT mint. A world
- * still below stays *unnamed* — "?????" — to preserve the next-realm
- * surprise, exactly like the base picker. A kindled spark lights its plate
- * with the world's own accent and reveals its name. When all three are in
- * hand the luminous "Speak your Name" CTA unseals.
+ * The signet, presented as the *three stamps that earn it*. Each founding
+ * page takes your mark when its bookmark is torn out; the Altar is where a
+ * full card is read and the signet is cut — the real on-chain SeedSBT mint.
+ * A page still below stays unstamped and unnamed — "?????" — to preserve the
+ * next-page surprise, exactly like the base picker. A stamped plate lights
+ * with that page's own accent and reveals its name. When all three are down
+ * the luminous claim CTA unseals.
+ *
+ * The turn the whole story rests on happens here: a signet means you *can*
+ * sign out, and signing out shuts the book with everyone still inside — so
+ * the copy below never offers it as the reward. What it offers is the blank
+ * quire.
  *
  * Reconstructed honestly from chain: it reads the player's per-realm
  * `BossCleared` history via `useTutorialProgress` and posts to
@@ -101,17 +105,17 @@ export function GenesisLedger({
           <Rule />
           <h2 className="font-mono text-2xl font-medium tracking-[-0.015em]">
             {progress.hasSeed
-              ? "Your name is on the roll now"
+              ? "The signet is yours. Don't sign out."
               : allShardsRecovered
-                ? "There was never a Name to be given. Carve it."
-                : "Three sparks, one Name"}
+                ? "The card is full. It will cut you a signet."
+                : "Three stamps, one signet"}
           </h2>
           <p className="text-sm leading-relaxed opacity-75">
             {progress.hasSeed
-              ? "Your name sits on the roll where three aspirants' names trail off unfinished — the ones who clung, who stole, who tried to end the Work. You did none of those. The Name is soulbound: it cannot be forked, bought, or forged, because it is not a thing you hold. It is the proof that you carved yourself out."
+              ? "It is soulbound: it cannot be forked, bought, or copied — Vesna Kord is still in the ICE for trying the last one. And it will let you sign out, which is the trap, because the book shuts behind whoever does and everyone still inside stays inside. Press it into a blank quire instead."
               : allShardsRecovered
-                ? "Here is what the wardens never understood: no one hands down a Name. The Altar is the makers'-roll from the threshold, and the three sparks are the fire. Bring them together and you are not claiming anything — you are carving your own name into the last empty place on the roll, where the bound aspirants could not reach. The brand on your hand has been a half-finished name since the first door. Finish it."
-                : "Each founding world gives up a spark when its warden falls. The worlds still below keep their sparks — and their names — until you go down to them. Kindle all three at the Altar and you will learn what the sparks are really for."}
+                ? "Three pages bore your mark deep enough to be vouched for independently, so the book has to admit your name. That is all a signet is — not a reward, a proof. Aurelio Ker earned one in 1908 and used it exactly right, then reached for the last page and was filed into his own work. You get the same choice he got."
+                : "Each founding page takes your mark when its bookmark is torn out. The pages still below keep their names until you go down to them. Fill the card and the Altar will read it."}
           </p>
         </header>
 

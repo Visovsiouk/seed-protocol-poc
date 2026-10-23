@@ -106,7 +106,7 @@ function ForgeRoom() {
           You have a name now, and a name is what it takes to finish a world of
           your own. Raise one from the unfinished — name it, pick its substance
           and the warden that holds its heart, and set it turning for the next
-          aspirant to descend. Step through to the forge floor.
+          borrower to descend. Step through to the forge floor.
         </p>
       </header>
       <Link href="/create" prefetch className="self-start">

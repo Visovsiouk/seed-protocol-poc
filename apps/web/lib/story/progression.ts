@@ -61,53 +61,16 @@ export function nextStarterFor(starterClears: number): Preset | null {
   return REALM_ORDER[starterClears] ?? null;
 }
 
-/**
- * Short lock-tease shown on a card the player can't yet enter, used
- * only on the post-arc picker (pre-arc the picker is hidden entirely).
- * Diegetic; no "complete X to unlock Y" UI language. The tease just
- * gestures at the order, not at stakes.
- */
-export function lockTeaseFor(preset: Preset): string {
-  if (preset === "cyberpunk") {
-    return "Rain on setting neon, a world half-hardened. Someone down here tried to take a name that wasn't hers instead of earning one, and the gate she tried to crack is the gate she became.";
-  }
-  if (preset === "scifi") {
-    return "Frost over a world sealed perfect and dead. Someone out here finished their making and tried to finish all of it — the cold is where that ambition stopped.";
-  }
-  return "";
-}
-
-/**
- * One-line stakes copy shown beneath a realm card on the picker. All
- * three starters are permadeath — a fall ends the run and forfeits every
- * unbanked finding. The copy stays per-preset so each realm names the
- * cost in its own voice.
- */
-export function stakesNoteFor(preset: Preset): string {
-  if (preset === "fantasy") {
-    return "Fall here and the Reach binds you — sets you into its wet wood to hold the door, the way it bound the one laughing ahead. What you hadn't carried out stays down with you.";
-  }
-  if (preset === "cyberpunk") {
-    return "Fall here and the district binds you — sets your face into its ICE to guard the next runner from the same shortcut. Everything you hadn't carried out stays in the dark.";
-  }
-  if (preset === "scifi") {
-    return "Fall here and the station binds you — sets you into the cold to wait out the next climber. It vents everything still in your hands into the vacuum.";
-  }
-  return "";
-}
-
 export const STORY_HERO_OPEN = {
-  eyebrow: "The doors stand open",
-  title: "You named yourself where they could not. Now keep the Work open.",
+  eyebrow: "The card is spent",
+  title: "Three stamps, and a signet of your own. Don't sign out — write.",
   body:
-    "You went down three worlds and carried yourself back out all three times — and at the " +
-    "Altar you cut your own name into the roll, in the place where the bound aspirants' names " +
-    "trail off unfinished. That name is a maker's power. It buys no rest: a world stays alive " +
-    "only while climbers keep attempting it, and a world no one attempts hardens and cools " +
-    "toward the finished, dead edge. Raise a world of your own and you take on the same charge " +
-    "the wardens broke under — keep it attempted, or watch your making dim. The registry fills " +
-    "with worlds other hands have raised, each one a mortal who chose to make instead of be " +
-    "bound. Add yours.",
+    "You went down three pages and carried yourself back out of all three, so the book had to " +
+    "admit your name. That is what a signet is. It will let you sign out, and signing out shuts " +
+    "the book behind you with everyone still inside — which is exactly what he has been working " +
+    "toward for two hundred years. So press it into a blank quire instead. A book that is still " +
+    "being written cannot be given a colophon, and every page another hand adds is one more he " +
+    "has to come back for.",
 } as const;
 
 /**
@@ -137,73 +100,59 @@ export function interstitialFor(args: {
   const { justCleared, progress } = args;
   const starterClears = progress.starterClears;
 
-  // First door (fantasy) → warp to cyberpunk. Ruin: the one who CLUNG.
+  // First page (fantasy) → cyberpunk. Hesper Alder, 1847: the one who stayed.
   if (justCleared === "fantasy" && starterClears === 1) {
     return {
-      eyebrow: "Door I · the Reach falls · the one who clung",
+      eyebrow: "Page one · the Reach lets go · Hesper Alder, filed 1847",
       title: "She goes down without a fight she believes in.",
       body:
-        "For one breath the Reach lets her be a woman again — an aspirant who finished this " +
-        "world and could not bear to leave it, who stayed to tend it until it wore her like " +
-        "a face. I only wanted to keep it, the wet wood says, in her voice. Then the Reach " +
-        "takes her back, and the world begins to harden: under the moss is rain on setting " +
-        "concrete. A spark kindles against the mark on your hand — the first of three, and " +
-        "the mark burns a little less unfinished. One ruin read. Two to go. Carry out " +
-        "what's yours; she is the proof of what it costs to love the made thing more than " +
-        "the making.",
+        "For one breath the wet wood lets her be a woman again — someone who mastered this " +
+        "page in 1847 and could not bear to leave it. I only wanted to keep it, she says. " +
+        "Then you tear the bookmark out, and the page stops being findable. Your mark goes " +
+        "on the card: one stamp, and the first thing you have that he cannot revise.",
       cta: { kind: "warp-next", label: "Go down", nextPreset: "cyberpunk" },
     };
   }
 
-  // Second door (cyberpunk) → warp to sci-fi. Ruin: the one who STOLE.
+  // Second page (cyberpunk) → scifi. Vesna Kord, 1981: the one who copied.
   if (justCleared === "cyberpunk" && starterClears === 2) {
     return {
-      eyebrow: "Door II · the ICE shatters · the one who stole",
+      eyebrow: "Page two · the ICE shatters · Vesna Kord, filed 1981",
       title: "The last of her forks goes dark mid-handshake.",
       body:
-        "Where the Hag clung, this one reached. A runner who tried to take a name that " +
-        "wasn't hers — to copy a maker's power and skip the climb. A true-name can't be " +
-        "taken; it knew her by the soul and bound her as the lock on the world's own gate. " +
-        "Every copy she split off wore a face you could have worn, and not one of them was " +
-        "the one that carried itself out. A second spark finds the mark, and the neon " +
-        "hardens toward frost. Two of three now. She is the proof a name can't be stolen — " +
-        "one more world, where someone tried to end it instead.",
+        "Alder stayed. This one tried to copy a signet instead of earning one — and a signet " +
+        "is the one thing that cannot be duplicated, so the district kept her as its own " +
+        "lock. Every fork she split off wore a face you could have worn. Second stamp. The " +
+        "neon here is still wet, which means he has not finished with this page yet.",
       cta: { kind: "warp-next", label: "Go down", nextPreset: "scifi" },
     };
   }
 
-  // Third door (sci-fi) → end of arc. Ruin: the one who tried to END the Work.
-  // Whether the Name claim actually lights up is decided by the gate at the
-  // caller; this just hands off the right shape and lets the parent gate it.
+  // Third page (sci-fi) → end of arc. Aurelio Ker, 1908: the one who finished.
+  // Whether the claim actually lights up is decided by the gate at the caller;
+  // this just hands off the right shape and lets the parent gate it.
   if (justCleared === "scifi" && starterClears >= 3) {
     return {
-      eyebrow: "Door III · the Core goes quiet · the one who would end it",
-      title: "It shows you the last line it was writing, and the line just stops.",
+      eyebrow: "Page three · the core goes quiet · Aurelio Ker, filed 1908",
+      title: "He shows you the last line he was writing, and the line just stops.",
       body:
-        "The oldest bound aspirant, and the only one who ever earned its name before you. " +
-        "It made. It finished its world. And then it tried to finish the Work itself — to " +
-        "write the last line and hold all of creation still and perfect and dead, so no new " +
-        "maker could ever add to it. The cold took it here, at the finished edge, where its " +
-        "ambition ran out. Its whisper drops below hearing and the third spark settles " +
-        "against the mark. You carry all three up now — not a Name yet, only the sparks that " +
-        "kindle it. Three ruins read: one who clung, one who stole, one who would have ended " +
-        "it. The base has an Altar where the three sparks kindle whole. Climb. You already " +
-        "know what the wardens did wrong.",
-      cta: { kind: "claim-seed", label: "Climb to the Altar" },
+        "Ker earned a signet and used it exactly as you are about to: he wrote this page and " +
+        "put his own name on it. Then he reached for the colophon — and the only other hand " +
+        "that ever wanted to write it filed him into his own work. There were six stations " +
+        "before this one. Third stamp. The card is full, and the Altar is where it gets read.",
+      cta: { kind: "claim-seed", label: "Take it to the Altar" },
     };
   }
 
   // Any community-realm clear, or out-of-band starter clears post-arc.
   return {
-    eyebrow: "Realm cleared",
-    title: "Another world mastered, another bound aspirant laid down.",
+    eyebrow: "Bookmark torn out",
+    title: "Another page that has stopped being findable.",
     body:
-      "The warden falls and for a breath wears a mortal's face — someone who came this far, " +
-      "reached for a name, and was bound into the world instead of carrying themselves out. " +
-      "This world was raised by a hand like yours and stays alive only while hands like yours " +
-      "keep attempting it; you just kept it alive a little longer. Its findings are yours to " +
-      "carry up. The base is still above; the registry still has worlds no one has gone down " +
-      "to the warden of yet.",
-    cta: { kind: "open-picker", label: "Climb back to the base" },
+      "Whatever was holding this one open wore a mortal's face for a breath on the way down — " +
+      "someone who came this far and did not carry themselves back out. This page was written " +
+      "by a hand like yours, which is why he has to come back for it at all. Its findings are " +
+      "yours to carry up, and the registry still has pages nobody has reached the bookmark of.",
+    cta: { kind: "open-picker", label: "Back to the base" },
   };
 }

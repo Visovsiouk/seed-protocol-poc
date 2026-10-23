@@ -47,10 +47,18 @@ export function PlayerSigil({
   address,
   size = 40,
   className,
+  label,
 }: {
   address?: string | null;
   size?: number;
   className?: string;
+  /**
+   * Override the accessible name. The crest is the same shape everywhere by
+   * design, so when several are on screen at once — the due-date card presses
+   * one per page — each needs to say which one it is. Falls back to the
+   * generic naming when omitted.
+   */
+  label?: string;
 }) {
   const spec = sigilSpec(address);
   const dashed = spec.placeholder;
@@ -63,7 +71,7 @@ export function PlayerSigil({
       preserveAspectRatio="xMidYMid meet"
       className={className}
       role="img"
-      aria-label={dashed ? "No wallet connected" : "Your crest"}
+      aria-label={label ?? (dashed ? "No wallet connected" : "Your crest")}
       focusable="false"
       // The placeholder reads as "not yet" rather than as a real identity.
       opacity={dashed ? 0.35 : 1}

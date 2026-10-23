@@ -13,7 +13,7 @@
  * surveillance, and signs of corporate decay so the world stays
  * coherent across runs. Cyberpunk sits at the *half-set* middle of the
  * finishing motif — rain on setting concrete, neon hardening toward
- * frost — and its archaeology is of the bound aspirants (runners) who
+ * frost — and its archaeology is of the filed borrowers (runners) who
  * came down before you.
  */
 
@@ -296,9 +296,9 @@ export const cyberpunkBank: FlavorBank = {
       "Your HUD ghosts a second feed — it's been watching you for a while, the way she watched for a name she could copy without earning it.",
       "For a frame the ICE renders a face: a runner who came this far once, tried to take a name she hadn't earned, and never logged out. None of her copies was the one that got away.",
     ],
-    // Community wardens — bound aspirants, same three ruins in district dialect.
+    // Community wardens — filed borrowers, same three ruins in district dialect.
     ceo_phase2: [
-      "The CEO loosens their tie. Their security detail multiplies — an aspirant who tried to own the gate instead of climbing through it, charging toll on a world that was never hers to sell.",
+      "The CEO loosens their tie. Their security detail multiplies — a borrower who tried to own the gate instead of climbing through it, charging toll on a world that was never hers to sell.",
       "The CEO's smile sharpens; they've stopped pretending. Still counting a fortune they can't carry up the stairs.",
     ],
     ghost_phase2: [

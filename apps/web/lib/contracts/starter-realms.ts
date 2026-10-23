@@ -79,7 +79,7 @@ const STARTER_DISPLAY_BY_PRESET: Record<Preset, { name: string; tagline: string 
   fantasy: {
     name: "The Hollow Reach",
     tagline:
-      "An unfinished world still wet and growing, wild at the least-made edge of creation. Somewhere ahead, the Forest Hag laughs — an aspirant who loved it too much to leave, and wears it now as a face.",
+      "An unfinished world still wet and growing, wild at the least-made edge of creation. Somewhere ahead, the Forest Hag laughs — a borrower who loved it too much to leave, and wears it now as a face.",
   },
   scifi: {
     name: "Drift Station Ker-7",

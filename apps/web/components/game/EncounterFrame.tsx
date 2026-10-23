@@ -39,6 +39,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useAccount } from "wagmi";
 import type {
   ActionChoice,
   EngineEvent,
@@ -62,6 +63,10 @@ import { playBeats, sfxForEvent } from "@/lib/audio/gameplay";
 import { CombatLog } from "./CombatLog";
 import { DefeatOverlay } from "./DefeatOverlay";
 import { EscrowTray } from "./EscrowTray";
+import { MarginFind } from "./MarginFind";
+import { marginAt } from "@/lib/story/marginalia";
+import { epitaphFallback } from "@/lib/story/epitaph-bank";
+import { markMarginFound } from "@/lib/story/margins-local";
 import { ExtractSelection } from "./ExtractSelection";
 import { PlayerBar } from "./PlayerBar";
 import { EncounterStage } from "./EncounterStage";
@@ -184,6 +189,10 @@ export function EncounterFrame({
   bossReturnHref = "/",
 }: Props) {
   const router = useRouter();
+  // Only used to namespace collected margin notes per player, the same way
+  // the codex stores namespace their flags. A disconnected run still shows
+  // its notes; they just aren't kept.
+  const { address } = useAccount();
   const initialSplit = useMemo(() => splitIntro(initialLines), [initialLines]);
 
   const [state, setState] = useState<RunState>(initialState);
@@ -416,6 +425,78 @@ export function EncounterFrame({
   const canExtract =
     atDecision && state.extractable && state.escrow.length > 0;
 
+  /**
+   * The note waiting in this room, if any.
+   *
+   * Derived, never stored. It deliberately does NOT enter `RunState`: the
+   * play page must hand the engine back the exact object `startRun`
+   * returned (the engine resolves schemas and bosses through `WeakMap`s
+   * keyed on it), and the mint wire body is built from `entry.loot` alone,
+   * so a cosmetic find has no business anywhere near either. Keeping it as
+   * a `useMemo` here is the firewall.
+   *
+   * `marginAt` draws from a domain-separated sub-seed and builds its own
+   * `Rng`, so it cannot perturb a loot or combat roll — the engine makes a
+   * fresh generator per step and holds no shared RNG state.
+   */
+  const margin = useMemo(
+    () =>
+      atDecision
+        ? marginAt({
+            runSeed: state.rngSeed,
+            depth: state.depth,
+            preset: state.preset,
+          })
+        : null,
+    [atDecision, state.rngSeed, state.depth, state.preset],
+  );
+
+  /**
+   * The note the book writes about *this* death.
+   *
+   * Composed here because this is the only place that holds every fact at
+   * once: which page, how deep, what was still on the stage when the player
+   * went down, which turn of that fight, and how much unbanked escrow went
+   * with them. `DefeatOverlay` stays presentational.
+   *
+   * Deterministic in the run seed, so re-reading a death never rewrites it.
+   * Phase 3 puts a model in front of `epitaphFallback` behind a default-off
+   * flag; this is the shipped path and the fallback both.
+   */
+  const epitaph = useMemo(() => {
+    if (!state.defeated) return undefined;
+    const monster = state.encounter?.combat.monster;
+    return epitaphFallback({
+      runSeed: state.rngSeed,
+      preset: state.preset,
+      depth: state.defeatedAtDepth ?? state.depth,
+      killedBy: monster?.name ?? "Something down there",
+      wasBookmark: !!monster && "bakedEffects" in monster,
+      turns: state.defeatedTurn ?? 0,
+      carried: state.escrow.length,
+    });
+  }, [
+    state.defeated,
+    state.rngSeed,
+    state.preset,
+    state.depth,
+    state.defeatedAtDepth,
+    state.defeatedTurn,
+    state.escrow.length,
+    state.encounter,
+  ]);
+
+  // Collect it. Ref-guarded per note so a re-render can't re-write, mirroring
+  // `bossGhostFiredRef` above; `markMarginFound` is itself idempotent, so
+  // this is belt and braces rather than the only defence.
+  const collectedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!margin || !address) return;
+    if (collectedRef.current === margin.id) return;
+    collectedRef.current = margin.id;
+    markMarginFound(address, margin.id);
+  }, [margin, address]);
+
   // Lock Descend for 1 second whenever a fresh decision appears, so a
   // player mashing through combat can't blow past the decision and dive
   // deeper by accident — they have to register the choice before it arms.
@@ -510,17 +591,23 @@ export function EncounterFrame({
             equippedWeapon={state.equipped.weapon}
           />
         ) : atDecision ? (
-          <EscrowTray
-            escrow={state.escrow}
-            preset={activePreset ?? state.preset}
-            realm={state.realm}
+          // A found note sits above the findings, both inside the same fixed
+          // slot — the note takes its natural height (`shrink-0`) and the
+          // tray flexes into the remainder, so nothing below the slot moves.
+          <div className="flex h-full flex-col gap-2">
+            {margin && <MarginFind note={margin} className="shrink-0" />}
+            <EscrowTray
+              escrow={state.escrow}
+              preset={activePreset ?? state.preset}
+              realm={state.realm}
             // Until the realm-name reveal beat the title bar shows "???", so
             // the carried-finding cards must not stamp the realm name in their
             // provenance footnote either. We gate on the SAME signal the title
-            // uses (`realmNameRevealed`, owned by the page) so the tray and the
-            // header reveal in lock-step — never one before the other.
-            realmName={realmNameRevealed ? realmName : "???"}
-          />
+              // uses (`realmNameRevealed`, owned by the page) so the tray and the
+              // header reveal in lock-step — never one before the other.
+              realmName={realmNameRevealed ? realmName : "???"}
+            />
+          </div>
         ) : state.extracted ? (
           <ExtractedPanel
             chainReady={chainReady}
@@ -582,6 +669,7 @@ export function EncounterFrame({
           escrowLost={state.escrow.length}
           depth={state.defeatedAtDepth}
           turn={state.defeatedTurn}
+          epitaph={epitaph}
           onLeave={() => router.push("/")}
         />
       )}
