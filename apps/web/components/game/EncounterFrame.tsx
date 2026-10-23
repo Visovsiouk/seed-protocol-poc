@@ -65,7 +65,7 @@ import { DefeatOverlay } from "./DefeatOverlay";
 import { EscrowTray } from "./EscrowTray";
 import { MarginFind } from "./MarginFind";
 import { marginAt } from "@/lib/story/marginalia";
-import { epitaphFallback } from "@/lib/story/epitaph-bank";
+import { useEpitaph } from "@/lib/story/use-epitaph";
 import { markMarginFound } from "@/lib/story/margins-local";
 import { ExtractSelection } from "./ExtractSelection";
 import { PlayerBar } from "./PlayerBar";
@@ -452,21 +452,17 @@ export function EncounterFrame({
   );
 
   /**
-   * The note the book writes about *this* death.
+   * The facts of *this* death.
    *
-   * Composed here because this is the only place that holds every fact at
+   * Gathered here because this is the only place that holds every one at
    * once: which page, how deep, what was still on the stage when the player
    * went down, which turn of that fight, and how much unbanked escrow went
    * with them. `DefeatOverlay` stays presentational.
-   *
-   * Deterministic in the run seed, so re-reading a death never rewrites it.
-   * Phase 3 puts a model in front of `epitaphFallback` behind a default-off
-   * flag; this is the shipped path and the fallback both.
    */
-  const epitaph = useMemo(() => {
+  const epitaphFacts = useMemo(() => {
     if (!state.defeated) return undefined;
     const monster = state.encounter?.combat.monster;
-    return epitaphFallback({
+    return {
       runSeed: state.rngSeed,
       preset: state.preset,
       depth: state.defeatedAtDepth ?? state.depth,
@@ -474,7 +470,7 @@ export function EncounterFrame({
       wasBookmark: !!monster && "bakedEffects" in monster,
       turns: state.defeatedTurn ?? 0,
       carried: state.escrow.length,
-    });
+    };
   }, [
     state.defeated,
     state.rngSeed,
@@ -485,6 +481,14 @@ export function EncounterFrame({
     state.escrow.length,
     state.encounter,
   ]);
+
+  /**
+   * The note itself. Returns the deterministic bank note synchronously and
+   * swaps in a generated line only if one arrives — with the story-AI flag
+   * unset (the default) it never asks, and this is a pure function of the
+   * facts above. See `use-epitaph.ts`.
+   */
+  const epitaph = useEpitaph(epitaphFacts);
 
   // Collect it. Ref-guarded per note so a re-render can't re-write, mirroring
   // `bossGhostFiredRef` above; `markMarginFound` is itself idempotent, so
