@@ -67,6 +67,7 @@ import { MarginFind } from "./MarginFind";
 import { marginAt } from "@/lib/story/marginalia";
 import { useEpitaph } from "@/lib/story/use-epitaph";
 import { markMarginFound } from "@/lib/story/margins-local";
+import { markEpitaphWritten } from "@/lib/story/epitaphs-local";
 import { ExtractSelection } from "./ExtractSelection";
 import { PlayerBar } from "./PlayerBar";
 import { EncounterStage, type BookmarkOverlay } from "./EncounterStage";
@@ -507,6 +508,27 @@ export function EncounterFrame({
     collectedRef.current = margin.id;
     markMarginFound(address, margin.id);
   }, [margin, address]);
+
+  /**
+   * Keep the note the book just wrote about the player.
+   *
+   * This is the turn the whole marginalia system is built toward: their own
+   * note joins the ones they have been reading, which is what reveals in
+   * retrospect that every warning they found was somebody's death. Without it
+   * the epitaph showed once on the overlay and vanished, and the card's
+   * "nobody has ever been stamped back in" had no consequence anywhere.
+   *
+   * Stored as the note *as rendered*, not as the facts — see
+   * `epitaphs-local.ts`. Ref-guarded on id like the find above; the store is
+   * idempotent on id as well, so a reload of the defeat screen is a no-op.
+   */
+  const epitaphKeptRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!epitaph || !address) return;
+    if (epitaphKeptRef.current === epitaph.id) return;
+    epitaphKeptRef.current = epitaph.id;
+    markEpitaphWritten(address, epitaph);
+  }, [epitaph, address]);
 
   // Lock Descend for 1 second whenever a fresh decision appears, so a
   // player mashing through combat can't blow past the decision and dive
