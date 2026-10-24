@@ -1,3 +1,5 @@
+import { readFileSync, readdirSync } from "node:fs";
+import { join, relative, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import * as canon from "./canon";
 import * as coldOpen from "./coldOpen";
@@ -193,6 +195,66 @@ describe("canon — terminology guard", () => {
         ).toBeUndefined();
       }
     }
+  });
+
+  /**
+   * ── Why there is a second, source-level sweep ───────────────────────────
+   * The walker above can only see strings reachable from a module's exports.
+   * A great deal of this app's prose is written as JSX literals inside
+   * components, which is structurally invisible to it — and that blind spot
+   * shipped real regressions: `<Stamp>The makers'-roll</Stamp>` sat in
+   * `GenesisLedger` for three commits even though "makers'-roll" is on the
+   * denylist, and `RealmSelector` carried ~130 words of the pre-rewrite
+   * register ("a maker who will carve a name", "the brand on your hand") on
+   * the first screen after the cold open.
+   *
+   * So: read the component sources as text. Crude on purpose — it cannot tell
+   * prose from an identifier — which is exactly why `RETIRED_TERMS` is kept
+   * to phrases with no innocent homonym (asserted below). A term that would
+   * trip on a variable name does not belong on the list in the first place.
+   *
+   * One consequence worth knowing before it surprises you: a *comment* cannot
+   * quote a retired term either. Code explaining why some copy was replaced
+   * has to describe the old wording rather than reproduce it, and point at
+   * `RETIRED_TERMS` for the specifics. That is a fair price — the alternative
+   * is a guard that only inspects string literals, which is precisely the
+   * narrower check that let these regressions through.
+   */
+  // `process.cwd()` is `apps/web` under vitest (same assumption `realm-db.ts`
+  // makes for the sqlite path), so this resolves without ESM `__dirname`.
+  const COMPONENT_ROOT = resolve(process.cwd(), "components");
+
+  function tsxFiles(dir: string): string[] {
+    const out: string[] = [];
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) out.push(...tsxFiles(full));
+      else if (/\.tsx?$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name)) {
+        out.push(full);
+      }
+    }
+    return out;
+  }
+
+  it("no component source contains a retired term", () => {
+    const files = tsxFiles(COMPONENT_ROOT);
+    // Anti-vacuity: if the walk returns nothing the path is wrong, and the
+    // test would pass by scanning an empty set.
+    expect(files.length, "found no component sources to scan").toBeGreaterThan(20);
+
+    const offenders: string[] = [];
+    for (const file of files) {
+      const text = readFileSync(file, "utf8").toLowerCase();
+      for (const term of RETIRED_TERMS) {
+        const needle = term.toLowerCase();
+        if (text.includes(needle)) {
+          offenders.push(
+            `${relative(COMPONENT_ROOT, file)} uses the retired term "${term}"`,
+          );
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
   });
 
   it("retired terms are unambiguous phrases, not words with innocent uses", () => {

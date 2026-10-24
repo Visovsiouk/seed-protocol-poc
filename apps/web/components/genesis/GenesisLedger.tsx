@@ -78,7 +78,7 @@ export function GenesisLedger({
     try {
       const r = await claimSeed();
       setResult(r);
-      // The Name is what lets a maker finish worlds — send them to the Forge.
+      // A signet is what lets a borrower write a page — send them to the Forge.
       if (onClaimed) onClaimed();
       else router.push("/?station=forge");
     } catch {
@@ -97,9 +97,14 @@ export function GenesisLedger({
       >
         <header className="flex flex-col gap-3">
           <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <Stamp>The makers&apos;-roll</Stamp>
+            {/* This heading and its counter were still in the pre-rewrite
+                vocabulary (see `RETIRED_TERMS`; not quoted, since the guard
+                sweeps this file as plain text) while the body copy two lines
+                below already said "Three stamps, one signet" — the same
+                widget contradicting itself. */}
+            <Stamp>The date-due card</Stamp>
             <span className="font-mono text-[10px] uppercase tracking-widest opacity-65">
-              {shardsRecovered} / {STARTERS.length} sparks
+              {shardsRecovered} / {STARTERS.length} stamped
             </span>
           </div>
           <Rule />
@@ -119,12 +124,12 @@ export function GenesisLedger({
           </p>
         </header>
 
-        {/* The Name in kindling: three spark plates, one per founding world. A
-            kindled spark lights its plate with the world's accent and reveals
-            the name; a spark still below stays dim and unnamed to preserve the
-            surprise. */}
+        {/* Three stamp plates, one per founding page. A stamped plate lights
+            with that page's ink and reveals its name; a page still below stays
+            dim and unnamed, so the Book's own "this page is unreadable" and
+            this surface agree about what the player is allowed to know. */}
         <div
-          aria-label="The three sparks of your Name"
+          aria-label="The three stamps on your card"
           className="grid grid-cols-1 gap-3 sm:grid-cols-3"
         >
           {STARTERS.map((s) => {
@@ -133,7 +138,7 @@ export function GenesisLedger({
               <div
                 key={s.realm}
                 data-preset={s.preset}
-                aria-label={recovered ? `${s.name} — spark kindled` : "Spark still below"}
+                aria-label={recovered ? `${s.name} — stamped` : "Page still below, unstamped"}
                 className="flex flex-col items-center gap-2 rounded-md p-4 text-center transition"
                 style={{
                   border: recovered
@@ -174,7 +179,7 @@ export function GenesisLedger({
                 </span>
                 <Chip
                   color={recovered ? "var(--color-preset-accent)" : "var(--border-2)"}
-                  label={recovered ? "Spark kindled" : "Still below"}
+                  label={recovered ? "Stamped" : "Still below"}
                 />
               </div>
             );
@@ -183,10 +188,10 @@ export function GenesisLedger({
 
         <footer className="flex flex-col gap-3 pt-1">
           {progress.hasSeed ? (
-            <Chip color="var(--color-ok)" label="Name carved" />
+            <Chip color="var(--color-ok)" label="Signet pressed" />
           ) : !walletConnected ? (
             <p className="text-sm opacity-70">
-              Connect your wallet to carve the Name your clears have earned.
+              Connect your wallet to take the signet your stamps have earned.
             </p>
           ) : result ? (
             <Panel
@@ -198,7 +203,7 @@ export function GenesisLedger({
               }}
             >
               <span className="text-sm font-medium text-[var(--color-ok)]">
-                The name takes. It is yours, and only yours.
+                The card admits your name. The signet is yours, and only yours.
               </span>
               <span className="font-mono text-[11px] opacity-70">
                 via{" "}
@@ -220,12 +225,12 @@ export function GenesisLedger({
                 onClick={handleClaim}
                 disabled={!progress.eligibleForSeed || isPending}
               >
-                {isPending ? "Carving your Name…" : "Speak your Name"}
+                {isPending ? "Pressing the signet…" : "Press your signet"}
               </Button>
               {!progress.eligibleForSeed && (
                 <p className="text-xs opacity-65">
-                  Kindle all three sparks — clear all three founding worlds —
-                  before the Name can be carved.
+                  Stamp all three founding pages — tear out all three bookmarks
+                  — before the card will cut you a signet.
                 </p>
               )}
               {error && (

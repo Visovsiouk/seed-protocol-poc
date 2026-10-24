@@ -366,4 +366,21 @@ export const RETIRED_TERMS: readonly string[] = [
   "the Work",
   "bound aspirant",
   "guardian-god",
+  // ── Added after a manual walkthrough found these still on screen ────────
+  // Every one was shipping in a component, where the original guard could
+  // not see it (`canon.test.ts` walks module exports, not JSX literals — it
+  // now also sweeps component sources, which is what these entries arm).
+  // All multi-word, per the policy below: the sweep is a plain substring
+  // match over source text, so a term that could collide with an identifier
+  // would make the guard unusable.
+  "a maker",
+  "carve a name",
+  "carving your name",
+  "speak your name",
+  "name carved",
+  "unfinished world",
+  "foot of the worlds",
+  "brand on your hand",
+  "spark kindled",
+  "sparks kindled",
 ];

@@ -46,13 +46,13 @@ export function RealmClearedInterstitial({ justCleared, projected }: Props) {
 }
 
 /**
- * Three glyphs that fill as the player recovers shards. Diegetic
- * progress indicator — replaces the bare "1/3 realms" label.
+ * Three glyphs that fill as the card takes stamps. Diegetic progress
+ * indicator — replaces the bare "1/3 realms" label.
  */
 function ShardTrack({ shards }: { shards: number }) {
   return (
     <div
-      aria-label={`Shards recovered: ${shards} of 3`}
+      aria-label={`Stamps on the card: ${shards} of 3`}
       className="flex items-center gap-1.5"
     >
       {[0, 1, 2].map((i) => {

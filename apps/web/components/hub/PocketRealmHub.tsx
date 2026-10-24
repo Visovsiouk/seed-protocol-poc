@@ -59,11 +59,11 @@ const STATIONS: { id: Station; label: string }[] = [
   { id: "forge", label: "The Forge" },
 ];
 
-/** Three diamond glyphs marking sparks kindled (mirrors RealmSelector). */
+/** Three diamond glyphs marking stamps on the card (mirrors RealmSelector). */
 function ShardTrack({ shards }: { shards: number }) {
   return (
     <div
-      aria-label={`Sparks kindled: ${shards} of 3`}
+      aria-label={`Stamps on the card: ${shards} of 3`}
       className="flex items-center gap-1.5"
     >
       {[0, 1, 2].map((i) => {
@@ -152,7 +152,9 @@ function HideoutHeader({
           <span className="uppercase tracking-widest opacity-60">Cleared</span>
           <ShardTrack shards={progress.distinctClears} />
         </div>
-        {progress.hasSeed && <Chip color="var(--color-ok)" label="Name carved" />}
+        {progress.hasSeed && (
+          <Chip color="var(--color-ok)" label="Signet pressed" />
+        )}
         {codex && (
           <Chip
             color="var(--color-preset-accent)"
