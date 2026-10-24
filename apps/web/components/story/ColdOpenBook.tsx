@@ -72,12 +72,16 @@ export function ColdOpenBook({
    *
    * Signing used to be the only button, which meant the story asserted the
    * player had made a mistake at the exact moment it gave them no say — so
-   * the mistake read as somebody else's. Refusing is now a real option, and
-   * it is the better beat: the card is *already* signed, in their hand,
-   * dated tonight. That is the hook from page one paying itself off, and a
-   * player who refuses gets a stronger scene than one who complies.
+   * the mistake read as somebody else's. Refusing is a real option now, and
+   * the card turns out to be *already* signed either way, in their hand,
+   * dated tonight. That is the hook from page one paying itself off.
+   *
+   * The two paths deliberately print the same lines (`afterGate` in
+   * coldOpen.ts). An earlier version branched the prose, which quietly made
+   * refusal the interesting choice and signing the dull one — when the beat
+   * is that the choice was never load-bearing. Hence no `refused` state here:
+   * the frame records *that* an act happened, never which button did it.
    */
-  const [refused, setRefused] = useState(false);
 
   /**
    * Today's date for the borrower's own row.
@@ -142,40 +146,29 @@ export function ColdOpenBook({
       }: RenderFrameArgs) => {
         const act = actByIndex.get(index);
 
-        const perform = (declined = false) => {
+        const perform = () => {
           if (act) setDone((d) => ({ ...d, [act]: true }));
-          if (declined) setRefused(true);
           satisfyGate();
         };
 
-        // What the book does once the signing act is resolved. Both paths end
-        // at the same place — the line gets signed either way — which is the
-        // point: refusing proves the loop was already closed.
-        //
-        // The countersign then gets its meaning. `fin.` is the word printed
-        // at the end of a finished work, written under a borrower who has
-        // only just started: a verdict, not a signature. It is the thesis the
-        // whole game argues against, and the ending (pressing a signet into a
-        // blank quire) is literally writing past it. Stated as description —
-        // the Book never explains, and nobody is named here.
-        const signingAftermath =
-          act === "sign" && !gated ? (
+        /**
+         * The consequence of a gated act, once performed.
+         *
+         * Generic over any beat carrying `afterGate` rather than special-cased
+         * to the signing page, and the prose itself lives in `coldOpen.ts`.
+         * Both of those are deliberate: written as JSX here it was invisible
+         * to `coldOpen.test.ts`'s word budget, which is how this beat came to
+         * put ~74 words on screen against a ceiling of 25.
+         *
+         * There is no longer a refused/signed fork — the two buttons resolve
+         * to the same lines, which is the beat rather than a shortcut past it.
+         */
+        const aftermath =
+          !gated && beat.afterGate?.length ? (
             <div className="flex flex-col gap-2">
-              {refused ? (
-                <Body>
-                  You close it. When you look again the line is signed, in your
-                  hand, dated tonight. It was always signed.
-                </Body>
-              ) : (
-                <Body>Your hand knows the shape of it before you do.</Body>
-              )}
-              <Body>
-                Something writes one word underneath, in a hand that is not
-                yours. Fin. What gets printed at the end of a finished book.
-              </Body>
-              <Body>
-                Your entry is closed. You have not taken a step yet.
-              </Body>
+              {beat.afterGate.map((line) => (
+                <Body key={line}>{line}</Body>
+              ))}
             </div>
           ) : null;
 
@@ -208,7 +201,7 @@ export function ColdOpenBook({
               />
             )}
 
-            {signingAftermath}
+            {aftermath}
 
             {beat.footnote && (
               <>
@@ -232,12 +225,9 @@ export function ColdOpenBook({
                   {act === "sign" && (
                     // The refusal has to be a real button, weighted like a
                     // real option — a ghost CTA the player assumes is a
-                    // decoration would be worse than not offering it.
-                    <Button
-                      intent="ghost"
-                      size="md"
-                      onClick={() => perform(true)}
-                    >
+                    // decoration would be worse than not offering it. It
+                    // resolves exactly as signing does; see `afterGate`.
+                    <Button intent="ghost" size="md" onClick={perform}>
                       Close the book
                     </Button>
                   )}

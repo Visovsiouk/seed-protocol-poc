@@ -93,4 +93,20 @@ export type CinematicBeat = {
    * motion is unaffected: the gate is an interaction requirement, not motion.
    */
   gate?: "interaction";
+  /**
+   * Lines appended once a `gate: "interaction"` beat has been satisfied — the
+   * consequence of the act, revealed after it.
+   *
+   * Exists so that prose cannot hide from the word budget. The signing beat's
+   * aftermath used to be written as JSX inside `ColdOpenBook`'s `renderFrame`,
+   * where `coldOpen.test.ts` could not see it: the beat declared 20 words and
+   * put 74 on screen, roughly three times the per-beat ceiling, on the single
+   * most important page of the opening. The budget exists precisely because
+   * the previous 800-word opening "crept there one reasonable-seeming sentence
+   * at a time", so a blind spot in it is worse than a long beat.
+   *
+   * Counted against the same ceiling as `body` (the two are summed), because
+   * what matters is words on screen at once, not where they came from.
+   */
+  afterGate?: string[];
 };

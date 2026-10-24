@@ -153,6 +153,25 @@ export const COLD_OPEN_BOOK: readonly ColdOpenBeat[] = [
       "Dated tonight, on a card you have never touched.",
       "There is a pen. Nobody is making you pick it up.",
     ],
+    // What the act costs, revealed after it. Lives here rather than in
+    // `ColdOpenBook`'s renderFrame — as JSX it was invisible to the word
+    // budget, and this beat was putting ~74 words on screen against a
+    // ceiling of 25 (see `afterGate` in types.ts).
+    //
+    // Deliberately one wording for both buttons. The frame offers "Sign the
+    // card" and "Close the book"; they resolve identically, and saying so
+    // plainly is the beat rather than a shortcut around it — refusing is what
+    // proves the line was already signed. An earlier version forked the
+    // prose, which made the refusal read as the interesting path and the
+    // signature as the dull one, when the point is that there is no fork.
+    //
+    // No gloss on `fin.` either. The Book describes and never explains; what
+    // the word means is `COLOPHON.SIGN`'s business in canon.ts, and a reader
+    // who does not know it still reads a stranger's hand closing their entry.
+    afterGate: [
+      "The line is signed in your hand, dated tonight. It was always signed.",
+      "A hand that is not yours writes one word under it: fin.",
+    ],
     cta: "Sign the card",
     gate: "interaction",
     wash: "warm",

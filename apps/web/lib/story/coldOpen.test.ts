@@ -14,8 +14,30 @@ import { RETIRED_TERMS } from "./canon";
 /** Max words in a single beat's body. The brief is 15–25. */
 const WORD_BUDGET = 25;
 
+function words(lines: readonly string[]): number {
+  return lines.join(" ").trim().split(/\s+/).filter(Boolean).length;
+}
+
 function wordCount(beat: (typeof COLD_OPEN_BOOK)[number]): number {
-  return beat.body.join(" ").trim().split(/\s+/).filter(Boolean).length;
+  return words(beat.body);
+}
+
+/**
+ * `afterGate` is budgeted separately rather than summed into `body`.
+ *
+ * It is a second screen-state of the same beat, not more of the first: the
+ * player reads the body, performs the act, and *then* the consequence appears.
+ * Summing the two would make any gated beat with an aftermath blow a 25-word
+ * ceiling by construction — which would push an author toward writing the
+ * prose somewhere this file cannot see it, i.e. straight back into the bug
+ * these assertions exist to catch.
+ *
+ * It does have to be counted *somewhere*. This prose lived as JSX inside
+ * `ColdOpenBook`'s renderFrame until a manual walkthrough caught it, and the
+ * signing beat was putting ~74 words on screen against a ceiling of 25.
+ */
+function afterGateCount(beat: (typeof COLD_OPEN_BOOK)[number]): number {
+  return beat.afterGate ? words(beat.afterGate) : 0;
 }
 
 describe("cold-open — the uncatalogued return", () => {
@@ -26,18 +48,47 @@ describe("cold-open — the uncatalogued return", () => {
 
   it("every beat stays inside the word budget", () => {
     for (const beat of COLD_OPEN_BOOK) {
-      const words = wordCount(beat);
+      const n = wordCount(beat);
       expect(
-        words,
-        `"${beat.stamp}" is ${words} words; the budget is ${WORD_BUDGET}`,
+        n,
+        `"${beat.stamp}" is ${n} words; the budget is ${WORD_BUDGET}`,
       ).toBeLessThanOrEqual(WORD_BUDGET);
+    }
+  });
+
+  it("a gated beat's aftermath also stays inside the budget", () => {
+    // The hole this closes: prose written into the player component instead of
+    // the beat data was never counted. Any beat carrying `afterGate` is held
+    // to the same per-screen ceiling as its body.
+    for (const beat of COLD_OPEN_BOOK) {
+      const n = afterGateCount(beat);
+      expect(
+        n,
+        `"${beat.stamp}" aftermath is ${n} words; the budget is ${WORD_BUDGET}`,
+      ).toBeLessThanOrEqual(WORD_BUDGET);
+    }
+  });
+
+  it("only a gated beat may carry an aftermath", () => {
+    // `afterGate` renders when the gate is satisfied, so on an ungated beat it
+    // would either never show or show immediately — both silently wrong.
+    for (const beat of COLD_OPEN_BOOK) {
+      if (beat.afterGate?.length) {
+        expect(beat.gate, `"${beat.stamp}" has afterGate but no gate`).toBe(
+          "interaction",
+        );
+      }
     }
   });
 
   it("the whole opening reads in well under the old one's word count", () => {
     // The previous version was ~800 words. Stated as a hard ceiling so a
-    // future edit can't drift back toward it beat by beat.
-    const total = COLD_OPEN_BOOK.reduce((n, b) => n + wordCount(b), 0);
+    // future edit can't drift back toward it beat by beat. Counts aftermath
+    // prose too — every word the player actually reads.
+    const total = COLD_OPEN_BOOK.reduce(
+      (n, b) => n + wordCount(b) + afterGateCount(b),
+      0,
+    );
     expect(total).toBeLessThan(250);
   });
 
