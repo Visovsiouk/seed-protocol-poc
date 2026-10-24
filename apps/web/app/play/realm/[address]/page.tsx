@@ -51,6 +51,7 @@ import {
 } from "@/lib/persistence/use-equipped-hydration";
 import { shortAddress } from "@/lib/utils";
 import { isHexAddress } from "@/lib/validation/schemas";
+import type { RealmLore } from "@/lib/story/page-bank";
 // Shared with the hub's loadout staging so the preview it shows and the run
 // this page boots agree on the stand-in flavor. See `lib/contracts/realm-trial.ts`.
 import {
@@ -67,6 +68,12 @@ type RealmMeta = {
   bossId: string;
   name: string;
   accent: string | null;
+  /**
+   * The page's own lore. Never absent — the meta route resolves a realm with
+   * no generated row to the deterministic bank, so this page holds no opinion
+   * about what an un-generated realm reads like. See `lib/story/page-bank.ts`.
+   */
+  lore: RealmLore;
   maxTier: Tier;
   createdAt: number;
 };
@@ -334,22 +341,34 @@ export default function CreatorRealmPlayPage() {
             )}
           </Panel>
         )}
-        {isRegistered && (
+        {isRegistered && registered && (
           <Panel
             as="aside"
             tone="glass-2"
             aria-label="Realm metadata"
-            className="p-3 text-sm"
+            className="flex flex-col gap-2 p-3 text-sm"
           >
-            <strong>{realmName}</strong> · {preset} · final boss{" "}
-            <code>{bossId}</code> · max tier <strong>T{maxTier}</strong>
-            {registered && registered.owner && (
-              <>
-                {" "}
-                · owner{" "}
-                <span className="font-mono">{shortAddress(registered.owner)}</span>
-              </>
-            )}
+            {/* The book, describing a page somebody else wrote. It goes above
+                the metadata rather than instead of it: the ids and the tier
+                are what a creator checks on arriving, and the paragraph is
+                what makes arriving mean anything. Resolved server-side, so
+                there is nothing to wait for and no empty state. */}
+            <p className="italic leading-relaxed opacity-85">
+              {registered.lore.pageText}
+            </p>
+            <p className="text-[11px] opacity-65">
+              <strong>{realmName}</strong> · {preset} · final boss{" "}
+              <code>{bossId}</code> · max tier <strong>T{maxTier}</strong>
+              {registered.owner && (
+                <>
+                  {" "}
+                  · owner{" "}
+                  <span className="font-mono">
+                    {shortAddress(registered.owner)}
+                  </span>
+                </>
+              )}
+            </p>
           </Panel>
         )}
 
@@ -377,6 +396,21 @@ export default function CreatorRealmPlayPage() {
               onEvent={handleEngineEvent}
               onBankEscrow={handleBankEscrow}
               clearReceipt={clearReceipt}
+              // The page's own bookmark, held under the boss's name at the
+              // bottom of the delve. Fifteen boss ids are shared across every
+              // creator realm, so without this a founded page describes a
+              // stock monster; with it, it describes somebody who was filed
+              // here. Trial-mode realms pass none — their stand-in boss is
+              // `forest_hag`, whose bookmark the card already names.
+              bookmark={
+                registered
+                  ? {
+                      name: registered.lore.bookmarkName,
+                      line: registered.lore.bookmarkLine,
+                      filedAt: registered.createdAt,
+                    }
+                  : undefined
+              }
               // Creator realms always return to the base picker on clear
               // (default href); only the starter arc lands on the chest.
               bossReturnHref="/"

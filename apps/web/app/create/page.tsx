@@ -37,6 +37,9 @@
  * the metadata from `/api/realm/[address]/meta` and runs the engine in
  * the preset/boss the player picked.
  *
+ * Step (4) also kicks off `POST /api/story/page` to give the new page its
+ * lore. Fire-and-forget and outside the ceremony — see `requestPageLore`.
+ *
  * Resume handling: any failure after step (1) leaves a clone on-chain with
  * no schemas/delegate/charter — and `ecosystemOf(owner)` non-zero, which
  * used to dead-end the page on "already founded". We now probe
@@ -144,6 +147,43 @@ function describeDeployError(err: unknown): string {
 async function fetchNextSigner(): Promise<NextSignerReply> {
   const res = await fetch("/api/realm/next-signer", { cache: "no-store" });
   return (await res.json()) as NextSignerReply;
+}
+
+/**
+ * Ask the server to give the new page its lore. Fire-and-forget, on purpose.
+ *
+ * Nothing in the founding rite depends on the answer. The realm is registered,
+ * playable and on-chain by the time this runs; the route persists what it gets
+ * and `/api/realm/[address]/meta` falls back to the deterministic bank until
+ * then, so the only thing a failure costs is a slightly less specific
+ * paragraph on the way in. Awaiting it would put an outbound model call —
+ * with its own timeout — between the player's fourth signature and the "realm
+ * founded" panel, which is the worst possible place to add a wait.
+ *
+ * Not deduped here either: the route is idempotent in SQL (`setRealmLore`
+ * writes `WHERE page_text IS NULL`), which is the only place a dedupe can be
+ * correct across the retry loop, two tabs, and a resumed rite.
+ *
+ * Deliberately NOT gated on `storyAiClientHint`, unlike the epitaph request.
+ * The two surfaces have asymmetric costs for a wrong hint: a skipped epitaph
+ * is one banked note and the next death tries again, where a skipped page
+ * request is the only moment anything asks for this realm's lore — nothing
+ * re-triggers it later. Founding a realm costs four wallet signatures, so the
+ * waste on a flag-off install is one cheap no-op per realm ever created, which
+ * is a better trade than a deploy that set the server flag but not the public
+ * mirror getting blank pages forever.
+ */
+function requestPageLore(realmAddress: `0x${string}`): void {
+  void fetch("/api/story/page", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ realmAddress }),
+    // The request must outlive the navigation to /play/realm/[address] that
+    // follows a successful create.
+    keepalive: true,
+  }).catch(() => {
+    // Narration is never an error the creator needs to see.
+  });
 }
 
 export default function CreatePage() {
@@ -285,6 +325,7 @@ export default function CreatePage() {
       });
       const body = (await res.json()) as RegisterReply;
       if (body.ok) {
+        requestPageLore(body.realm.address);
         return {
           ecosystem: body.realm.address,
           signerAddress: body.realm.signerAddress,

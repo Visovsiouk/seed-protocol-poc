@@ -26,7 +26,8 @@ vi.mock("@/lib/server/story-ai", () => ({
   generateEpitaph: (facts: unknown) => generateEpitaph(facts),
 }));
 
-const { POST, __resetEpitaphMemo } = await import("./route");
+const { POST } = await import("./route");
+const { __resetEpitaphMemo } = await import("@/lib/server/epitaph-memo");
 const { __resetStoryRateLimit } = await import("@/lib/server/story-guards");
 
 const FACTS = {

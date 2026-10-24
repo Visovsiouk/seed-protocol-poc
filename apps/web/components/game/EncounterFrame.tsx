@@ -69,7 +69,7 @@ import { useEpitaph } from "@/lib/story/use-epitaph";
 import { markMarginFound } from "@/lib/story/margins-local";
 import { ExtractSelection } from "./ExtractSelection";
 import { PlayerBar } from "./PlayerBar";
-import { EncounterStage } from "./EncounterStage";
+import { EncounterStage, type BookmarkOverlay } from "./EncounterStage";
 import {
   ExtractedPanel,
   RunOverPanel,
@@ -157,6 +157,12 @@ type Props = {
    * the player on the Seed chest; everything else returns to the base (`/`).
    */
   bossReturnHref?: string;
+  /**
+   * This realm's own identity for its boss, held under the name at the bottom
+   * of the delve. Only creator realms pass one — the starter pages' bookmarks
+   * are named in `canon.ts`. See `BookmarkOverlay`.
+   */
+  bookmark?: BookmarkOverlay;
 };
 
 /**
@@ -187,6 +193,7 @@ export function EncounterFrame({
   realmNameRevealed = false,
   chainReady = false,
   bossReturnHref = "/",
+  bookmark,
 }: Props) {
   const router = useRouter();
   // Only used to namespace collected margin notes per player, the same way
@@ -593,6 +600,7 @@ export function EncounterFrame({
             // Gear is locked for the delve (see the note above), so this is
             // the weapon every blow in this run is struck with.
             equippedWeapon={state.equipped.weapon}
+            bookmark={bookmark}
           />
         ) : atDecision ? (
           // A found note sits above the findings, both inside the same fixed

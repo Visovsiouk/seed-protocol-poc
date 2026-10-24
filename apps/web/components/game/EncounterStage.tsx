@@ -231,11 +231,13 @@ function CombatStage({
   intro,
   activePreset,
   equippedWeapon,
+  bookmark,
 }: {
   combat: CombatState;
   intro: string;
   activePreset: Preset | null;
   equippedWeapon?: StageWeapon;
+  bookmark?: BookmarkOverlay;
 }) {
   const reduced = useReducedMotion();
   const { controls, floats, hitNonce } = useHpFloats(combat.monsterHp, reduced);
@@ -337,7 +339,13 @@ function CombatStage({
             looking straight at it and not yet counting hit points. On the
             turn to phase 2 the line switches to the borrower surfacing
             through, so the mirror sharpens exactly when the fight does. */}
-        {isBoss && <BookmarkNote bossId={monster.id} phase={combat.bossPhase ?? 1} />}
+        {isBoss && (
+          <BookmarkNote
+            bossId={monster.id}
+            phase={combat.bossPhase ?? 1}
+            overlay={bookmark}
+          />
+        )}
 
         {/*
           Thick enemy health bar with element/danger glow. The damage
@@ -486,12 +494,18 @@ export function EncounterStage({
   activePreset = null,
   ghostReveal = 0,
   equippedWeapon,
+  bookmark,
 }: {
   encounter: EncounterState | null;
   /** Narration line emitted when the room was generated. */
   intro: string;
   /** Active realm preset, for element-label vocabulary. */
   activePreset?: Preset | null;
+  /**
+   * This realm's own identity for its boss. Absent on the starter pages,
+   * whose bookmarks are named in `canon.ts`.
+   */
+  bookmark?: BookmarkOverlay;
   /**
    * The weapon the player descended with, for the shape and hue of its
    * impact marks. Absent → unarmed, which still shows a blow.
@@ -565,6 +579,7 @@ export function EncounterStage({
             intro={intro}
             activePreset={activePreset}
             equippedWeapon={equippedWeapon}
+            bookmark={bookmark}
           />
         ) : (
           <QuietStage intro={intro} />
@@ -573,6 +588,26 @@ export function EncounterStage({
     </section>
   );
 }
+
+/**
+ * This realm's own identity for the thing at the bottom of it.
+ *
+ * Fifteen boss ids are shared across every player-authored realm, so the
+ * archetype prose in `bookmarkLore` has to stay general enough to be true in
+ * all of them. That generality is exactly what made a founded realm read as
+ * nobody's: you wrote a page and the page described a stock monster. This
+ * overlay replaces the *who* with a borrower belonging to this page alone,
+ * resolved by `/api/realm/[address]/meta` (generated, or the deterministic
+ * bank) and threaded down by the play route.
+ */
+export type BookmarkOverlay = {
+  /** The borrower's name, in place of the card's three. */
+  name: string;
+  /** Who they were, in place of the archetype's `intro`. */
+  line: string;
+  /** Unix seconds the page was written — the year they were filed. */
+  filedAt: number;
+};
 
 /**
  * Who the boss was, held under its name.
@@ -588,22 +623,48 @@ export function EncounterStage({
  * built on (this is the player, if the player stops), and it sharpens at
  * exactly the point the fight gets worse.
  *
- * The attribution line only renders for the three bookmarks the date-due
- * card names; community-realm bosses get the prose without a false
- * provenance, which is the same restraint `bookmarkLore`'s fallback shows.
+ * An `overlay` replaces the phase-1 identity but deliberately **not** the
+ * phase-2 `turn`: the turn is the archetype's mirror, it is the same mirror
+ * whichever page the archetype turns up on, and it is also the one line here
+ * that was reviewed in a diff. A realm's own prose gets the introduction; the
+ * hand-written line keeps the moment the fight gets worse.
+ *
+ * The attribution line renders for the three bookmarks the date-due card
+ * names and for an overlay that brought its own; an unmapped community boss
+ * with neither gets the prose without a false provenance, which is the same
+ * restraint `bookmarkLore`'s fallback shows.
  */
-function BookmarkNote({ bossId, phase }: { bossId: string; phase: 1 | 2 }) {
+function BookmarkNote({
+  bossId,
+  phase,
+  overlay,
+}: {
+  bossId: string;
+  phase: 1 | 2;
+  overlay?: BookmarkOverlay;
+}) {
   const lore = bookmarkLore(bossId);
-  const line = phase >= 2 ? lore.turn : lore.intro;
+  const line =
+    phase >= 2 ? lore.turn : (overlay?.line ?? lore.intro);
+
+  // A generated borrower was filed when the page was written, so their year is
+  // the realm's own creation year — real data rather than an invented date,
+  // and the one place a player-authored realm gets to sit on the same card as
+  // Hesper Alder.
+  const attribution = overlay
+    ? { name: overlay.name, year: new Date(overlay.filedAt * 1000).getUTCFullYear() }
+    : lore.borrower
+      ? { name: lore.borrower.name, year: lore.borrower.year }
+      : null;
 
   return (
     <div className="flex flex-col gap-0.5">
       <p className="font-mono text-[12px] italic leading-[1.6] opacity-75">
         {line}
       </p>
-      {lore.borrower && (
+      {attribution && (
         <p className="font-mono text-[9.5px] uppercase tracking-[0.18em] opacity-45">
-          {lore.borrower.name} · filed {lore.borrower.year}
+          {attribution.name} · filed {attribution.year}
         </p>
       )}
     </div>

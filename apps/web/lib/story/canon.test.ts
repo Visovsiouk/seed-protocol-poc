@@ -6,6 +6,7 @@ import * as bookmarks from "./bookmarks";
 import * as progression from "./progression";
 import * as provenance from "./provenance";
 import * as epitaph from "./epitaph-bank";
+import * as pageBank from "./page-bank";
 import * as fantasy from "@/lib/flavor/fantasy";
 import * as cyberpunk from "@/lib/flavor/cyberpunk";
 import * as scifi from "@/lib/flavor/scifi";
@@ -111,6 +112,25 @@ const PROSE_PROVIDERS: Record<string, () => string[]> = {
             }).text,
           );
         }
+      }
+    }
+    return out;
+  },
+  // The lore of a page a player wrote. Swept across all three presets and
+  // enough addresses to reach every pool entry — this is the one surface whose
+  // prose a *model* may also produce, so the bank it falls back to has to be
+  // the voice the reviewer checked.
+  pageBank: () => {
+    const out: string[] = [];
+    for (let n = 1; n <= 60; n += 1) {
+      for (const preset of ["fantasy", "cyberpunk", "scifi"] as const) {
+        const lore = pageBank.realmPageFallback({
+          realm: `0x${n.toString(16).padStart(40, "0")}` as `0x${string}`,
+          name: "Pale Index",
+          preset,
+          bossId: "lich",
+        });
+        out.push(lore.pageText, lore.bookmarkLine, lore.bookmarkName);
       }
     }
     return out;

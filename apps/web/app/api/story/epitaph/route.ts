@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { withStoryGuards } from "@/lib/server/story-guards";
 import { generateEpitaph } from "@/lib/server/story-ai";
+import { recallEpitaph, rememberEpitaph } from "@/lib/server/epitaph-memo";
 import { epitaphFallback, epitaphId } from "@/lib/story/epitaph-bank";
 import {
   epitaphRequestSchema,
@@ -32,36 +33,6 @@ import {
 
 export const runtime = "nodejs";
 
-/**
- * Per-death memo, so a double-POST (React strict mode, a retried fetch, the
- * player reloading the defeat screen) cannot buy the same sentence twice.
- *
- * Keyed by `epitaphId`, which is derived from the run seed and depth rather
- * than from a clock — the same death is the same key forever.
- *
- * In-process and bounded, matching `rate-limit.ts`'s reasoning: the PoC runs a
- * single Next.js process, and the goal is avoiding obvious waste rather than
- * being a real cache. Eviction is oldest-first, which at worst costs one
- * regenerated note.
- */
-const MEMO_MAX = 500;
-const memo = new Map<string, string>();
-
-function remember(id: string, text: string): void {
-  memo.delete(id);
-  memo.set(id, text);
-  while (memo.size > MEMO_MAX) {
-    const oldest = memo.keys().next();
-    if (oldest.done) break;
-    memo.delete(oldest.value);
-  }
-}
-
-/** Test-only: drops the memo so cases don't bleed into each other. */
-export function __resetEpitaphMemo(): void {
-  memo.clear();
-}
-
 async function handler(req: Request): Promise<Response> {
   let body: unknown;
   try {
@@ -78,13 +49,13 @@ async function handler(req: Request): Promise<Response> {
   const facts: EpitaphRequest = parsed.data;
   const id = epitaphId(facts);
 
-  const cached = memo.get(id);
+  const cached = recallEpitaph(id);
   if (cached) return ok(cached, "model");
 
   // Never throws by contract — see `generateEpitaph`'s docblock.
   const generated = await generateEpitaph(facts);
   if (generated) {
-    remember(id, generated);
+    rememberEpitaph(id, generated);
     return ok(generated, "model");
   }
 
