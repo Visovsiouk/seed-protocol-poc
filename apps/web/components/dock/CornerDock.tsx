@@ -27,6 +27,7 @@ import { BookPanel } from "@/components/story/BookPanel";
 import { hasConsumedColdOpen } from "@/components/story/ColdOpenBook";
 import { AudioPanel } from "./AudioPanel";
 import { MusicNudge } from "./MusicNudge";
+import { BookNudge, hasBeenHandedBook } from "./BookNudge";
 import { useCodexStatus } from "@/lib/codex/use-codex";
 import { useCodexToasts } from "@/lib/codex/use-codex-toasts";
 import { useAudio } from "@/lib/audio/AudioProvider";
@@ -153,6 +154,23 @@ export function CornerDock() {
   const signed = mounted && (hasConsumedColdOpen() || (progress?.starterClears ?? 0) > 0);
   const margins = useFoundMargins(address, open === "book");
 
+  /**
+   * Whether the Book's one-time callout still owes the player a telling.
+   *
+   * The two nudges share one slot (the panel's), so the dock has to decide
+   * which gets it rather than letting them stack into each other. The Book
+   * wins while it's pending: it's the end of the beat the player just walked,
+   * and the music offer is an unrelated aside that can wait a page load.
+   *
+   * Read lazily so it only touches storage once, and only after `mounted`
+   * gates SSR out — `hasBeenHandedBook` returns true on the server, which
+   * would otherwise bake "already told" into the initial state.
+   */
+  const [bookNudgePending, setBookNudgePending] = useState(false);
+  useEffect(() => {
+    if (signed) setBookNudgePending(!hasBeenHandedBook());
+  }, [signed]);
+
   // Opened from outside the dock — today that's the Base's card strip asking
   // for the Book. See `lib/ui/dock-bus.ts` for why this is an event and not
   // lifted state.
@@ -183,9 +201,18 @@ export function CornerDock() {
           onClick={() => setOpen(null)}
         />
       )}
-      {/* The one-time offer to turn music on. Shares the panel's slot, so
-          it's suppressed while a panel is open rather than stacking. */}
-      {!open && <MusicNudge bottomClass={PANEL_BOTTOM} />}
+      {/* Callouts share the panel's slot, so they're suppressed while a panel
+          is open rather than stacking — and only one of them is ever mounted,
+          because they'd otherwise overlap in the same corner. */}
+      {!open &&
+        (bookNudgePending ? (
+          <BookNudge
+            bottomClass={PANEL_BOTTOM}
+            onAnswered={() => setBookNudgePending(false)}
+          />
+        ) : (
+          <MusicNudge bottomClass={PANEL_BOTTOM} />
+        ))}
       <AnimatePresence>
         {open && (
           <motion.section
@@ -255,13 +282,20 @@ export function CornerDock() {
           <span style={{ color: "var(--color-preset-accent)" }}>Inventory</span>
         </button>
         {/* Icon-only, for the same reason as the speaker: the row is already
-            at its width budget with two labelled pills. The stamp count is
+            at its width budget with two labelled pills — a fourth labelled
+            one measured 441px against a 375px viewport. The stamp count is
             the one number worth surfacing without opening anything, so it
             rides as a badge and only once there's something to count.
 
             Hidden until the player has actually been handed the book — on a
             first visit the opening is still running, and a dock pill for an
-            artifact they haven't picked up yet would spoil its arrival. */}
+            artifact they haven't picked up yet would spoil its arrival.
+
+            This used to claim no first-time affordance was needed because the
+            player already knows they have it. That was a guess, and a player
+            cleared a whole page without knowing the Book existed. The pill
+            stays narrow; `BookNudge` and the Base's card strip are the
+            discovery path instead of a wider pill. */}
         {signed && (
           <button
             type="button"
