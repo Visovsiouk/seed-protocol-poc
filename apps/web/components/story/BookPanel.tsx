@@ -29,7 +29,7 @@
  * dock is explicit that its popovers have no focus trap, so this adds none.
  */
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useAccount } from "wagmi";
 import { Body, Stamp } from "@/components/ui";
 import { DueDateCard } from "@/components/story/DueDateCard";
@@ -40,6 +40,7 @@ import { dueDateCard } from "@/lib/story/card";
 import { PAGES } from "@/lib/story/canon";
 import { REALM_ORDER } from "@/lib/story/progression";
 import { noteSignature, type MarginNote } from "@/lib/story/marginalia";
+import { loadCrossings, type Crossing } from "@/lib/story/crossings-local";
 
 type Tab = "card" | "margins" | "pages";
 
@@ -67,6 +68,19 @@ export function BookPanel({
 
   const [tab, setTab] = useState<Tab>("card");
   const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
+
+  /*
+   * Crossings, read when the pages tab is actually opened — same reasoning as
+   * `useFoundMargins`: a crossing is only ever written at a descent
+   * threshold, and this panel is only ever read from the dock, so opening the
+   * tab is exactly the moment the list can have changed. Reading in an effect
+   * rather than during render keeps localStorage out of the server pass.
+   */
+  const [crossings, setCrossings] = useState<Crossing[]>([]);
+  useEffect(() => {
+    if (tab !== "pages") return;
+    setCrossings(loadCrossings(address));
+  }, [tab, address]);
 
   const onKeyDown = useCallback((e: React.KeyboardEvent, i: number) => {
     if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
@@ -126,7 +140,7 @@ export function BookPanel({
       >
         {tab === "card" && <DueDateCard card={card} address={address} />}
         {tab === "margins" && <Margins notes={margins} />}
-        {tab === "pages" && <Pages card={card} />}
+        {tab === "pages" && <Pages card={card} crossings={crossings} />}
       </div>
     </div>
   );
@@ -169,14 +183,30 @@ function Margins({ notes }: { notes: readonly MarginNote[] }) {
  * state in words: blur is a visual effect with no meaning in the
  * accessibility tree, and it is *not* motion, so `prefers-reduced-motion`
  * neither does nor should remove it.
+ *
+ * A legible page also lists the pages whose writing the player has carried
+ * into it. That is the canon's own answer to how a medieval sword works in
+ * 2041 — the binding connects the pages and writing carries between them —
+ * and this is the only place in the game it is recorded rather than asserted
+ * once at a descent threshold and forgotten. See `crossings-local.ts`.
  */
-function Pages({ card }: { card: ReturnType<typeof dueDateCard> }) {
+function Pages({
+  card,
+  crossings,
+}: {
+  card: ReturnType<typeof dueDateCard>;
+  crossings: readonly Crossing[];
+}) {
   return (
     <ul className="flex flex-col gap-3">
       {REALM_ORDER.map((preset) => {
         const page = PAGES[preset];
         const slot = card.stamps.find((s) => s.preset === preset)!;
         const legible = slot.state !== "sealed";
+        // Oldest first, so the list reads in the order the player carried.
+        const carriedIn = crossings
+          .filter((c) => c.to === preset)
+          .map((c) => PAGES[c.from].name);
 
         return (
           <li
@@ -210,6 +240,15 @@ function Pages({ card }: { card: ReturnType<typeof dueDateCard> }) {
                   {REVISION_NOTE[page.revision]}
                 </span>
               </>
+            )}
+
+            {/* Only on a legible page: naming what you carried into a page you
+                have never opened would hand you its name a beat early, which
+                is the whole thing the blur above protects. */}
+            {legible && carriedIn.length > 0 && (
+              <p className="font-mono text-[10px] uppercase tracking-[0.14em] opacity-55">
+                Your writing from {carriedIn.join(" · ")} is legible here.
+              </p>
             )}
           </li>
         );

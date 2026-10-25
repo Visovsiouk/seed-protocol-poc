@@ -1,12 +1,18 @@
 "use client";
 
 /**
- * `<GearTranslationScreen/>` — the "your gear changes shape" beat, now
- * played at realm *entry* instead of after a boss clear. When the player
- * descends into a realm whose genre differs from the gear they carried in,
- * this is the moment the translation actually happens: the same on-chain
- * token, re-rendered against the destination realm's adapter, with the
- * deterministic stat rebalance the contract applies surfaced as a diff.
+ * `<GearTranslationScreen/>` — the crossing, played at realm *entry* instead
+ * of after a boss clear. When the player descends into a realm whose genre
+ * differs from the gear they carried in, this is the moment the translation
+ * actually happens: the same on-chain token, re-rendered against the
+ * destination realm's adapter, with the deterministic stat rebalance the
+ * contract applies surfaced as a diff.
+ *
+ * It is the only screen where the canon's central claim can be *shown* —
+ * one ledger entry, re-described by the page it moves into — rather than
+ * asserted, which is why the copy names the mechanism and why the crossing is
+ * now recorded (`lib/story/crossings-local.ts`) instead of lasting eight
+ * seconds and vanishing.
  *
  * Each equipped slot is rendered twice — native (the realm it came from)
  * and translated (this realm) — via `AssetCard`'s `targetRealm` prop, with
@@ -31,6 +37,7 @@ import {
   useTranslatedCard,
 } from "@/lib/contracts/adapters";
 import { setCodexFlag } from "@/lib/codex/local";
+import { markCrossing } from "@/lib/story/crossings-local";
 import { getAdapterAddress } from "@/lib/contracts/seeded-adapters";
 import { shortAddress } from "@/lib/utils";
 import { Body, Button, Rule, Stamp, ExplorerLink } from "@/components/ui";
@@ -57,16 +64,29 @@ export function GearTranslationScreen({
   // -held Enter won't instantly fire onDescend.
   useEnterToActivate({ onActivate: onDescend, sig: realm });
 
-  // Codex: the chain has no "equipped" concept, so THIS render — foreign
-  // gear meeting a cross-preset adapter at the descent threshold — is the
-  // moment the "carry gear across worlds" step is witnessed.
+  /**
+   * Codex: the chain has no "equipped" concept, so THIS render — foreign gear
+   * meeting a cross-preset adapter at the descent threshold — is the moment
+   * the "carry gear between pages" step is witnessed.
+   *
+   * It is also the only moment that knows a crossing happened at all, so the
+   * same pass records it (see `crossings-local.ts`). Without that the screen
+   * showed the proof of the canon's central claim for eight seconds and then
+   * discarded it; the Book's pages tab now keeps it.
+   */
   useEffect(() => {
     const toPreset = presetForRealm(realm) ?? preset;
-    const crossed = [equipped.weapon, equipped.armor].some((card) => {
-      if (!card) return false;
+    if (!toPreset) return;
+    let crossed = false;
+    for (const card of [equipped.weapon, equipped.armor]) {
+      if (!card) continue;
       const from = card.realmPreset ?? presetForRealm(card.realm);
-      return !!from && !!toPreset && from !== toPreset;
-    });
+      if (!from || from === toPreset) continue;
+      crossed = true;
+      // Keyed on the ordered pair, so two slots from the same page record one
+      // crossing rather than two identical ones.
+      markCrossing(address, from, toPreset);
+    }
     if (crossed) setCodexFlag(address, "crossRealmCarry");
   }, [address, realm, preset, equipped.weapon, equipped.armor]);
 
@@ -84,16 +104,26 @@ export function GearTranslationScreen({
           <Stamp>Field record · the things you carried</Stamp>
         </header>
         <Rule />
+        {/*
+          The one screen where "the pages are connected by the binding, and
+          writing carries between them" can be shown instead of asserted, so
+          the copy says the mechanism out loud: one ledger entry, re-described
+          by the page it moves into. The previous version talked about a world
+          and a world's law, which is the vocabulary the rewrite retires — and
+          worse, it described the translation as the destination's doing, when
+          the point is that nothing about the entry changes at all.
+        */}
         <h3 className="font-mono text-lg leading-snug font-medium text-[var(--color-preset-accent)]">
-          The world re-makes what you carried.
+          The page re-describes what you carried.
         </h3>
         <Body size="sm">
           These were a fallen borrower&apos;s tools before they were yours —
-          things carried as far as their last hand could carry them. This world
-          is made of a different substance than the one that forged them, so a
-          true tool re-makes itself to the new world&apos;s law as you cross: the
-          same token in the same wallet, the same scar, re-shaped to what holds
-          here. Nothing is added and nothing is lost — only re-made. Watch.
+          carried as far as their last hand could carry them. They are one entry
+          in the book, written in another century, and the binding is the only
+          reason they are legible here at all: writing crosses between pages.
+          So nothing about them changes. This page simply reads that entry in
+          its own hand, and what it reads is what you will be holding. Same
+          token, same wallet, same scar, re-described. Watch.
         </Body>
 
         <div className="flex flex-col gap-4">
