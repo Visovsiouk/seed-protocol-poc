@@ -74,13 +74,27 @@ export const STORY_HERO_OPEN = {
 } as const;
 
 /**
- * Per-preset post-clear interstitial copy.
+ * Per-preset post-clear copy for the panel that fills the focal slot when a
+ * boss falls.
  *
- * `warp-next` carries the next preset so the interstitial can render
- * the equipped-gear translation card before sending the player on.
- * `claim-seed` only fires once the two-tier gate is satisfied (3
- * starter clears + min(3, communityRealmCount) community clears).
- * `open-picker` is the post-arc default for ad-hoc clears.
+ * ── The `cta` is the way out, and it is the only way out ───────────────────
+ * This used to be dead data. The panel rendered the prose, dropped the `cta`
+ * on the floor, and `EncounterFrame` routed the player home on a 3.5s timer —
+ * so the single biggest payoff in the game was the one beat nobody finished
+ * reading. The label below is now the label on a real button, and nothing
+ * leaves this screen until the player presses it.
+ *
+ * `kind` is what the caller switches on, so the names are load-bearing and
+ * `progression.test.ts` asserts them:
+ *
+ *   - `warp-next`   — a starter clear with another founding page below it.
+ *     Carries `nextPreset` so the panel can *name* what is next. It does not
+ *     route there: the base is where the player picks a page, and the pick is
+ *     half the point of having unsealed one.
+ *   - `claim-seed`  — the arc-completing (third) clear. The caller lands the
+ *     player on the Altar instead of the picker.
+ *   - `open-picker` — any clear outside the arc, including creator pages.
+ *   - `none`        — no exit of its own; the host panel supplies one.
  */
 export type Interstitial = {
   eyebrow: string;
@@ -92,6 +106,18 @@ export type Interstitial = {
     | { kind: "claim-seed"; label: string }
     | { kind: "none" };
 };
+
+/**
+ * The words on the way out, or `undefined` when this beat offers none.
+ *
+ * `kind: "none"` is the one variant with no `label`, so every caller that
+ * wants the label has to narrow the union first. They shouldn't each have to:
+ * the host panel's job is to fall back to its own default, and that is the
+ * same decision in both play routes.
+ */
+export function ctaLabel(story: Interstitial): string | undefined {
+  return story.cta.kind === "none" ? undefined : story.cta.label;
+}
 
 export function interstitialFor(args: {
   justCleared: Preset;
@@ -110,7 +136,7 @@ export function interstitialFor(args: {
         "page in 1847 and could not bear to leave it. I only wanted to keep it, she says. " +
         "Then you tear the bookmark out, and the page stops being findable. Your mark goes " +
         "on the card: one stamp, and the first thing you have that he cannot revise.",
-      cta: { kind: "warp-next", label: "Go down", nextPreset: "cyberpunk" },
+      cta: { kind: "warp-next", label: "Carry yourself out", nextPreset:"cyberpunk" },
     };
   }
 
@@ -124,7 +150,7 @@ export function interstitialFor(args: {
         "is the one thing that cannot be duplicated, so the district kept her as its own " +
         "lock. Every fork she split off wore a face you could have worn. Second stamp. The " +
         "neon here is still wet, which means he has not finished with this page yet.",
-      cta: { kind: "warp-next", label: "Go down", nextPreset: "scifi" },
+      cta: { kind: "warp-next", label: "Carry yourself out", nextPreset:"scifi" },
     };
   }
 
@@ -153,6 +179,59 @@ export function interstitialFor(args: {
       "someone who came this far and did not carry themselves back out. This page was written " +
       "by a hand like yours, which is why he has to come back for it at all. Its findings are " +
       "yours to carry up, and the registry still has pages nobody has reached the bookmark of.",
+    cta: { kind: "open-picker", label: "Back to the base" },
+  };
+}
+
+/**
+ * Clearing a page a borrower wrote.
+ *
+ * `interstitialFor` can't answer this: it keys off `REALM_ORDER` and a
+ * `TutorialProgress`, and a creator page is in neither. Before this existed
+ * the creator play route passed no panel at all, so founding a page, going
+ * down it and tearing out its bookmark ended in silence — the one clear in
+ * the game with an author to address, and the only one with nothing to say.
+ *
+ * Both cases name the bookmark, because that name is the thing the generated
+ * lore just spent a paragraph establishing and the thing the player just
+ * killed. `mine` is the fork worth having: somebody else's page is a page the
+ * Colophon has to come back for, and your own page is the same fact pointed at
+ * you — with the detail that you did not put that bookmark in it.
+ *
+ * No stamp is pressed here, and the copy must not imply one: the card has
+ * exactly three slots and they belong to the founding pages.
+ */
+export function creatorPageCleared(args: {
+  /** The page's registered name. */
+  pageName: string;
+  /** Who was filed into its heart — `RealmLore.bookmarkName`. */
+  bookmarkName: string;
+  /** Whether the connected wallet owns this page. */
+  mine: boolean;
+}): Interstitial {
+  const { pageName, bookmarkName, mine } = args;
+
+  if (mine) {
+    return {
+      eyebrow: `Your own page · ${bookmarkName} torn out`,
+      title: "The bookmark in the page you wrote was never yours to place.",
+      body:
+        `You pressed a signet into a blank quire and ${pageName} is what came of it. Then you went ` +
+        `down it and found ${bookmarkName} filed into its heart, holding it open to be found again. ` +
+        `Somebody put them there after you finished writing, and it was not you. The page is still ` +
+        `being added to, which is the only reason it cannot be given a colophon yet.`,
+      cta: { kind: "open-picker", label: "Back to the base" },
+    };
+  }
+
+  return {
+    eyebrow: `Bookmark torn out · ${bookmarkName}`,
+    title: "The hand holding this page open finally lets go.",
+    body:
+      `${bookmarkName} was filed into ${pageName} so it could always be found again, and you have ` +
+      `just taken that away from whoever was coming back for it. A borrower wrote this page with a ` +
+      `signet they earned — the way Ker wrote his — so it is an addition to the book rather than ` +
+      `part of the authorized edition. What you carried up is yours. The page stays, unfindable.`,
     cta: { kind: "open-picker", label: "Back to the base" },
   };
 }

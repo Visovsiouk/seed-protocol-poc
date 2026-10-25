@@ -77,13 +77,6 @@ import {
   type ClearReceiptStatus,
 } from "./RunOutcomePanels";
 
-/**
- * How long the run-over beat (clear narrative + bank/receipt status) dwells
- * after a boss clear settles before the player is routed back to the base.
- * Long enough to read the beat; short enough not to feel stuck.
- */
-const BOSS_RETURN_DELAY_MS = 3500;
-
 type Props = {
   /** Initial state from `startRun()`. */
   initialState: RunState;
@@ -152,12 +145,18 @@ type Props = {
    */
   chainReady?: boolean;
   /**
-   * Where to send the player after a boss clear settles. The run-over beat
-   * dwells briefly, then this route is pushed automatically — no CTA. The
-   * starter arc passes `/?station=altar` on the arc-completing clear to land
-   * the player on the Seed chest; everything else returns to the base (`/`).
+   * Where the boss-clear panel's exit sends the player. The starter arc
+   * passes `/?station=altar` on the arc-completing clear to land the player
+   * on the Seed chest; everything else returns to the base (`/`).
    */
   bossReturnHref?: string;
+  /**
+   * The label on that exit, which the story owns: `Interstitial.cta.label`.
+   * The page already computes the `Interstitial` to build `interstitial`, so
+   * it reads the label off the same object. Defaulted rather than required so
+   * a realm with no story content still has a way home.
+   */
+  bossReturnLabel?: string;
   /**
    * This realm's own identity for its boss, held under the name at the bottom
    * of the delve. Only creator realms pass one — the starter pages' bookmarks
@@ -194,6 +193,7 @@ export function EncounterFrame({
   realmNameRevealed = false,
   chainReady = false,
   bossReturnHref = "/",
+  bossReturnLabel = "Back to the base",
   bookmark,
 }: Props) {
   const router = useRouter();
@@ -323,16 +323,16 @@ export function EncounterFrame({
         }
         setState(result.state);
         setSelecting(false);
-        // Surfacing ends the delve: once the chosen findings have banked,
-        // the player returns to the hideout (the home base). On a bank
-        // failure we stay put so the extracted panel can offer a retry.
-        const banked = await runBank(result.state, "extract");
-        if (banked) router.push("/");
+        // Bank the chosen findings and stop there. This used to push `/` on
+        // success, which meant `ExtractedPanel` — the beat that tells the
+        // player what they just got away with — was only ever seen by players
+        // whose mint failed. The panel now carries its own exit.
+        await runBank(result.state, "extract");
       } finally {
         setBusy(false);
       }
     },
-    [appendLines, busy, onEvent, play, router, runBank, state],
+    [appendLines, busy, onEvent, play, runBank, state],
   );
 
   // Boss clear: the engine already banked the boss drop into
@@ -356,35 +356,27 @@ export function EncounterFrame({
     }
   }, [state, bankStatus.kind, bossSelecting, runBank]);
 
-  // Boss clear → auto-return to the base. Once the loot has banked
-  // (`bankStatus` done) and the clear receipt has *settled* (minted, or
-  // definitively skipped/failed — never while still pending), dwell on the
-  // run-over beat for a beat, then route home. No "next realm" CTA: the base
-  // surfaces the freshly-unsealed realm for the player to pick. Scheduled at
-  // most once per mount via `returnScheduledRef`.
-  const returnScheduledRef = useRef(false);
-  useEffect(() => {
-    if (returnScheduledRef.current) return;
-    if (!state.bossCleared || state.encounter) return;
-    if (bankStatus.kind !== "done") return;
-    const settled =
-      clearReceipt?.status === "minted" ||
-      clearReceipt?.status === "skipped" ||
-      clearReceipt?.status === "failed";
-    if (!settled) return;
-    returnScheduledRef.current = true;
-    const t = window.setTimeout(() => {
-      router.push(bossReturnHref);
-    }, BOSS_RETURN_DELAY_MS);
-    return () => window.clearTimeout(t);
-  }, [
-    state.bossCleared,
-    state.encounter,
-    bankStatus.kind,
-    clearReceipt,
-    bossReturnHref,
-    router,
-  ]);
+  /**
+   * Leaving a finished run — the only navigation out of a terminal state.
+   *
+   * This replaces a `setTimeout` that pushed `bossReturnHref` 3.5 seconds
+   * after a clear settled. That timer made the biggest payoff in the game the
+   * one beat nobody read to the end of, and it was the only player-facing
+   * transition in the app decided by a clock rather than a press — death has
+   * always required acknowledging the overlay.
+   *
+   * `leftRef` keeps the old effect's idempotency: a double-press (or an Enter
+   * that lands on the button twice) must not stack two pushes.
+   */
+  const leftRef = useRef(false);
+  const handleLeaveRun = useCallback(
+    (href: string) => {
+      if (leftRef.current) return;
+      leftRef.current = true;
+      router.push(href);
+    },
+    [router],
+  );
 
   // Confirm from the boss-clear selection overlay: bank the kept findings,
   // discard the rest. Boss clear never routes through `extract()` (it guards
@@ -546,13 +538,10 @@ export function EncounterFrame({
   }, [atDecision, state.depth]);
 
   const handleRetryBank = useCallback(async () => {
-    const reason = state.bossCleared ? "boss" : "extract";
-    const banked = await runBank(state, reason);
-    // A retry that clears the extract bank ends the delve the same way the
-    // first-pass confirm does: back to the hideout. Boss clears keep their own
-    // terminal panel, so they don't redirect.
-    if (banked && reason === "extract") router.push("/");
-  }, [router, runBank, state]);
+    // Both terminal panels own an exit now, so a successful retry just
+    // updates the bank line and leaves the player where they are.
+    await runBank(state, state.bossCleared ? "boss" : "extract");
+  }, [runBank, state]);
 
   // The always-present run controls, hosted in the Player pane so the screen
   // reads as three panes (Main · Log · Player): combat actions while a fight
@@ -648,6 +637,9 @@ export function EncounterFrame({
             realmName={realmName}
             bankStatus={bankStatus}
             onRetryBank={handleRetryBank}
+            // A surfacing always goes home to the base — the arc's Altar
+            // landing is earned by clearing a page, not by backing out of one.
+            onLeave={() => handleLeaveRun("/")}
           />
         ) : runOver ? (
           // Boss down: the focal slot held the enemy, now it holds the thing
@@ -663,6 +655,9 @@ export function EncounterFrame({
             bankStatus={bankStatus}
             onRetryBank={handleRetryBank}
             clearReceipt={clearReceipt}
+            leaveLabel={bossReturnLabel}
+            onLeave={() => handleLeaveRun(bossReturnHref)}
+            exitArmed={!bossSelecting}
           />
         ) : null}
       </div>
@@ -704,7 +699,7 @@ export function EncounterFrame({
           depth={state.defeatedAtDepth}
           turn={state.defeatedTurn}
           epitaph={epitaph}
-          onLeave={() => router.push("/")}
+          onLeave={() => handleLeaveRun("/")}
         />
       )}
     </div>

@@ -70,9 +70,12 @@ import {
 } from "@/lib/persistence/use-equipped-hydration";
 import {
   REALM_ORDER,
+  ctaLabel,
+  interstitialFor,
   isPlayable,
   lockStateFor,
 } from "@/lib/story/progression";
+import { PAGES } from "@/lib/story/canon";
 
 export default function PlayPage() {
   const params = useParams<{ preset: string }>();
@@ -445,6 +448,15 @@ export default function PlayPage() {
     };
   }, [bossClearedThisRun, tutorial, preset, cfg.realm]);
 
+  // The clear's story, resolved once and read twice: the panel renders its
+  // prose, and `EncounterFrame` puts `cta.label` on the button that is now the
+  // only way off that screen. Computing it here rather than inside the panel
+  // is what lets those two agree — the label and the destination are a pair.
+  const clearStory = useMemo(
+    () => interstitialFor({ justCleared: preset, progress: projectedProgress }),
+    [preset, projectedProgress],
+  );
+
   // EncounterFrame keeps its own RunState; we hand off the run state as
   // produced by `startRun` (which already has starter gear baked into
   // `equipped`). A re-equip during a run can't retroactively change the
@@ -567,16 +579,27 @@ export default function PlayPage() {
               onBankEscrow={handleBankEscrow}
               clearReceipt={clearReceipt}
               // Arc-completing (third) clear lands on the chest (Altar); every
-              // other clear returns to the base picker. The redirect itself is
-              // owned by EncounterFrame's boss-clear dwell effect.
+              // other clear returns to the base picker. Pressed by the player
+              // on the clear panel — nothing navigates on a timer.
               bossReturnHref={
                 projectedProgress.starterClears >= 3 ? "/?station=altar" : "/"
               }
+              bossReturnLabel={ctaLabel(clearStory)}
               interstitial={
                 bossClearedThisRun ? (
                   <RealmClearedInterstitial
-                    justCleared={preset}
-                    projected={projectedProgress}
+                    story={clearStory}
+                    // The stamp this clear pressed, landed inside the beat
+                    // rather than left for the player to discover in the Book
+                    // later. `starterClears` is already projected to include
+                    // the clear that just happened.
+                    stamp={{
+                      preset,
+                      page: PAGES[preset].name,
+                      count: projectedProgress.starterClears,
+                      total: REALM_ORDER.length,
+                    }}
+                    address={address}
                   />
                 ) : null
               }

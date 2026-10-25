@@ -41,6 +41,8 @@ import {
 } from "@/lib/engine/runtime";
 import { EncounterFrame } from "@/components/game/EncounterFrame";
 import { GearTranslationScreen } from "@/components/game/GearTranslationScreen";
+import { RealmClearedInterstitial } from "@/components/game/RealmClearedInterstitial";
+import { creatorPageCleared, ctaLabel } from "@/lib/story/progression";
 import { AppShell, Panel } from "@/components/ui";
 import { useRealms } from "@/lib/reads/hooks";
 import { useMintLoot } from "@/lib/contracts/loot";
@@ -235,9 +237,14 @@ export default function CreatorRealmPlayPage() {
     // inventory surface on the play page, so banking is a session no-op.
   };
 
+  // Set the moment the engine emits BossCleared, so the clear panel can
+  // render. Engine truth, not chain truth — the beat lands before any receipt.
+  const [bossClearedThisRun, setBossClearedThisRun] = useState(false);
+
   const handleEngineEvent = (event: EngineEvent) => {
     if (event.type !== "BossCleared") return;
     if (!initial || !address) return;
+    setBossClearedThisRun(true);
     if (!chainMintAvailable) {
       setClearReceipt({
         status: "skipped",
@@ -268,6 +275,28 @@ export default function CreatorRealmPlayPage() {
   };
 
   const initialState: RunState | null = initial?.state ?? null;
+
+  /**
+   * What the book says about clearing a page a borrower wrote.
+   *
+   * Before this, tearing the bookmark out of a creator page ended in silence:
+   * this route passed no clear panel at all, so the one clear in the game with
+   * an actual author behind it was the only one with nothing to say.
+   *
+   * `null` in trial mode — an unregistered realm has no owner and no generated
+   * bookmark name, so there is nothing true to say about who was filed into
+   * it. `RunOverPanel` still carries its default exit, so that run ends fine.
+   */
+  const clearStory = useMemo(() => {
+    if (!registered) return null;
+    return creatorPageCleared({
+      pageName: realmName,
+      bookmarkName: registered.lore.bookmarkName,
+      mine:
+        !!walletAddress &&
+        registered.owner.toLowerCase() === walletAddress.toLowerCase(),
+    });
+  }, [registered, realmName, walletAddress]);
 
   if (!validAddress) {
     return (
@@ -412,8 +441,22 @@ export default function CreatorRealmPlayPage() {
                   : undefined
               }
               // Creator realms always return to the base picker on clear
-              // (default href); only the starter arc lands on the chest.
+              // (default href); only the starter arc lands on the chest. The
+              // player presses it when they're done reading — nothing routes
+              // away on a timer.
               bossReturnHref="/"
+              bossReturnLabel={clearStory ? ctaLabel(clearStory) : undefined}
+              interstitial={
+                bossClearedThisRun && clearStory ? (
+                  // No `stamp`: the card has exactly three slots and they
+                  // belong to the founding pages, so a creator clear must not
+                  // imply one was pressed.
+                  <RealmClearedInterstitial
+                    story={clearStory}
+                    address={walletAddress}
+                  />
+                ) : null
+              }
             />
           )
         ) : (
