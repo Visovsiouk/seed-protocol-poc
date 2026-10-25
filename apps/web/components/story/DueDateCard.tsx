@@ -26,7 +26,11 @@
 import { PlayerSigil } from "@/components/art/PlayerSigil";
 import { CardEntries } from "@/components/story/CardEntries";
 import { Stamp } from "@/components/ui";
-import type { CardStamp, DueDateCard as DueDateCardModel } from "@/lib/story/card";
+import {
+  signetLine,
+  type CardStamp,
+  type DueDateCard as DueDateCardModel,
+} from "@/lib/story/card";
 
 /** Hand-pressed, not machine-set. Indexed by slot. */
 const TILT = ["-2.5deg", "1.8deg", "-1.2deg"];
@@ -111,13 +115,10 @@ export function DueDateCard({
         ))}
       </div>
 
-      {/* The signet: what three stamps buy, and what it's for. */}
+      {/* The signet: what three stamps buy, and what it's for. Shared with
+          the Base's `CardStrip` so the same artifact can't count two ways. */}
       <p className="font-mono text-[10px] uppercase tracking-[0.16em] opacity-65">
-        {card.signetPressed
-          ? "Signet cut. Press it into a blank quire."
-          : card.stampCount >= card.stamps.length
-            ? "Three stamps. The book owes you a signet."
-            : `${card.stamps.length - card.stampCount} more to earn a signet.`}
+        {signetLine(card)}
       </p>
 
       {card.returnColumnTorn && (

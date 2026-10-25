@@ -109,3 +109,25 @@ export function dueDateCard(args: {
     returnColumnTorn: true,
   };
 }
+
+/**
+ * What the card says about what three stamps buy.
+ *
+ * Deliberately here rather than in the two components that show it. The Book's
+ * `DueDateCard` and the Base's `CardStrip` are the same artifact at two zoom
+ * levels, and a player reads one immediately after the other — a card that
+ * counted differently on the Base than in the Book would read as a bug, which
+ * is exactly the drift this module exists to prevent for the stamps
+ * themselves.
+ *
+ * It is also the better-guarded place for it: `canon.test.ts` sweeps module
+ * exports for retired vocabulary, and the component sweep it had to grow
+ * afterwards is a plain substring match that can only carry unambiguous
+ * phrases. Prose in a lib is covered more tightly than prose in JSX.
+ */
+export function signetLine(card: DueDateCard): string {
+  if (card.signetPressed) return "Signet cut. Press it into a blank quire.";
+  const remaining = card.stamps.length - card.stampCount;
+  if (remaining <= 0) return "Three stamps. The book owes you a signet.";
+  return `${remaining} more to earn a signet.`;
+}

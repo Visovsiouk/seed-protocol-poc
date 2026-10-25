@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Preset } from "@/lib/engine/types";
 import type { TutorialProgress } from "@/lib/tutorial/progress";
-import { dueDateCard } from "./card";
+import { dueDateCard, signetLine } from "./card";
 import { REALM_ORDER } from "./progression";
 
 /**
@@ -123,6 +123,18 @@ describe("dueDateCard", () => {
     expect(JSON.stringify(progress)).toBe(snapshot);
   });
 
+  it("exposes the stamp count the compact strip shows without opening the Book", () => {
+    // The Base's `CardStrip` renders "N / 3 stamped" straight off the model
+    // rather than counting `stamps` itself, so the two zoom levels of the same
+    // artifact can't disagree.
+    for (const n of [0, 1, 2, 3]) {
+      const presets = REALM_ORDER.slice(0, n) as Preset[];
+      const card = dueDateCard({ progress: progressWith(presets), signed: true });
+      expect(card.stampCount).toBe(n);
+      expect(card.stamps).toHaveLength(3);
+    }
+  });
+
   it("tolerates a clear with no matching entry in `cleared`", () => {
     // `starterClears` is a count and `cleared` is the detail; a chain read can
     // land them out of step mid-refetch. The slot should still stamp, just
@@ -136,5 +148,42 @@ describe("dueDateCard", () => {
     const card = dueDateCard({ progress, signed: true });
     expect(card.stamps).toHaveLength(3);
     expect(card.stamps.every((s) => s.ts === null)).toBe(true);
+  });
+});
+
+/**
+ * Shared by the Book's full card and the Base's compact strip. It lives in the
+ * model precisely so those two can't count differently — a player reads one
+ * immediately after the other.
+ */
+describe("signetLine", () => {
+  const lineFor = (presets: Preset[], hasSeed = false) =>
+    signetLine(
+      dueDateCard({ progress: progressWith(presets, { hasSeed }), signed: true }),
+    );
+
+  it("counts down while slots are open", () => {
+    expect(lineFor([])).toBe("3 more to earn a signet.");
+    expect(lineFor(["fantasy"])).toBe("2 more to earn a signet.");
+    expect(lineFor(["fantasy", "cyberpunk"])).toBe("1 more to earn a signet.");
+  });
+
+  it("says the book owes you one once the card is full", () => {
+    expect(lineFor(["fantasy", "cyberpunk", "scifi"])).toContain("owes you a signet");
+  });
+
+  it("points at the blank quire once the signet is cut, never at signing out", () => {
+    // The turn the whole story rests on: a signet lets you sign out, and
+    // signing out shuts the book with everyone still inside. This line must
+    // never offer that as the reward.
+    const line = lineFor(["fantasy", "cyberpunk", "scifi"], true);
+    expect(line).toContain("blank quire");
+    expect(line.toLowerCase()).not.toContain("sign out");
+  });
+
+  it("the pressed signet wins over the count, not the other way round", () => {
+    // `hasSeed` with an incomplete card is reachable: the chain read that
+    // feeds `cleared` can lag the one that feeds `hasSeed`.
+    expect(lineFor([], true)).toContain("blank quire");
   });
 });

@@ -39,6 +39,7 @@ import {
   ColdOpenBook,
   hasConsumedColdOpen,
 } from "@/components/story/ColdOpenBook";
+import { CardStrip } from "@/components/story/CardStrip";
 import { useTutorialProgress, useInventoryCards } from "@/lib/reads/hooks";
 import {
   emptyTutorialProgress,
@@ -270,6 +271,10 @@ export function PocketRealmHub() {
           ownedCount={inventory.length}
           codex={codex}
         />
+        {/* The card, directly under the header: this is the room where it
+            lives, and it's the way into the Book. `coldOpenDone` is true on
+            this branch — the book has been walked, so the card is signed. */}
+        <CardStrip signed />
         {selected ? (
           <LoadoutStaging
             selection={selected}
@@ -305,6 +310,11 @@ export function PocketRealmHub() {
         ownedCount={inventory.length}
         codex={codex}
       />
+
+      {/* Above the rail, not inside a station: the card belongs to the base
+          itself, not to any one room in it. Post-arc the card is signed by
+          definition — nobody clears three pages without opening the book. */}
+      <CardStrip signed />
 
       {/* Station rail — in-world wayfinding (replaces the top-nav) */}
       <nav

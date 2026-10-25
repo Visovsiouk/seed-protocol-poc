@@ -32,6 +32,7 @@ import { useCodexToasts } from "@/lib/codex/use-codex-toasts";
 import { useAudio } from "@/lib/audio/AudioProvider";
 import { useTutorialProgress } from "@/lib/reads/hooks";
 import { useFoundMargins } from "@/lib/story/use-margins";
+import { onDockOpen } from "@/lib/ui/dock-bus";
 import { fadeRise, withReducedMotion } from "@/lib/ui/motion";
 
 // Lift the dock clear of the AppShell footer (49px), and of the fixed
@@ -151,6 +152,11 @@ export function CornerDock() {
   // `null` until `mounted`, so this never runs during SSR.
   const signed = mounted && (hasConsumedColdOpen() || (progress?.starterClears ?? 0) > 0);
   const margins = useFoundMargins(address, open === "book");
+
+  // Opened from outside the dock — today that's the Base's card strip asking
+  // for the Book. See `lib/ui/dock-bus.ts` for why this is an event and not
+  // lifted state.
+  useEffect(() => onDockOpen((panel) => setOpen(panel)), []);
 
   // Escape closes whichever panel is open (popovers, not modals — no focus trap).
   useEffect(() => {
