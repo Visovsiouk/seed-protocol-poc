@@ -41,6 +41,7 @@ import {
 } from "@/lib/engine/runtime";
 import { EncounterFrame } from "@/components/game/EncounterFrame";
 import { GearTranslationScreen } from "@/components/game/GearTranslationScreen";
+import { PageEntryBeat } from "@/components/game/PageEntryBeat";
 import { RealmClearedInterstitial } from "@/components/game/RealmClearedInterstitial";
 import { creatorPageCleared, ctaLabel } from "@/lib/story/progression";
 import { AppShell, Panel } from "@/components/ui";
@@ -169,6 +170,15 @@ export default function CreatorRealmPlayPage() {
     starterGear,
   });
   const [entryAck, setEntryAck] = useState(false);
+  /**
+   * Whether the player has read the book's description of this page.
+   *
+   * Separate from `entryAck` because the two beats are independent: a
+   * same-genre descent plays only this one, a cross-genre descent plays both
+   * in order. Trial-mode realms have no generated lore, so there is nothing
+   * to acknowledge and the beat never mounts.
+   */
+  const [pageAck, setPageAck] = useState(false);
 
   const initial = useMemo(() => {
     if (!address || !csprngSeed || !starterGear || !runStartEquipped) {
@@ -377,14 +387,10 @@ export default function CreatorRealmPlayPage() {
             aria-label="Realm metadata"
             className="flex flex-col gap-2 p-3 text-sm"
           >
-            {/* The book, describing a page somebody else wrote. It goes above
-                the metadata rather than instead of it: the ids and the tier
-                are what a creator checks on arriving, and the paragraph is
-                what makes arriving mean anything. Resolved server-side, so
-                there is nothing to wait for and no empty state. */}
-            <p className="italic leading-relaxed opacity-85">
-              {registered.lore.pageText}
-            </p>
+            {/* The book's paragraph about this page used to sit here, above a
+                live fight, where nobody read it — it now gets its own gated
+                beat before the run boots (`PageEntryBeat`). What's left is
+                the dry line, which is what a creator checks on arriving. */}
             <p className="text-[11px] opacity-65">
               <strong>{realmName}</strong> · {preset} · final boss{" "}
               <code>{bossId}</code> · max tier <strong>T{maxTier}</strong>
@@ -402,7 +408,17 @@ export default function CreatorRealmPlayPage() {
         )}
 
         {seedReady && initialState && initial ? (
-          crossGenre && !entryAck && address ? (
+          // Two entry beats, in order: the book says where you are, then your
+          // gear re-shapes to it. The second only means anything once you know
+          // whose page is doing the re-shaping.
+          registered && !pageAck ? (
+            <PageEntryBeat
+              pageName={realmName}
+              pageText={registered.lore.pageText}
+              preset={preset}
+              onDescend={() => setPageAck(true)}
+            />
+          ) : crossGenre && !entryAck && address ? (
             <GearTranslationScreen
               realm={address}
               preset={preset}
