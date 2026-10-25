@@ -4,9 +4,9 @@
  * The pocket realm — the hideout the player wakes into, and the base/HQ the
  * whole pre-descent game runs out of (poc rework).
  *
- * Pre-arc it stays a *narrow door*: the cold-open branding / single Continue
- * card (owned by `RealmSelector`), with loadout staging taking over once a door
- * is picked. The world is deliberately small until the three founding doors are
+ * Pre-arc it stays a *narrow door*: the cold open (owned by `ColdOpenBook`),
+ * then the base with the card strip and the picker, and loadout staging once a
+ * door is picked. It is deliberately small until the three founding pages are
  * walked.
  *
  * Post-arc it opens into the **HQ shell** — a titled base with a status strip
@@ -15,8 +15,11 @@
  *
  *   - **Doors**  — the realm picker (`RealmSelector`) → `LoadoutStaging`.
  *   - **Market** — the bazaar surface (listings + sales + leaderboards).
- *   - **Altar**  — the Name credential ledger (when eligible / carved).
- *   - **Forge**  — a workshop room that opens the realm-creation ceremony.
+ *   - **Altar**  — the date-due card read, and the signet pressed.
+ *   - **Forge**  — where the signet goes into a blank quire (`/create`).
+ *
+ * The card itself sits above the rail in both shells, because it belongs to
+ * the base and not to any one room in it — and it is the way into the Book.
  *
  * Stations cross-fade with the realm-warp motion so moving between rooms reads
  * as walking the base rather than swapping a tab.
@@ -89,6 +92,23 @@ function ShardTrack({ shards }: { shards: number }) {
   );
 }
 
+/**
+ * The Forge — where a signet gets pressed into a blank quire.
+ *
+ * This is the ending of the story, not an advanced feature, and the copy has
+ * to carry that: a signet also lets you sign out, signing out shuts the book
+ * with everyone still inside, and the only move that isn't his is to add a
+ * page. The previous version read as a crafting menu instead — an earned
+ * inscription, a half-made place to finish, a substance to pick and a jailer
+ * to install in its heart. Wrong vocabulary and the wrong promise.
+ *
+ * Nothing automated found it. The load-bearing words in that copy are all
+ * excluded from `RETIRED_TERMS` as ambiguous, so it survived four commits
+ * after the migration "finished"; the phrasings are on the list now, which
+ * stops those sentences coming back and does not make this surface guarded.
+ * See the ceiling note in `canon.ts` — and note that a comment here cannot
+ * quote a retired phrase either, which is why this one describes.
+ */
 function ForgeRoom() {
   return (
     <Panel
@@ -98,21 +118,25 @@ function ForgeRoom() {
       className="mx-auto flex w-full max-w-2xl flex-col gap-4 p-6"
     >
       <header className="flex flex-col gap-2">
-        <Stamp>A workshop off the main hall</Stamp>
+        <Stamp>A bindery off the main hall</Stamp>
         <Rule />
         <h3 className="font-mono text-xl font-medium tracking-[-0.015em]">
           The forge
         </h3>
         <p className="text-sm leading-relaxed opacity-75">
-          You have a name now, and a name is what it takes to finish a world of
-          your own. Raise one from the unfinished — name it, pick its substance
-          and the warden that holds its heart, and set it turning for the next
-          borrower to descend. Step through to the forge floor.
+          Your signet will let you sign out. Don&apos;t — the book shuts behind
+          whoever does, with everyone still inside, and he has been working
+          toward that for two hundred years. Press it into a blank quire
+          instead. Say what era the page is written in, who gets filed into its
+          heart to hold it open, and leave it in the registry for the next
+          borrower to find. A book still being written cannot be given a
+          colophon, and every page another hand adds is one more he has to come
+          back for.
         </p>
       </header>
       <Link href="/create" prefetch className="self-start">
         <Button intent="primary" size="md">
-          Enter the forge →
+          Press it into a blank quire →
         </Button>
       </Link>
     </Panel>
@@ -175,10 +199,10 @@ export function PocketRealmHub() {
   const inventory = useInventoryCards(address).data ?? [];
   const codex = useCodexStatus(address).status;
   const arcCompleted = progress.starterClears >= 3 || progress.hasSeed;
-  // The Altar is browsable the moment the first spark kindles — sparks
-  // accumulate visibly across the arc, and the arc-completing clear deep-links
-  // here via `/?station=altar`. Eligibility to carve the Name is still gated
-  // inside GenesisLedger; this only decides whether the station is reachable.
+  // The Altar is browsable from the first stamp — stamps accumulate visibly
+  // across the arc, and the arc-completing clear deep-links here via
+  // `/?station=altar`. Eligibility to press the signet is still gated inside
+  // GenesisLedger; this only decides whether the station is reachable.
   const altarOpen = progress.starterClears > 0 || progress.hasSeed;
 
   // 1 Seed = 1 Ecosystem: once this wallet founds a realm the factory pins it
@@ -237,7 +261,7 @@ export function PocketRealmHub() {
   );
 
   // If the active station gets sealed out from under the player — Forge once
-  // the realm is founded, or the Altar before the first spark — fall back to
+  // the realm is founded, or the Altar before the first stamp — fall back to
   // the Doors so we never render a station that isn't on the rail.
   useEffect(() => {
     if (alreadyFounded && station === "forge") setStation("doors");
@@ -283,10 +307,10 @@ export function PocketRealmHub() {
         ) : (
           <div className="flex w-full flex-col items-center gap-6">
             <RealmSelector onSelectRealm={setSelected} />
-            {/* Once the first spark kindles, the Altar surfaces under the picker
-                so the player watches their sparks accumulate between descents.
-                (The Codex — the journey's map — floats globally as chrome, see
-                CornerDock.) */}
+            {/* Once the first page is stamped, the Altar surfaces under the
+                picker so the player watches the card fill up between
+                descents. (The Codex — the journey's map — floats globally as
+                chrome, see CornerDock.) */}
             {progress.starterClears > 0 && <GenesisLedger />}
           </div>
         )}
@@ -298,7 +322,8 @@ export function PocketRealmHub() {
     (s) =>
       (s.id !== "altar" || altarOpen) &&
       // Forge disappears once the realm is founded — the Seed is spent and the
-      // creation room can't be re-entered. The Altar stays as a Name trophy.
+      // creation room can't be re-entered. The Altar stays — it holds the
+      // spent card and the signet that was cut from it.
       (s.id !== "forge" || !alreadyFounded),
   );
 

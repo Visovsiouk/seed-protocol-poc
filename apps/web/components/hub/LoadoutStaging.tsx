@@ -378,9 +378,9 @@ export function LoadoutStaging({
               <span className="font-medium">{stats.ac}</span>
             </span>
           </div>
-          {/* Warden intel — player realms only. Starter wardens stay part of
-              the tutorial arc's discovery; creator realms are where counter-
-              picking (and the bazaar pull) is meant to matter. */}
+          {/* Bookmark intel — player realms only. The founding pages'
+              bookmarks stay part of the arc's discovery; creator realms are
+              where counter-picking (and the bazaar pull) is meant to matter. */}
           {selection.kind === "creator" && realmMeta && (
             <BossIntelStrip
               realmPreset={realmMeta.preset}

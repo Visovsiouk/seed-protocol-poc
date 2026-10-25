@@ -352,6 +352,25 @@ export const CARD_ENTRIES: readonly BorrowerId[] = [
  * identifiers are excluded on purpose — `warden` is a community boss id in
  * `lib/flavor/fantasy.ts`, and `work`/`mark`/`spark` all have ordinary uses —
  * so the guard tests unambiguous phrases and the reviewer catches the rest.
+ *
+ * ── What this guard cannot do, stated plainly ──────────────────────────────
+ * The component sweep in `canon.test.ts` is a substring match over source
+ * text, so the denylist can only ever hold phrases. That leaves a real hole,
+ * and it is worth naming rather than implying coverage:
+ *
+ *   - Bare `name`, `world` and `warden` can never go on the list. `warden` is
+ *     a live boss id *and* a boss name ("The Stone Warden"); `name` and
+ *     `world` appear constantly in ordinary senses. The Forge's copy sat in
+ *     the pre-rewrite vocabulary for four commits after the migration
+ *     "finished" for exactly this reason, and nothing automated found it.
+ *   - Prose that is simply *wrong about the fiction* while using none of these
+ *     words is invisible here by construction. The crossing screen described
+ *     the destination as re-making a tool, which inverts the premise, and no
+ *     list of banned words would have caught that.
+ *
+ * So the rule is: this list stops regressions of specific phrasings. New copy
+ * still needs a reader. Added entries should be phrases that were *actually
+ * shipped and removed*, not guesses at what someone might write.
  */
 export const RETIRED_TERMS: readonly string[] = [
   "aspirant",
@@ -383,4 +402,17 @@ export const RETIRED_TERMS: readonly string[] = [
   "brand on your hand",
   "spark kindled",
   "sparks kindled",
+  // ── Added after a second walkthrough found the Forge still pre-rewrite ──
+  // These were the Forge room's and the loadout's actual shipped wording.
+  // Each is a phrase only because the load-bearing word in it (`name`,
+  // `world`, `warden`) can't be listed on its own — see the ceiling note
+  // above. They stop these exact sentences coming back; they do not make
+  // this surface guarded.
+  "finish a world",
+  "world of your own",
+  "raise one from the unfinished",
+  "the warden that holds",
+  "warden intel",
+  "the world re-makes",
+  "new world's law",
 ];
