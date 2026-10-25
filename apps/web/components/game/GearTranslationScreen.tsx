@@ -92,7 +92,9 @@ export function GearTranslationScreen({
 
   return (
     <motion.section
-      aria-label="Your gear changes shape"
+      // Was "your gear changes shape", which is the framing the body copy
+      // above had to be rewritten out of: nothing about the entry changes.
+      aria-label="The crossing — one entry, re-described"
       data-preset={preset}
       variants={withReducedMotion(warpCrossfade, reduced)}
       initial="enter"

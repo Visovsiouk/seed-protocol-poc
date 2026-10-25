@@ -578,11 +578,18 @@ export default function PlayPage() {
               onEvent={handleEngineEvent}
               onBankEscrow={handleBankEscrow}
               clearReceipt={clearReceipt}
-              // Arc-completing (third) clear lands on the chest (Altar); every
-              // other clear returns to the base picker. Pressed by the player
-              // on the clear panel — nothing navigates on a timer.
+              // Arc-completing clear lands on the chest (Altar); every other
+              // clear returns to the base picker. Pressed by the player on the
+              // clear panel — nothing navigates on a timer.
+              //
+              // Keyed on the story's own CTA rather than re-deriving from
+              // `starterClears >= 3`, so the label and the destination cannot
+              // disagree: `claim-seed` is the only beat that says "Take it to
+              // the Altar", and it is now the only one that goes there. The
+              // old condition sent a post-arc re-clear to the Altar under a
+              // button reading "Back to the base".
               bossReturnHref={
-                projectedProgress.starterClears >= 3 ? "/?station=altar" : "/"
+                clearStory.cta.kind === "claim-seed" ? "/?station=altar" : "/"
               }
               bossReturnLabel={ctaLabel(clearStory)}
               interstitial={

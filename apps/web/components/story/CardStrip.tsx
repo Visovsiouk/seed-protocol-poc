@@ -67,14 +67,19 @@ export function CardStrip({
   const card = dueDateCard({ progress: data ?? emptyTutorialProgress(), signed });
 
   return (
+    // Stacks below `sm`. As a single row at 375px the three fixed-width slots
+    // and the arrow left the prose about 110px to wrap in, which turned a
+    // one-line strip into a 180px block of ragged mono — measured in a
+    // browser, not guessed. Stacked, the slots keep their row and the sentence
+    // gets the full width.
     <button
       type="button"
       onClick={() => emitDockOpen("book")}
       aria-label={`Your date-due card: ${card.stampCount} of ${card.stamps.length} stamped. Open the Book.`}
-      className="group flex w-full items-center gap-4 rounded-md border border-dashed border-[var(--border-2)] bg-[var(--surface-1)] px-4 py-3 text-left transition-colors hover:border-[var(--color-preset-accent)] hover:bg-[var(--surface-2)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-preset-accent)]"
+      className="group flex w-full flex-col gap-2 rounded-md border border-dashed border-[var(--border-2)] bg-[var(--surface-1)] px-4 py-3 text-left transition-colors hover:border-[var(--color-preset-accent)] hover:bg-[var(--surface-2)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-preset-accent)] sm:flex-row sm:items-center sm:gap-4"
     >
       {/* Three slots. Fixed-width so the row never reflows as stamps land,
-          and `shrink-0` so the prose beside them is what gives at 375px. */}
+          and `shrink-0` so the prose beside them is what gives first. */}
       <span aria-hidden className="flex shrink-0 items-center gap-2">
         {card.stamps.map((stamp) => (
           <Slot key={stamp.preset} stamp={stamp} address={address} />
@@ -97,7 +102,10 @@ export function CardStrip({
         )}
       </span>
 
-      <span className="ml-auto shrink-0 font-mono text-[10px] uppercase tracking-[0.18em] opacity-50 transition-opacity group-hover:opacity-90">
+      {/* Hidden when stacked: it's an affordance hint, and the whole strip is
+          the button — on a touch viewport it costs a column and earns
+          nothing. */}
+      <span className="hidden shrink-0 font-mono text-[10px] uppercase tracking-[0.18em] opacity-50 transition-opacity group-hover:opacity-90 sm:ml-auto sm:block">
         Read →
       </span>
     </button>

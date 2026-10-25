@@ -104,9 +104,11 @@ export function MusicNudge({ bottomClass }: { bottomClass: string }) {
       >
         This world has a score
       </span>
+      {/* Found on a walkthrough, still in the pre-rewrite vocabulary: a realm
+          is a page, and what you cross between is pages. */}
       <p className="text-xs leading-relaxed opacity-75">
-        Each realm carries its own piece, and they hand over to each other as
-        you cross between worlds. It&apos;s off until you say so.
+        Each page carries its own piece, and they hand over to each other as
+        you cross between them. It&apos;s off until you say so.
       </p>
       <div className="flex items-center gap-2">
         <button
