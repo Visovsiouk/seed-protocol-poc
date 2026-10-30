@@ -41,8 +41,12 @@ import {
 } from "@/lib/engine/runtime";
 import { EncounterFrame } from "@/components/game/EncounterFrame";
 import { GearTranslationScreen } from "@/components/game/GearTranslationScreen";
+import { PageEntryBeat } from "@/components/game/PageEntryBeat";
+import { RealmClearedInterstitial } from "@/components/game/RealmClearedInterstitial";
+import { creatorPageCleared, ctaLabel } from "@/lib/story/progression";
 import { AppShell, Panel } from "@/components/ui";
 import { useRealms } from "@/lib/reads/hooks";
+import { queryKeys } from "@/lib/reads/cache";
 import { useMintLoot } from "@/lib/contracts/loot";
 import { useMintClearReceipt } from "@/lib/contracts/boss-cleared";
 import {
@@ -51,6 +55,7 @@ import {
 } from "@/lib/persistence/use-equipped-hydration";
 import { shortAddress } from "@/lib/utils";
 import { isHexAddress } from "@/lib/validation/schemas";
+import type { RealmLore } from "@/lib/story/page-bank";
 // Shared with the hub's loadout staging so the preview it shows and the run
 // this page boots agree on the stand-in flavor. See `lib/contracts/realm-trial.ts`.
 import {
@@ -67,6 +72,12 @@ type RealmMeta = {
   bossId: string;
   name: string;
   accent: string | null;
+  /**
+   * The page's own lore. Never absent — the meta route resolves a realm with
+   * no generated row to the deterministic bank, so this page holds no opinion
+   * about what an un-generated realm reads like. See `lib/story/page-bank.ts`.
+   */
+  lore: RealmLore;
   maxTier: Tier;
   createdAt: number;
 };
@@ -109,7 +120,9 @@ export default function CreatorRealmPlayPage() {
   // never changes after the create flow. A 404 collapses to
   // `registered = null` and the page falls back to trial mode.
   const metaQuery = useQuery({
-    queryKey: ["realm-meta", address],
+    // Through the catalog so the create flow's post-generation invalidation
+    // lands on this exact key — see `queryKeys.realmMeta`.
+    queryKey: address ? queryKeys.realmMeta(address) : ["realm-meta", "none"],
     enabled: !!address,
     staleTime: Infinity,
     queryFn: async () => (address ? fetchRealmMeta(address) : null),
@@ -160,6 +173,15 @@ export default function CreatorRealmPlayPage() {
     starterGear,
   });
   const [entryAck, setEntryAck] = useState(false);
+  /**
+   * Whether the player has read the book's description of this page.
+   *
+   * Separate from `entryAck` because the two beats are independent: a
+   * same-genre descent plays only this one, a cross-genre descent plays both
+   * in order. Trial-mode realms have no generated lore, so there is nothing
+   * to acknowledge and the beat never mounts.
+   */
+  const [pageAck, setPageAck] = useState(false);
 
   const initial = useMemo(() => {
     if (!address || !csprngSeed || !starterGear || !runStartEquipped) {
@@ -228,9 +250,14 @@ export default function CreatorRealmPlayPage() {
     // inventory surface on the play page, so banking is a session no-op.
   };
 
+  // Set the moment the engine emits BossCleared, so the clear panel can
+  // render. Engine truth, not chain truth — the beat lands before any receipt.
+  const [bossClearedThisRun, setBossClearedThisRun] = useState(false);
+
   const handleEngineEvent = (event: EngineEvent) => {
     if (event.type !== "BossCleared") return;
     if (!initial || !address) return;
+    setBossClearedThisRun(true);
     if (!chainMintAvailable) {
       setClearReceipt({
         status: "skipped",
@@ -261,6 +288,28 @@ export default function CreatorRealmPlayPage() {
   };
 
   const initialState: RunState | null = initial?.state ?? null;
+
+  /**
+   * What the book says about clearing a page a borrower wrote.
+   *
+   * Before this, tearing the bookmark out of a creator page ended in silence:
+   * this route passed no clear panel at all, so the one clear in the game with
+   * an actual author behind it was the only one with nothing to say.
+   *
+   * `null` in trial mode — an unregistered realm has no owner and no generated
+   * bookmark name, so there is nothing true to say about who was filed into
+   * it. `RunOverPanel` still carries its default exit, so that run ends fine.
+   */
+  const clearStory = useMemo(() => {
+    if (!registered) return null;
+    return creatorPageCleared({
+      pageName: realmName,
+      bookmarkName: registered.lore.bookmarkName,
+      mine:
+        !!walletAddress &&
+        registered.owner.toLowerCase() === walletAddress.toLowerCase(),
+    });
+  }, [registered, realmName, walletAddress]);
 
   if (!validAddress) {
     return (
@@ -334,27 +383,45 @@ export default function CreatorRealmPlayPage() {
             )}
           </Panel>
         )}
-        {isRegistered && (
+        {isRegistered && registered && (
           <Panel
             as="aside"
             tone="glass-2"
             aria-label="Realm metadata"
-            className="p-3 text-sm"
+            className="flex flex-col gap-2 p-3 text-sm"
           >
-            <strong>{realmName}</strong> · {preset} · final boss{" "}
-            <code>{bossId}</code> · max tier <strong>T{maxTier}</strong>
-            {registered && registered.owner && (
-              <>
-                {" "}
-                · owner{" "}
-                <span className="font-mono">{shortAddress(registered.owner)}</span>
-              </>
-            )}
+            {/* The book's paragraph about this page used to sit here, above a
+                live fight, where nobody read it — it now gets its own gated
+                beat before the run boots (`PageEntryBeat`). What's left is
+                the dry line, which is what a creator checks on arriving. */}
+            <p className="text-[11px] opacity-65">
+              <strong>{realmName}</strong> · {preset} · final boss{" "}
+              <code>{bossId}</code> · max tier <strong>T{maxTier}</strong>
+              {registered.owner && (
+                <>
+                  {" "}
+                  · owner{" "}
+                  <span className="font-mono">
+                    {shortAddress(registered.owner)}
+                  </span>
+                </>
+              )}
+            </p>
           </Panel>
         )}
 
         {seedReady && initialState && initial ? (
-          crossGenre && !entryAck && address ? (
+          // Two entry beats, in order: the book says where you are, then your
+          // gear re-shapes to it. The second only means anything once you know
+          // whose page is doing the re-shaping.
+          registered && !pageAck ? (
+            <PageEntryBeat
+              pageName={realmName}
+              pageText={registered.lore.pageText}
+              preset={preset}
+              onDescend={() => setPageAck(true)}
+            />
+          ) : crossGenre && !entryAck && address ? (
             <GearTranslationScreen
               realm={address}
               preset={preset}
@@ -377,9 +444,38 @@ export default function CreatorRealmPlayPage() {
               onEvent={handleEngineEvent}
               onBankEscrow={handleBankEscrow}
               clearReceipt={clearReceipt}
+              // The page's own bookmark, held under the boss's name at the
+              // bottom of the delve. Fifteen boss ids are shared across every
+              // creator realm, so without this a founded page describes a
+              // stock monster; with it, it describes somebody who was filed
+              // here. Trial-mode realms pass none — their stand-in boss is
+              // `forest_hag`, whose bookmark the card already names.
+              bookmark={
+                registered
+                  ? {
+                      name: registered.lore.bookmarkName,
+                      line: registered.lore.bookmarkLine,
+                      filedAt: registered.createdAt,
+                    }
+                  : undefined
+              }
               // Creator realms always return to the base picker on clear
-              // (default href); only the starter arc lands on the chest.
+              // (default href); only the starter arc lands on the chest. The
+              // player presses it when they're done reading — nothing routes
+              // away on a timer.
               bossReturnHref="/"
+              bossReturnLabel={clearStory ? ctaLabel(clearStory) : undefined}
+              interstitial={
+                bossClearedThisRun && clearStory ? (
+                  // No `stamp`: the card has exactly three slots and they
+                  // belong to the founding pages, so a creator clear must not
+                  // imply one was pressed.
+                  <RealmClearedInterstitial
+                    story={clearStory}
+                    address={walletAddress}
+                  />
+                ) : null
+              }
             />
           )
         ) : (

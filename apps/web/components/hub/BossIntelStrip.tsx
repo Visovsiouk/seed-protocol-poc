@@ -1,9 +1,10 @@
 "use client";
 
 /**
- * Boss intel — shown on the loadout screen for PLAYER realms only. Surfaces
- * the warden's elemental weakness (combat already applies 1.5×/0.5×; nobody
- * could see it before descending) and appraises the chosen weapon against it.
+ * Bookmark intel — shown on the loadout screen for PLAYER realms only.
+ * Surfaces the bookmark's elemental weakness (combat already applies
+ * 1.5×/0.5×; nobody could see it before descending) and appraises the chosen
+ * weapon against it.
  *
  * If the weapon is no counter AND a counter-element weapon is actually
  * listed on the bazaar, a deep-link appears. No listing → no hint: the
@@ -90,12 +91,16 @@ export function BossIntelStrip({
 
   return (
     <div
-      aria-label="Warden intel"
+      aria-label="Bookmark intel"
       className="flex flex-col gap-1.5 rounded-md px-3 py-2 text-xs bg-[var(--surface-1)] border border-dashed border-[var(--border-2)]"
     >
       <div className="flex flex-wrap items-center gap-2">
+        {/* A boss *is* a bookmark — somebody filed into the page's heart to
+            hold it open. This label was the last visible place the old
+            vocabulary survived; the denylist can't reach it, because the same
+            word is a live boss id in `lib/flavor/fantasy.ts`. */}
         <span className="font-mono uppercase tracking-[0.22em] opacity-65">
-          Warden intel
+          Bookmark intel
         </span>
         <Chip color="var(--color-preset-accent)" label={`falters vs ${weakLabel}`} />
       </div>

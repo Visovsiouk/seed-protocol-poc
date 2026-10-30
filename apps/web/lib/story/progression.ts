@@ -62,62 +62,93 @@ export function nextStarterFor(starterClears: number): Preset | null {
 }
 
 /**
- * Short lock-tease shown on a card the player can't yet enter, used
- * only on the post-arc picker (pre-arc the picker is hidden entirely).
- * Diegetic; no "complete X to unlock Y" UI language. The tease just
- * gestures at the order, not at stakes.
+ * The hero panel once the trial is done.
+ *
+ * An earlier version made the signet a way out of the book and the whole beat
+ * an argument against taking it. Nothing in this codebase has ever offered the
+ * player that choice (see `RETIRED_TERMS`), so the tension rested on an action
+ * that did not exist. What the signet actually is, is contract-enforced: one
+ * quire, pressed once, because the Seed is soulbound and `ecosystemOf(owner)`
+ * pins on first use. `BINDING.QUIRES_PER_BORROWER` is the fact this copy is
+ * built on, and it is what makes the last sentence true rather than hopeful.
  */
-export function lockTeaseFor(preset: Preset): string {
-  if (preset === "cyberpunk") {
-    return "Rain on setting neon, a world half-hardened. Someone down here tried to take a name that wasn't hers instead of earning one, and the gate she tried to crack is the gate she became.";
-  }
-  if (preset === "scifi") {
-    return "Frost over a world sealed perfect and dead. Someone out here finished their making and tried to finish all of it — the cold is where that ambition stopped.";
-  }
-  return "";
-}
-
 /**
- * One-line stakes copy shown beneath a realm card on the picker. All
- * three starters are permadeath — a fall ends the run and forfeits every
- * unbanked finding. The copy stays per-preset so each realm names the
- * cost in its own voice.
+ * What a page's distinct-clearer count means, said as a sentence.
+ *
+ * ── Why this exists at all ─────────────────────────────────────────────────
+ * `lib/reads/realm-tier.ts` holds the single most cooperative mechanic in the
+ * game: a player page's loot ceiling is earned by *distinct people beating it*
+ * — T3 under 20 clearers, T4 under 50, T5 at 50 and up. Descending a stranger's
+ * page permanently makes it richer for whoever comes next.
+ *
+ * That shipped as a stat cell labelled "Distinct clearers", which states the
+ * number and none of the meaning. A player reading it has no way to learn that
+ * other borrowers are the reason the page pays out, which is the whole premise
+ * of the story this copy belongs to.
+ *
+ * ── Why it's a lib and not JSX ─────────────────────────────────────────────
+ * Same reasoning as `card.ts`'s `signetLine`: `canon.test.ts` sweeps module
+ * prose exhaustively, while its component sweep is a substring match that can
+ * only carry unambiguous phrases. Prose in a lib is covered more tightly.
+ *
+ * `earnsTier` is required rather than inferred because the three founding pages
+ * are pinned at T2 and never climb — saying "at 20 it gives up more" on a
+ * starter would be a flat lie. The caller knows which kind of page it is
+ * (`RealmDetail.kind === "creator"`); this module cannot.
+ *
+ * Thresholds come from `realmTierProgress()` rather than being restated here,
+ * so the copy cannot drift from the curve that actually caps the loot roll.
  */
-export function stakesNoteFor(preset: Preset): string {
-  if (preset === "fantasy") {
-    return "Fall here and the Reach binds you — sets you into its wet wood to hold the door, the way it bound the one laughing ahead. What you hadn't carried out stays down with you.";
+export function pageReachLine(args: {
+  distinctClearers: number;
+  nextTierAt: number | null;
+}): string {
+  const { distinctClearers: n, nextTierAt } = args;
+
+  if (nextTierAt === null) {
+    return `${n} hands have been down this page. It gives up everything it has.`;
   }
-  if (preset === "cyberpunk") {
-    return "Fall here and the district binds you — sets your face into its ICE to guard the next runner from the same shortcut. Everything you hadn't carried out stays in the dark.";
+  if (n <= 0) {
+    return `No hands down this page yet. At ${nextTierAt} it starts giving up more.`;
   }
-  if (preset === "scifi") {
-    return "Fall here and the station binds you — sets you into the cold to wait out the next climber. It vents everything still in your hands into the vacuum.";
-  }
-  return "";
+  return `${n} ${n === 1 ? "hand has" : "hands have"} been down this page. At ${nextTierAt} it starts giving up more.`;
 }
 
 export const STORY_HERO_OPEN = {
-  eyebrow: "The doors stand open",
-  title: "You named yourself where they could not. Now keep the Work open.",
+  eyebrow: "The card is spent",
+  title: "Three stamps. The book has taken your hand.",
   body:
-    "You went down three worlds and carried yourself back out all three times — and at the " +
-    "Altar you cut your own name into the roll, in the place where the bound aspirants' names " +
-    "trail off unfinished. That name is a maker's power. It buys no rest: a world stays alive " +
-    "only while climbers keep attempting it, and a world no one attempts hardens and cools " +
-    "toward the finished, dead edge. Raise a world of your own and you take on the same charge " +
-    "the wardens broke under — keep it attempted, or watch your making dim. The registry fills " +
-    "with worlds other hands have raised, each one a mortal who chose to make instead of be " +
-    "bound. Add yours.",
+    "You went down three of his own pages and carried yourself back out of all three, so the " +
+    "book had to take your name. That is what a signet is — and it is not a way out. There is " +
+    "no way out; the return column came off this card before you were born. What it is, is one " +
+    "blank quire, pressed once. One page, permanent, in the registry under your name, and every " +
+    "borrower after you free to walk down it. A book still being written cannot be given a " +
+    "colophon — and no single hand can add enough pages to keep it open. That is why there are " +
+    "others.",
 } as const;
 
 /**
- * Per-preset post-clear interstitial copy.
+ * Per-preset post-clear copy for the panel that fills the focal slot when a
+ * boss falls.
  *
- * `warp-next` carries the next preset so the interstitial can render
- * the equipped-gear translation card before sending the player on.
- * `claim-seed` only fires once the two-tier gate is satisfied (3
- * starter clears + min(3, communityRealmCount) community clears).
- * `open-picker` is the post-arc default for ad-hoc clears.
+ * ── The `cta` is the way out, and it is the only way out ───────────────────
+ * This used to be dead data. The panel rendered the prose, dropped the `cta`
+ * on the floor, and `EncounterFrame` routed the player home on a 3.5s timer —
+ * so the single biggest payoff in the game was the one beat nobody finished
+ * reading. The label below is now the label on a real button, and nothing
+ * leaves this screen until the player presses it.
+ *
+ * `kind` is what the caller switches on, so the names are load-bearing and
+ * `progression.test.ts` asserts them:
+ *
+ *   - `warp-next`   — a starter clear with another founding page below it.
+ *     Carries `nextPreset` so the panel can *name* what is next. It does not
+ *     route there: the base is where the player picks a page, and the pick is
+ *     half the point of having unsealed one.
+ *   - `claim-seed`  — the arc-completing (third) clear. The caller lands the
+ *     player on the Altar instead of the picker.
+ *   - `open-picker` — any clear outside the arc, including creator pages.
+ *   - `none`        — no exit of its own; the host panel supplies one.
  */
 export type Interstitial = {
   eyebrow: string;
@@ -130,6 +161,18 @@ export type Interstitial = {
     | { kind: "none" };
 };
 
+/**
+ * The words on the way out, or `undefined` when this beat offers none.
+ *
+ * `kind: "none"` is the one variant with no `label`, so every caller that
+ * wants the label has to narrow the union first. They shouldn't each have to:
+ * the host panel's job is to fall back to its own default, and that is the
+ * same decision in both play routes.
+ */
+export function ctaLabel(story: Interstitial): string | undefined {
+  return story.cta.kind === "none" ? undefined : story.cta.label;
+}
+
 export function interstitialFor(args: {
   justCleared: Preset;
   progress: TutorialProgress;
@@ -137,73 +180,115 @@ export function interstitialFor(args: {
   const { justCleared, progress } = args;
   const starterClears = progress.starterClears;
 
-  // First door (fantasy) → warp to cyberpunk. Ruin: the one who CLUNG.
+  // First page (fantasy) → cyberpunk. Hesper Alder, 1847: the one who stayed.
   if (justCleared === "fantasy" && starterClears === 1) {
     return {
-      eyebrow: "Door I · the Reach falls · the one who clung",
+      eyebrow: "Page one · the Reach lets go · Hesper Alder, filed 1847",
       title: "She goes down without a fight she believes in.",
       body:
-        "For one breath the Reach lets her be a woman again — an aspirant who finished this " +
-        "world and could not bear to leave it, who stayed to tend it until it wore her like " +
-        "a face. I only wanted to keep it, the wet wood says, in her voice. Then the Reach " +
-        "takes her back, and the world begins to harden: under the moss is rain on setting " +
-        "concrete. A spark kindles against the mark on your hand — the first of three, and " +
-        "the mark burns a little less unfinished. One ruin read. Two to go. Carry out " +
-        "what's yours; she is the proof of what it costs to love the made thing more than " +
-        "the making.",
-      cta: { kind: "warp-next", label: "Go down", nextPreset: "cyberpunk" },
+        "For one breath the wet wood lets her be a woman again — someone who mastered this " +
+        "page in 1847 and could not bear to leave it. I only wanted to keep it, she says. " +
+        "Then you tear the bookmark out, and he loses his way back here until he files " +
+        "somebody else. Your mark goes on the card: one stamp, and the first thing you have " +
+        "that he cannot revise.",
+      cta: { kind: "warp-next", label: "Carry yourself out", nextPreset:"cyberpunk" },
     };
   }
 
-  // Second door (cyberpunk) → warp to sci-fi. Ruin: the one who STOLE.
+  // Second page (cyberpunk) → scifi. Vesna Kord, 1981: the one who copied.
   if (justCleared === "cyberpunk" && starterClears === 2) {
     return {
-      eyebrow: "Door II · the ICE shatters · the one who stole",
+      eyebrow: "Page two · the ICE shatters · Vesna Kord, filed 1981",
       title: "The last of her forks goes dark mid-handshake.",
       body:
-        "Where the Hag clung, this one reached. A runner who tried to take a name that " +
-        "wasn't hers — to copy a maker's power and skip the climb. A true-name can't be " +
-        "taken; it knew her by the soul and bound her as the lock on the world's own gate. " +
-        "Every copy she split off wore a face you could have worn, and not one of them was " +
-        "the one that carried itself out. A second spark finds the mark, and the neon " +
-        "hardens toward frost. Two of three now. She is the proof a name can't be stolen — " +
-        "one more world, where someone tried to end it instead.",
-      cta: { kind: "warp-next", label: "Go down", nextPreset: "scifi" },
+        "Alder stayed. This one tried to copy a signet instead of earning one — and a signet " +
+        "is the one thing that cannot be duplicated, so the district kept her as its own " +
+        "lock. Every fork she split off wore a face you could have worn. Second stamp. The " +
+        "neon here is still wet, which means he has not finished with this page yet.",
+      cta: { kind: "warp-next", label: "Carry yourself out", nextPreset:"scifi" },
     };
   }
 
-  // Third door (sci-fi) → end of arc. Ruin: the one who tried to END the Work.
-  // Whether the Name claim actually lights up is decided by the gate at the
-  // caller; this just hands off the right shape and lets the parent gate it.
+  // Third page (sci-fi) → end of arc. Aurelio Ker, 1908: the one who finished.
+  // Whether the claim actually lights up is decided by the gate at the caller;
+  // this just hands off the right shape and lets the parent gate it.
   if (justCleared === "scifi" && starterClears >= 3) {
     return {
-      eyebrow: "Door III · the Core goes quiet · the one who would end it",
-      title: "It shows you the last line it was writing, and the line just stops.",
+      eyebrow: "Page three · the core goes quiet · Aurelio Ker, filed 1908",
+      title: "He shows you the last line he was writing, and the line just stops.",
       body:
-        "The oldest bound aspirant, and the only one who ever earned its name before you. " +
-        "It made. It finished its world. And then it tried to finish the Work itself — to " +
-        "write the last line and hold all of creation still and perfect and dead, so no new " +
-        "maker could ever add to it. The cold took it here, at the finished edge, where its " +
-        "ambition ran out. Its whisper drops below hearing and the third spark settles " +
-        "against the mark. You carry all three up now — not a Name yet, only the sparks that " +
-        "kindle it. Three ruins read: one who clung, one who stole, one who would have ended " +
-        "it. The base has an Altar where the three sparks kindle whole. Climb. You already " +
-        "know what the wardens did wrong.",
-      cta: { kind: "claim-seed", label: "Climb to the Altar" },
+        "Ker earned a signet and used it exactly as you are about to: he wrote this page and " +
+        "put his own name on it. Then he reached for the colophon — and the only other hand " +
+        "that ever wanted to write it filed him into his own work. There were six stations " +
+        "before this one. Third stamp. The card is full, and the Altar is where it gets read.",
+      cta: { kind: "claim-seed", label: "Take it to the Altar" },
     };
   }
 
   // Any community-realm clear, or out-of-band starter clears post-arc.
   return {
-    eyebrow: "Realm cleared",
-    title: "Another world mastered, another bound aspirant laid down.",
+    eyebrow: "Bookmark torn out",
+    title: "Another one he will have to come back and replace.",
     body:
-      "The warden falls and for a breath wears a mortal's face — someone who came this far, " +
-      "reached for a name, and was bound into the world instead of carrying themselves out. " +
-      "This world was raised by a hand like yours and stays alive only while hands like yours " +
-      "keep attempting it; you just kept it alive a little longer. Its findings are yours to " +
-      "carry up. The base is still above; the registry still has worlds no one has gone down " +
-      "to the warden of yet.",
-    cta: { kind: "open-picker", label: "Climb back to the base" },
+      "Whatever was holding this one open wore a mortal's face for a breath on the way down — " +
+      "someone who came this far and did not carry themselves back out. This page was written " +
+      "by a hand like yours, which is why he has to come back for it at all. The page stays " +
+      "where it is, open to anyone; what you carried up is yours. And the registry still has " +
+      "pages nobody has reached the bookmark of.",
+    cta: { kind: "open-picker", label: "Back to the base" },
+  };
+}
+
+/**
+ * Clearing a page a borrower wrote.
+ *
+ * `interstitialFor` can't answer this: it keys off `REALM_ORDER` and a
+ * `TutorialProgress`, and a creator page is in neither. Before this existed
+ * the creator play route passed no panel at all, so founding a page, going
+ * down it and tearing out its bookmark ended in silence — the one clear in
+ * the game with an author to address, and the only one with nothing to say.
+ *
+ * Both cases name the bookmark, because that name is the thing the generated
+ * lore just spent a paragraph establishing and the thing the player just
+ * killed. `mine` is the fork worth having: somebody else's page is a page the
+ * Colophon has to come back for, and your own page is the same fact pointed at
+ * you — with the detail that you did not put that bookmark in it.
+ *
+ * No stamp is pressed here, and the copy must not imply one: the card has
+ * exactly three slots and they belong to the founding pages.
+ */
+export function creatorPageCleared(args: {
+  /** The page's registered name. */
+  pageName: string;
+  /** Who was filed into its heart — `RealmLore.bookmarkName`. */
+  bookmarkName: string;
+  /** Whether the connected wallet owns this page. */
+  mine: boolean;
+}): Interstitial {
+  const { pageName, bookmarkName, mine } = args;
+
+  if (mine) {
+    return {
+      eyebrow: `Your own page · ${bookmarkName} torn out`,
+      title: "The bookmark in the page you wrote was never yours to place.",
+      body:
+        `You pressed a signet into a blank quire and ${pageName} is what came of it. Then you went ` +
+        `down it and found ${bookmarkName} filed into its heart, holding it open to be found again. ` +
+        `Somebody put them there after you finished writing, and it was not you. The page is still ` +
+        `being added to, which is the only reason it cannot be given a colophon yet.`,
+      cta: { kind: "open-picker", label: "Back to the base" },
+    };
+  }
+
+  return {
+    eyebrow: `Bookmark torn out · ${bookmarkName}`,
+    title: "The hand holding this page open finally lets go.",
+    body:
+      `${bookmarkName} was filed into ${pageName} so it could always be found again, and you have ` +
+      `just taken that away from whoever was coming back for it. A borrower wrote this page with a ` +
+      `signet they earned — the way Ker wrote his — so it is an addition to the book rather than ` +
+      `part of the authorized edition. What you carried up is yours. The page stays, and the next ` +
+      `hand down it will find more than you did.`,
+    cta: { kind: "open-picker", label: "Back to the base" },
   };
 }

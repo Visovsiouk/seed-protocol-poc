@@ -12,6 +12,8 @@
 import { useRealmStats } from "@/lib/reads/hooks";
 import type { Preset } from "@/lib/engine/types";
 import type { RealmMetrics } from "@/lib/reads/realm-stats";
+import { realmTierProgress } from "@/lib/reads/realm-tier";
+import { pageReachLine } from "@/lib/story/progression";
 import { Panel } from "@/components/ui";
 
 export function MetricsRow({
@@ -19,11 +21,19 @@ export function MetricsRow({
   preset,
   lootSchemaId,
   clearReceiptSchemaId,
+  earnsTier = false,
 }: {
   realm: `0x${string}`;
   preset: Preset | null;
   lootSchemaId?: bigint;
   clearReceiptSchemaId?: bigint;
+  /**
+   * Whether this page's loot ceiling climbs with its clearer count — true for
+   * pages a borrower wrote, false for the three founding ones, which are
+   * pinned at T2 and never move. Gates the reach line below, because stating
+   * the curve on a starter would be false. See `pageReachLine`.
+   */
+  earnsTier?: boolean;
 }) {
   const stats = useRealmStats({ realm, preset, lootSchemaId, clearReceiptSchemaId });
   const m: RealmMetrics = stats.data?.metrics ?? {
@@ -35,11 +45,11 @@ export function MetricsRow({
     firstClearBlock: null,
   };
 
+  const reach = realmTierProgress(m.distinctClearers);
+
   return (
-    <section
-      aria-label="Realm metrics"
-      className="grid grid-cols-2 sm:grid-cols-5 gap-3"
-    >
+    <section aria-label="Realm metrics" className="flex flex-col gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
       <Cell label="Mints" value={fmt(m.totalMints)} loading={stats.isLoading} />
       <Cell
         label="Loot drops"
@@ -54,7 +64,7 @@ export function MetricsRow({
         muted={preset === null}
       />
       <Cell
-        label="Distinct clearers"
+        label="Hands down it"
         value={fmt(m.distinctClearers)}
         loading={stats.isLoading}
         muted={preset === null}
@@ -64,6 +74,18 @@ export function MetricsRow({
         value={fmt(m.distinctHolders)}
         loading={stats.isLoading}
       />
+      </div>
+
+      {/* The cooperative mechanic, in words. Only on pages that actually climb
+          — the founding three are pinned and the sentence would be false. */}
+      {earnsTier && !stats.isLoading && (
+        <p className="font-mono text-[11px] leading-relaxed tracking-[0.06em] opacity-70">
+          {pageReachLine({
+            distinctClearers: m.distinctClearers,
+            nextTierAt: reach.nextTierAt,
+          })}
+        </p>
+      )}
     </section>
   );
 }

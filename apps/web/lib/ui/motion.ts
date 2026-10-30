@@ -71,10 +71,18 @@ export const escrowFly: Variants = {
 };
 
 // ── Cinematic vocabulary (story beats) ────────────────────────────────────
-// Used by `CinematicBeatPlayer` and the warden/loot reveals. Scalar-opacity
+// Used by `CinematicBeatPlayer` and the bookmark/loot reveals. Scalar-opacity
 // variants flatten correctly through `withReducedMotion`; the keyframe-array
-// ones (holdPulse/faceGhost/lootGlow/impactStrike) do NOT — guard those with an explicit
-// `!reduced` check on the `animate` prop, the way EncounterStage/AssetCard do.
+// ones (holdPulse/faceGhost/lootGlow/impactStrike) and any transform-only one
+// do NOT — guard those with an explicit `!reduced` check on the `animate`
+// prop, the way EncounterStage/AssetCard do.
+//
+// The transform-only case is the nastier of the two, because it fails *open*:
+// `withReducedMotion` keeps `state.opacity` and discards everything else, so a
+// `scaleX: 0 → 1` wipe flattens to `{ opacity: 1 }` — a bar drawn across the
+// text permanently, instead of one that never draws at all. There is no such
+// variant exported here today; `AssetCard`'s caller-owned `scaleY` bloom is
+// the live example of doing it correctly.
 
 /** Per-line dramatic rise — a body line lifting into place. Lives inside a
  *  `lineStagger` container so a beat reveals one line at a time. */

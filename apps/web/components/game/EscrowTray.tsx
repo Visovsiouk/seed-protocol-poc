@@ -52,7 +52,11 @@ export function EscrowTray({ escrow, preset, realm, realmName }: Props) {
       tone="glass-2"
       glow="accent"
       aria-label="Carried findings"
-      className="flex h-full min-h-0 flex-col gap-3 p-4"
+      // `flex-1` rather than `h-full`: a found margin note can share the
+      // focal slot above this, so the tray takes whatever height is left
+      // instead of claiming all of it. `min-h-0` keeps the internal list
+      // scrollable inside the flex child.
+      className="flex min-h-0 flex-1 flex-col gap-3 p-4"
     >
       <header className="flex items-baseline justify-between gap-2">
         <Stamp tone="accent">Carried findings</Stamp>

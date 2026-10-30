@@ -520,6 +520,10 @@ export function ArtGallery() {
               armor: demoCard("armor"),
             }}
             onDescend={() => {}}
+            // These cards are props on a gallery page, not gear anyone carried.
+            // The screen reads the connected wallet itself, so without this it
+            // would write a fantasy>scifi crossing nobody made into the Book.
+            record={false}
           />
         </Section>
 

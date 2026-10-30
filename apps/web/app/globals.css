@@ -27,6 +27,14 @@
   --font-display: var(--font-space-grotesk), ui-sans-serif, system-ui, sans-serif;
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --font-mono: var(--font-plex-mono), ui-monospace, "SFMono-Regular", "Menlo", monospace;
+
+  /* fourth voice: a former borrower's hand in the margins. Deliberately the
+     only cursive in the app — a margin note has to be unmistakably somebody
+     else's writing at a glance, with no label saying so. Falls back to the
+     system cursive stack, then to the body sans, so the notes stay legible
+     if the face never loads. */
+  --font-margin: var(--font-caveat), "Segoe Script", "Bradley Hand", cursive,
+    var(--font-sans);
 }
 
 /* ─── derived semantic surfaces ("data-glass" + "parchment") ──────────────────

@@ -4,9 +4,9 @@
  * The pocket realm — the hideout the player wakes into, and the base/HQ the
  * whole pre-descent game runs out of (poc rework).
  *
- * Pre-arc it stays a *narrow door*: the cold-open branding / single Continue
- * card (owned by `RealmSelector`), with loadout staging taking over once a door
- * is picked. The world is deliberately small until the three founding doors are
+ * Pre-arc it stays a *narrow door*: the cold open (owned by `ColdOpenBook`),
+ * then the base with the card strip and the picker, and loadout staging once a
+ * door is picked. It is deliberately small until the three founding pages are
  * walked.
  *
  * Post-arc it opens into the **HQ shell** — a titled base with a status strip
@@ -15,8 +15,11 @@
  *
  *   - **Doors**  — the realm picker (`RealmSelector`) → `LoadoutStaging`.
  *   - **Market** — the bazaar surface (listings + sales + leaderboards).
- *   - **Altar**  — the Name credential ledger (when eligible / carved).
- *   - **Forge**  — a workshop room that opens the realm-creation ceremony.
+ *   - **Altar**  — the date-due card read, and the signet pressed.
+ *   - **Forge**  — where the signet goes into a blank quire (`/create`).
+ *
+ * The card itself sits above the rail in both shells, because it belongs to
+ * the base and not to any one room in it — and it is the way into the Book.
  *
  * Stations cross-fade with the realm-warp motion so moving between rooms reads
  * as walking the base rather than swapping a tab.
@@ -39,6 +42,7 @@ import {
   ColdOpenBook,
   hasConsumedColdOpen,
 } from "@/components/story/ColdOpenBook";
+import { CardStrip } from "@/components/story/CardStrip";
 import { useTutorialProgress, useInventoryCards } from "@/lib/reads/hooks";
 import {
   emptyTutorialProgress,
@@ -59,11 +63,11 @@ const STATIONS: { id: Station; label: string }[] = [
   { id: "forge", label: "The Forge" },
 ];
 
-/** Three diamond glyphs marking sparks kindled (mirrors RealmSelector). */
+/** Three diamond glyphs marking stamps on the card (mirrors RealmSelector). */
 function ShardTrack({ shards }: { shards: number }) {
   return (
     <div
-      aria-label={`Sparks kindled: ${shards} of 3`}
+      aria-label={`Stamps on the card: ${shards} of 3`}
       className="flex items-center gap-1.5"
     >
       {[0, 1, 2].map((i) => {
@@ -88,6 +92,28 @@ function ShardTrack({ shards }: { shards: number }) {
   );
 }
 
+/**
+ * The Forge — where a signet gets pressed into a blank quire.
+ *
+ * Not an advanced feature, and the copy has to carry why. An earlier version
+ * made the signet a way out of the book and this room the argument against
+ * taking it — but no such action exists anywhere in this codebase, so the
+ * tension rested on a choice the player is never offered. That framing is
+ * retired (see `RETIRED_TERMS`). What is actually enforced reads better
+ * anyway: soulbound, spent on first use, one page per borrower ever
+ * (`BINDING.QUIRES_PER_BORROWER`), permanent and public in the registry.
+ *
+ * Before that it read as a crafting menu — an earned inscription, a half-made
+ * place to finish, a substance to pick and a jailer to install in its heart.
+ * Wrong vocabulary and the wrong promise.
+ *
+ * Nothing automated found it. The load-bearing words in that copy are all
+ * excluded from `RETIRED_TERMS` as ambiguous, so it survived four commits
+ * after the migration "finished"; the phrasings are on the list now, which
+ * stops those sentences coming back and does not make this surface guarded.
+ * See the ceiling note in `canon.ts` — and note that a comment here cannot
+ * quote a retired phrase either, which is why this one describes.
+ */
 function ForgeRoom() {
   return (
     <Panel
@@ -97,21 +123,24 @@ function ForgeRoom() {
       className="mx-auto flex w-full max-w-2xl flex-col gap-4 p-6"
     >
       <header className="flex flex-col gap-2">
-        <Stamp>A workshop off the main hall</Stamp>
+        <Stamp>A bindery off the main hall</Stamp>
         <Rule />
         <h3 className="font-mono text-xl font-medium tracking-[-0.015em]">
           The forge
         </h3>
         <p className="text-sm leading-relaxed opacity-75">
-          You have a name now, and a name is what it takes to finish a world of
-          your own. Raise one from the unfinished — name it, pick its substance
-          and the warden that holds its heart, and set it turning for the next
-          aspirant to descend. Step through to the forge floor.
+          Your signet is soulbound, and it is spent the moment you use it: one
+          page, once, and never another. Say what era it is written in and what
+          kind of thing holds it open — the book decides who that turns out to
+          be. Then it sits in the registry under your name, and every borrower
+          after you is free to walk down it. A book still being written cannot
+          be given a colophon, and no one hand can add enough pages to keep it
+          open. That is what the others are for.
         </p>
       </header>
       <Link href="/create" prefetch className="self-start">
         <Button intent="primary" size="md">
-          Enter the forge →
+          Press it into a blank quire →
         </Button>
       </Link>
     </Panel>
@@ -152,7 +181,9 @@ function HideoutHeader({
           <span className="uppercase tracking-widest opacity-60">Cleared</span>
           <ShardTrack shards={progress.distinctClears} />
         </div>
-        {progress.hasSeed && <Chip color="var(--color-ok)" label="Name carved" />}
+        {progress.hasSeed && (
+          <Chip color="var(--color-ok)" label="Signet pressed" />
+        )}
         {codex && (
           <Chip
             color="var(--color-preset-accent)"
@@ -172,10 +203,10 @@ export function PocketRealmHub() {
   const inventory = useInventoryCards(address).data ?? [];
   const codex = useCodexStatus(address).status;
   const arcCompleted = progress.starterClears >= 3 || progress.hasSeed;
-  // The Altar is browsable the moment the first spark kindles — sparks
-  // accumulate visibly across the arc, and the arc-completing clear deep-links
-  // here via `/?station=altar`. Eligibility to carve the Name is still gated
-  // inside GenesisLedger; this only decides whether the station is reachable.
+  // The Altar is browsable from the first stamp — stamps accumulate visibly
+  // across the arc, and the arc-completing clear deep-links here via
+  // `/?station=altar`. Eligibility to press the signet is still gated inside
+  // GenesisLedger; this only decides whether the station is reachable.
   const altarOpen = progress.starterClears > 0 || progress.hasSeed;
 
   // 1 Seed = 1 Ecosystem: once this wallet founds a realm the factory pins it
@@ -234,7 +265,7 @@ export function PocketRealmHub() {
   );
 
   // If the active station gets sealed out from under the player — Forge once
-  // the realm is founded, or the Altar before the first spark — fall back to
+  // the realm is founded, or the Altar before the first stamp — fall back to
   // the Doors so we never render a station that isn't on the rail.
   useEffect(() => {
     if (alreadyFounded && station === "forge") setStation("doors");
@@ -268,6 +299,10 @@ export function PocketRealmHub() {
           ownedCount={inventory.length}
           codex={codex}
         />
+        {/* The card, directly under the header: this is the room where it
+            lives, and it's the way into the Book. `coldOpenDone` is true on
+            this branch — the book has been walked, so the card is signed. */}
+        <CardStrip signed />
         {selected ? (
           <LoadoutStaging
             selection={selected}
@@ -276,10 +311,10 @@ export function PocketRealmHub() {
         ) : (
           <div className="flex w-full flex-col items-center gap-6">
             <RealmSelector onSelectRealm={setSelected} />
-            {/* Once the first spark kindles, the Altar surfaces under the picker
-                so the player watches their sparks accumulate between descents.
-                (The Codex — the journey's map — floats globally as chrome, see
-                CornerDock.) */}
+            {/* Once the first page is stamped, the Altar surfaces under the
+                picker so the player watches the card fill up between
+                descents. (The Codex — the journey's map — floats globally as
+                chrome, see CornerDock.) */}
             {progress.starterClears > 0 && <GenesisLedger />}
           </div>
         )}
@@ -291,7 +326,8 @@ export function PocketRealmHub() {
     (s) =>
       (s.id !== "altar" || altarOpen) &&
       // Forge disappears once the realm is founded — the Seed is spent and the
-      // creation room can't be re-entered. The Altar stays as a Name trophy.
+      // creation room can't be re-entered. The Altar stays — it holds the
+      // spent card and the signet that was cut from it.
       (s.id !== "forge" || !alreadyFounded),
   );
 
@@ -303,6 +339,11 @@ export function PocketRealmHub() {
         ownedCount={inventory.length}
         codex={codex}
       />
+
+      {/* Above the rail, not inside a station: the card belongs to the base
+          itself, not to any one room in it. Post-arc the card is signed by
+          definition — nobody clears three pages without opening the book. */}
+      <CardStrip signed />
 
       {/* Station rail — in-world wayfinding (replaces the top-nav) */}
       <nav

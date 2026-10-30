@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { motion, useReducedMotion } from "framer-motion";
+import { MarginLine, MarginSignature } from "@/components/story/voices";
+import { noteSignature, type MarginNote } from "@/lib/story/marginalia";
 
 /**
  * Full-screen defeat overlay (permadeath). Death used to be a quiet line
@@ -18,11 +20,18 @@ export function DefeatOverlay({
   escrowLost,
   depth,
   turn,
+  epitaph,
   onLeave,
 }: {
   escrowLost: number;
   depth?: number;
   turn?: number;
+  /**
+   * The note the book writes about this death. Composed by the caller, which
+   * is the only place that knows what killed them, on which turn, and what
+   * they were carrying. Omitted when those facts aren't available.
+   */
+  epitaph?: MarginNote;
   onLeave: () => void;
 }) {
   const reduced = useReducedMotion();
@@ -64,13 +73,13 @@ export function DefeatOverlay({
           className="text-[11px] font-mono uppercase tracking-[0.4em] opacity-70"
           style={{ color: "var(--color-danger)" }}
         >
-          You are bound
+          You are filed
         </p>
         <h2
           className="text-3xl font-semibold leading-tight"
           style={{ color: "var(--color-danger)" }}
         >
-          The world sets you into itself.
+          The page keeps you, and the book writes it down.
         </h2>
         {depth !== undefined && (
           <p className="text-xs uppercase tracking-widest opacity-70">
@@ -86,12 +95,24 @@ export function DefeatOverlay({
               : ""}
           </p>
         )}
+        {/* The payoff for every margin note the player has been collecting:
+            their own goes into the same gutters, in the same hand-written
+            voice. Composed by `EncounterFrame`, which is the only place with
+            all the facts of the run. */}
+        {epitaph && (
+          <aside
+            aria-label="Your own note, in the margin"
+            className="flex flex-col gap-1 border-l-2 border-[var(--color-danger)]/60 pl-3 text-left"
+          >
+            <MarginLine size="sm">{epitaph.text}</MarginLine>
+            <MarginSignature>
+              {noteSignature(epitaph)} · {epitaph.date}
+            </MarginSignature>
+          </aside>
+        )}
         <p className="text-sm opacity-90 leading-relaxed">
-          You reached for a name and the world bound you where you fell — one
-          more aspirant set into the door to hold it against whoever comes next.
-          That is what a warden is: someone who came this far and could not carry
-          themselves out. No name is carved and the realm chain stays unchanged;
-          your owned, equipped gear is untouched, but
+          No stamp, and the realm chain stays unchanged; your owned, equipped
+          gear is untouched, but
           {escrowLost > 0 ? (
             <>
               {" "}the{" "}

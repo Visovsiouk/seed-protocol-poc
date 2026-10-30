@@ -70,9 +70,12 @@ import {
 } from "@/lib/persistence/use-equipped-hydration";
 import {
   REALM_ORDER,
+  ctaLabel,
+  interstitialFor,
   isPlayable,
   lockStateFor,
 } from "@/lib/story/progression";
+import { PAGES } from "@/lib/story/canon";
 
 export default function PlayPage() {
   const params = useParams<{ preset: string }>();
@@ -445,6 +448,15 @@ export default function PlayPage() {
     };
   }, [bossClearedThisRun, tutorial, preset, cfg.realm]);
 
+  // The clear's story, resolved once and read twice: the panel renders its
+  // prose, and `EncounterFrame` puts `cta.label` on the button that is now the
+  // only way off that screen. Computing it here rather than inside the panel
+  // is what lets those two agree — the label and the destination are a pair.
+  const clearStory = useMemo(
+    () => interstitialFor({ justCleared: preset, progress: projectedProgress }),
+    [preset, projectedProgress],
+  );
+
   // EncounterFrame keeps its own RunState; we hand off the run state as
   // produced by `startRun` (which already has starter gear baked into
   // `equipped`). A re-equip during a run can't retroactively change the
@@ -566,17 +578,47 @@ export default function PlayPage() {
               onEvent={handleEngineEvent}
               onBankEscrow={handleBankEscrow}
               clearReceipt={clearReceipt}
-              // Arc-completing (third) clear lands on the chest (Altar); every
-              // other clear returns to the base picker. The redirect itself is
-              // owned by EncounterFrame's boss-clear dwell effect.
+              // Arc-completing clear lands on the chest (Altar); every other
+              // clear returns to the base picker. Pressed by the player on the
+              // clear panel — nothing navigates on a timer.
+              //
+              // Keyed on the story's own CTA rather than re-deriving from
+              // `starterClears >= 3`, so the label and the destination cannot
+              // disagree: `claim-seed` is the only beat that says "Take it to
+              // the Altar", and it is now the only one that goes there. The
+              // old condition sent a post-arc re-clear to the Altar under a
+              // button reading "Back to the base".
               bossReturnHref={
-                projectedProgress.starterClears >= 3 ? "/?station=altar" : "/"
+                clearStory.cta.kind === "claim-seed" ? "/?station=altar" : "/"
               }
+              bossReturnLabel={ctaLabel(clearStory)}
               interstitial={
                 bossClearedThisRun ? (
                   <RealmClearedInterstitial
-                    justCleared={preset}
-                    projected={projectedProgress}
+                    story={clearStory}
+                    // The stamp this clear pressed, landed inside the beat
+                    // rather than left for the player to discover in the Book
+                    // later. `starterClears` is already projected to include
+                    // the clear that just happened.
+                    //
+                    // Passed only when this clear actually moved the counter.
+                    // `projectedProgress` short-circuits for a preset already
+                    // in `tutorial.cleared`, so a post-arc re-clear leaves the
+                    // two equal — and without this check the beat would animate
+                    // a press and assert "takes your mark" for a clear that
+                    // pressed nothing. The creator route omits `stamp` for the
+                    // same reason.
+                    stamp={
+                      projectedProgress.starterClears !== tutorial.starterClears
+                        ? {
+                            preset,
+                            page: PAGES[preset].name,
+                            count: projectedProgress.starterClears,
+                            total: REALM_ORDER.length,
+                          }
+                        : undefined
+                    }
+                    address={address}
                   />
                 ) : null
               }

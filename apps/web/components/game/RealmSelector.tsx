@@ -228,10 +228,30 @@ function PreArcBase({
             ? "You land on your feet in a room that wasn't there."
             : "Back in the hush between realms."}
         </h2>
+        {/*
+          The gutter between pages — where the player stands when they are in
+          the book but not in a page.
+
+          This was ~130 words in the pre-rewrite register: it named the hero a
+          craftsman earning an inscription, called the realms half-made places
+          rather than pages, and gave the player a mark on the hand instead of
+          a card in the pocket. See `RETIRED_TERMS` in lib/story/canon.ts for
+          the exact vocabulary — deliberately not quoted here, because the
+          terminology guard sweeps component sources as plain text and cannot
+          tell a comment from a line of prose.
+
+          Two problems in one paragraph, both fixed by cutting it to two
+          sentences: the vocabulary was the incoherence the rewrite exists to
+          repair, and the length was the failure the cold open's word budget
+          exists to prevent — arriving one screen after that budget stops
+          applying. The shorter it is, the less there is to get wrong.
+
+          Stays in the Book's voice: second person, flat, describes only.
+        */}
         <Body size="sm">
           {first
-            ? "The fall just stops, and the floor is under you — a small bare room at the foot of the worlds, drawn close as a held breath. This is where a mortal stands between descents to weigh what they're becoming: a maker who will carry themselves back up and carve a name, or one more the worlds set into themselves as a guardian. The brand on your hand has gone quiet here — not cold, only waiting; it is half a name, and it knows it. It does its counting below, never in this room. Three ways down lead off the walls, one to each unfinished world. Two are sealed flat — no seam, no handle, no name — and stay that way until you've gone deep enough to earn the breaking of them. The nearest already stands open. Go down."
-            : "The room draws close around you again, quiet as a held breath, and the brand warms the moment you turn to the wall — it remembers what it counted last time. One more seal has given way since you passed through; the rest keep their worlds a while longer. Go down."}
+            ? "The fall stops and there is floor. Not a room in any page — the gutter between them, where the binding shows. Three ways down, one to each page the card names. Two are sealed until you have been deep enough to earn the breaking of them."
+            : "The gutter again. The card in your pocket is one stamp heavier than it was, and one more way down has come unsealed."}
         </Body>
         <Rule tone="muted" />
       </header>
@@ -272,15 +292,52 @@ function OpenPickerHero({ progress }: { progress: TutorialProgress }) {
         {STORY_HERO_OPEN.title}
       </h2>
       <Body size="sm">{STORY_HERO_OPEN.body}</Body>
+      <BookThickness added={progress.communityRealmCount} />
       <Rule tone="muted" />
     </header>
   );
 }
 
+/**
+ * How thick the book has got.
+ *
+ * The card stops at three because three stamps is the trial, not the length of
+ * the game. After it, the measure that matters is no longer the player's own
+ * progress but the registry's length — which is why this sits immediately under
+ * the hero's claim that no single hand can add enough pages. The sentence above
+ * makes a promise; this line is the only evidence for it on screen.
+ *
+ * `communityRealmCount` is the registry minus the three founding pages
+ * (`useTutorialProgress` already partitions them, see `lib/reads/hooks.ts`), so
+ * it is exactly "quires borrowers have added" and costs no extra chain read.
+ *
+ * Deliberately no target. Nothing in the system knows how many quires it takes
+ * before the binding will not close, and `canon.ts` carries no constant for one
+ * — so this counts up and never implies a finish line.
+ */
+function BookThickness({ added }: { added: number }) {
+  return (
+    <p className="font-mono text-[11px] uppercase tracking-[0.16em] opacity-60">
+      {added <= 0
+        ? "No quires added yet. The next signet pressed is the first."
+        : `${added} ${added === 1 ? "quire" : "quires"} added. Every one is a page he has to come back for.`}
+    </p>
+  );
+}
+
+/**
+ * The stamp track: three marks, one per founding page cleared.
+ *
+ * Named `ShardTrack` historically, when a clear "recovered a shard" of a name.
+ * The glyphs now count stamps on the date-due card — the same three the Book's
+ * card tab renders — so the label says so. The component name is left alone
+ * deliberately: it is referenced from two call sites and a rename is churn
+ * with no reader-visible benefit.
+ */
 function ShardTrack({ shards }: { shards: number }) {
   return (
     <div
-      aria-label={`Sparks kindled: ${shards} of 3`}
+      aria-label={`Stamps on the card: ${shards} of 3`}
       className="flex items-center gap-1.5"
     >
       {[0, 1, 2].map((i) => {

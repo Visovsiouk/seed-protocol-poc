@@ -38,6 +38,13 @@ const publicSchema = z.object({
   // `pnpm local --explorer` sets it to the local docker Otterscan; on a VPS
   // set it to https://explorer.<domain> (see deploy/README.md).
   NEXT_PUBLIC_EXPLORER_URL: z.string().url().optional(),
+  // Story AI (see `storyAiSchema` below for the server half). This public
+  // mirror exists only so the client can skip the round-trip when generation
+  // is off: with it unset — the default — a death renders the hand-authored
+  // bank note and never touches `/api/story/*`. It is NOT the authority;
+  // `storyAiEnabled()` on the server still gates every call, and the route
+  // answers 200 with a bank note regardless of what the browser believes.
+  NEXT_PUBLIC_STORY_AI: z.enum(["true", "false"]).optional(),
 });
 
 /**
@@ -132,6 +139,107 @@ export function getRealmRateLimits(): RealmRateLimits {
   return cachedRealmRateLimits;
 }
 
+/**
+ * Story AI (`/api/story/*`). Default OFF.
+ *
+ * Parsed SEPARATELY from `serverSchema`, for the same reason
+ * `realmRateLimitSchema` is — see its docblock. `getServerEnv()` rejects the
+ * all-zeros `TRADER_PRIVATE_KEY` placeholder, so reading these through it
+ * would make the story routes fail on any install that hasn't run
+ * `pnpm seed:trader`, which has nothing to do with narration.
+ *
+ * **Every field is defaulted or optional, so this cannot throw on a bare
+ * environment.** That is load-bearing rather than tidy: the routes must
+ * degrade to the hand-authored bank on a machine with no configuration at
+ * all, and an env parse that throws would turn "no key" into a 500.
+ *
+ * Defaults alone are not enough to deliver that, because `.default()` only
+ * substitutes for an **absent** value — `STORY_AI_ENABLED=TRUE` or
+ * `STORY_AI_TIMEOUT_MS=6s` is present and invalid, and `.parse` throws on it.
+ * A bare environment was safe while a typo'd one took every `/api/story/*`
+ * request to a 500. `getStoryAiEnv()` below closes that with `safeParse`.
+ */
+const storyAiSchema = z.object({
+  STORY_AI_ENABLED: z.enum(["true", "false"]).default("false"),
+  ANTHROPIC_API_KEY: z.string().min(1).optional(),
+  /**
+   * Pinned, not latest-aliased. A model swap changes the voice of every
+   * epitaph, which is a content decision — it should show up in a diff.
+   * Haiku is deliberate: the job is two sentences from a fixed fact list.
+   */
+  STORY_AI_MODEL: z.string().min(1).default("claude-haiku-4-5-20251001"),
+  /**
+   * Wall-clock ceiling for a single model call (ms). The player is staring at
+   * a defeat overlay that already shows the bank note, so a slow answer is
+   * worth less than a prompt one — this is tight on purpose.
+   */
+  STORY_AI_TIMEOUT_MS: z.coerce.number().int().positive().default(6000),
+  /**
+   * Its own budget, not the realm one. These calls cost outbound money, so
+   * they must not be able to spend the ceiling that protects the routes which
+   * sign transactions — and vice versa.
+   */
+  STORY_AI_RATE_LIMIT_PER_IP_PER_10MIN: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(30),
+});
+
+export type StoryAiEnv = z.infer<typeof storyAiSchema>;
+
+let cachedStoryAiEnv: StoryAiEnv | null = null;
+
+/**
+ * Lazily parse story-AI env. Cannot throw — on a bare environment *or* an
+ * invalid one.
+ *
+ * An invalid value is warned about and then dropped in favour of the defaults,
+ * rather than propagated. The routes promise that narration can never change a
+ * response code (see `app/api/story/epitaph/route.ts`), and this is the only
+ * place that promise can be kept: a throw here surfaces as a 500 from inside
+ * `withStoryGuards`, which reads the rate limit before the handler runs.
+ *
+ * It warns rather than failing silently because the failure is otherwise
+ * invisible in the direction that matters — `STORY_AI_ENABLED=TRUE` would be
+ * read as "off" while the operator believes they switched it on.
+ */
+export function getStoryAiEnv(): StoryAiEnv {
+  if (cachedStoryAiEnv) return cachedStoryAiEnv;
+  const parsed = storyAiSchema.safeParse(process.env);
+  if (parsed.success) {
+    cachedStoryAiEnv = parsed.data;
+  } else {
+    const keys = [
+      ...new Set(parsed.error.issues.map((i) => String(i.path[0]))),
+    ].join(", ");
+    console.warn(
+      `[story-ai] ignoring invalid env (${keys}) — falling back to defaults, so generation is off. Valid values: STORY_AI_ENABLED=true|false, the rest positive integers.`,
+    );
+    // `{}` rather than `process.env`: every field is defaulted, so an empty
+    // object is the one input guaranteed to parse.
+    cachedStoryAiEnv = storyAiSchema.parse({});
+  }
+  return cachedStoryAiEnv;
+}
+
+/**
+ * True only when generation is explicitly enabled AND a key is present.
+ *
+ * Two conditions, mirroring `demoMode`/`faucetEnabled`: the flag alone must
+ * never be enough to attempt a call, or a half-configured deploy turns every
+ * death into a wasted round-trip before falling back anyway.
+ */
+export function storyAiEnabled(): boolean {
+  const env = getStoryAiEnv();
+  return env.STORY_AI_ENABLED === "true" && !!env.ANTHROPIC_API_KEY;
+}
+
+/** Test-only: drops the memoised story-AI env so a case can re-stub it. */
+export function __resetStoryAiEnv(): void {
+  cachedStoryAiEnv = null;
+}
+
 export const publicEnv = publicSchema.parse({
   NEXT_PUBLIC_CHAIN: process.env.NEXT_PUBLIC_CHAIN,
   NEXT_PUBLIC_RPC_URL: process.env.NEXT_PUBLIC_RPC_URL,
@@ -144,6 +252,7 @@ export const publicEnv = publicSchema.parse({
   // `|| undefined` so an empty string (e.g. local-up.sh without --explorer)
   // reads as "no explorer" instead of failing .url() validation.
   NEXT_PUBLIC_EXPLORER_URL: process.env.NEXT_PUBLIC_EXPLORER_URL || undefined,
+  NEXT_PUBLIC_STORY_AI: process.env.NEXT_PUBLIC_STORY_AI,
 });
 
 /**
@@ -162,6 +271,17 @@ export const demoMode =
 export const faucetEnabled =
   publicEnv.NEXT_PUBLIC_FAUCET_ENABLED === "true" &&
   publicEnv.NEXT_PUBLIC_CHAIN === "anvil";
+
+/**
+ * Whether the client should attempt a generated epitaph at all.
+ *
+ * A hint, not a gate. False (the default) means the defeat overlay renders
+ * the bank note and issues no request — which is why the flag exists, since
+ * the server flag isn't visible to the browser. True only means "it's worth
+ * asking"; the server decides, and still answers with a bank note if it says
+ * no. Nothing downstream may treat this as a promise of generated prose.
+ */
+export const storyAiClientHint = publicEnv.NEXT_PUBLIC_STORY_AI === "true";
 
 /**
  * Explorer base URL without a trailing slash, or undefined when no explorer

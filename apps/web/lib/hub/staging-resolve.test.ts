@@ -31,6 +31,9 @@ const REGISTERED: PlayerRealmMeta = {
   nextTierAt: 20,
   totalMints: 11,
   createdAt: 123,
+  // The common case: no model ever wrote this page's prose. Callers resolve
+  // null through `realmPageFallback()`, which staging doesn't touch.
+  lore: null,
 };
 
 const settledEmpty: PlayerRealmsState = {

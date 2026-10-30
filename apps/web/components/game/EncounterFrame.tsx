@@ -39,6 +39,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useAccount } from "wagmi";
 import type {
   ActionChoice,
   EngineEvent,
@@ -62,21 +63,19 @@ import { playBeats, sfxForEvent } from "@/lib/audio/gameplay";
 import { CombatLog } from "./CombatLog";
 import { DefeatOverlay } from "./DefeatOverlay";
 import { EscrowTray } from "./EscrowTray";
+import { MarginFind } from "./MarginFind";
+import { marginAt } from "@/lib/story/marginalia";
+import { useEpitaph } from "@/lib/story/use-epitaph";
+import { markMarginFound } from "@/lib/story/margins-local";
+import { markEpitaphWritten } from "@/lib/story/epitaphs-local";
 import { ExtractSelection } from "./ExtractSelection";
 import { PlayerBar } from "./PlayerBar";
-import { EncounterStage } from "./EncounterStage";
+import { EncounterStage, type BookmarkOverlay } from "./EncounterStage";
 import {
   ExtractedPanel,
   RunOverPanel,
   type ClearReceiptStatus,
 } from "./RunOutcomePanels";
-
-/**
- * How long the run-over beat (clear narrative + bank/receipt status) dwells
- * after a boss clear settles before the player is routed back to the base.
- * Long enough to read the beat; short enough not to feel stuck.
- */
-const BOSS_RETURN_DELAY_MS = 3500;
 
 type Props = {
   /** Initial state from `startRun()`. */
@@ -146,12 +145,24 @@ type Props = {
    */
   chainReady?: boolean;
   /**
-   * Where to send the player after a boss clear settles. The run-over beat
-   * dwells briefly, then this route is pushed automatically — no CTA. The
-   * starter arc passes `/?station=altar` on the arc-completing clear to land
-   * the player on the Seed chest; everything else returns to the base (`/`).
+   * Where the boss-clear panel's exit sends the player. The starter arc
+   * passes `/?station=altar` on the arc-completing clear to land the player
+   * on the Seed chest; everything else returns to the base (`/`).
    */
   bossReturnHref?: string;
+  /**
+   * The label on that exit, which the story owns: `Interstitial.cta.label`.
+   * The page already computes the `Interstitial` to build `interstitial`, so
+   * it reads the label off the same object. Defaulted rather than required so
+   * a realm with no story content still has a way home.
+   */
+  bossReturnLabel?: string;
+  /**
+   * This realm's own identity for its boss, held under the name at the bottom
+   * of the delve. Only creator realms pass one — the starter pages' bookmarks
+   * are named in `canon.ts`. See `BookmarkOverlay`.
+   */
+  bookmark?: BookmarkOverlay;
 };
 
 /**
@@ -182,8 +193,14 @@ export function EncounterFrame({
   realmNameRevealed = false,
   chainReady = false,
   bossReturnHref = "/",
+  bossReturnLabel = "Back to the base",
+  bookmark,
 }: Props) {
   const router = useRouter();
+  // Only used to namespace collected margin notes per player, the same way
+  // the codex stores namespace their flags. A disconnected run still shows
+  // its notes; they just aren't kept.
+  const { address } = useAccount();
   const initialSplit = useMemo(() => splitIntro(initialLines), [initialLines]);
 
   const [state, setState] = useState<RunState>(initialState);
@@ -306,16 +323,16 @@ export function EncounterFrame({
         }
         setState(result.state);
         setSelecting(false);
-        // Surfacing ends the delve: once the chosen findings have banked,
-        // the player returns to the hideout (the home base). On a bank
-        // failure we stay put so the extracted panel can offer a retry.
-        const banked = await runBank(result.state, "extract");
-        if (banked) router.push("/");
+        // Bank the chosen findings and stop there. This used to push `/` on
+        // success, which meant `ExtractedPanel` — the beat that tells the
+        // player what they just got away with — was only ever seen by players
+        // whose mint failed. The panel now carries its own exit.
+        await runBank(result.state, "extract");
       } finally {
         setBusy(false);
       }
     },
-    [appendLines, busy, onEvent, play, router, runBank, state],
+    [appendLines, busy, onEvent, play, runBank, state],
   );
 
   // Boss clear: the engine already banked the boss drop into
@@ -339,35 +356,27 @@ export function EncounterFrame({
     }
   }, [state, bankStatus.kind, bossSelecting, runBank]);
 
-  // Boss clear → auto-return to the base. Once the loot has banked
-  // (`bankStatus` done) and the clear receipt has *settled* (minted, or
-  // definitively skipped/failed — never while still pending), dwell on the
-  // run-over beat for a beat, then route home. No "next realm" CTA: the base
-  // surfaces the freshly-unsealed realm for the player to pick. Scheduled at
-  // most once per mount via `returnScheduledRef`.
-  const returnScheduledRef = useRef(false);
-  useEffect(() => {
-    if (returnScheduledRef.current) return;
-    if (!state.bossCleared || state.encounter) return;
-    if (bankStatus.kind !== "done") return;
-    const settled =
-      clearReceipt?.status === "minted" ||
-      clearReceipt?.status === "skipped" ||
-      clearReceipt?.status === "failed";
-    if (!settled) return;
-    returnScheduledRef.current = true;
-    const t = window.setTimeout(() => {
-      router.push(bossReturnHref);
-    }, BOSS_RETURN_DELAY_MS);
-    return () => window.clearTimeout(t);
-  }, [
-    state.bossCleared,
-    state.encounter,
-    bankStatus.kind,
-    clearReceipt,
-    bossReturnHref,
-    router,
-  ]);
+  /**
+   * Leaving a finished run — the only navigation out of a terminal state.
+   *
+   * This replaces a `setTimeout` that pushed `bossReturnHref` 3.5 seconds
+   * after a clear settled. That timer made the biggest payoff in the game the
+   * one beat nobody read to the end of, and it was the only player-facing
+   * transition in the app decided by a clock rather than a press — death has
+   * always required acknowledging the overlay.
+   *
+   * `leftRef` keeps the old effect's idempotency: a double-press (or an Enter
+   * that lands on the button twice) must not stack two pushes.
+   */
+  const leftRef = useRef(false);
+  const handleLeaveRun = useCallback(
+    (href: string) => {
+      if (leftRef.current) return;
+      leftRef.current = true;
+      router.push(href);
+    },
+    [router],
+  );
 
   // Confirm from the boss-clear selection overlay: bank the kept findings,
   // discard the rest. Boss clear never routes through `extract()` (it guards
@@ -416,6 +425,114 @@ export function EncounterFrame({
   const canExtract =
     atDecision && state.extractable && state.escrow.length > 0;
 
+  /**
+   * The note waiting in this room, if any.
+   *
+   * Derived, never stored. It deliberately does NOT enter `RunState`: the
+   * play page must hand the engine back the exact object `startRun`
+   * returned (the engine resolves schemas and bosses through `WeakMap`s
+   * keyed on it), and the mint wire body is built from `entry.loot` alone,
+   * so a cosmetic find has no business anywhere near either. Keeping it as
+   * a `useMemo` here is the firewall.
+   *
+   * `marginAt` draws from a domain-separated sub-seed and builds its own
+   * `Rng`, so it cannot perturb a loot or combat roll — the engine makes a
+   * fresh generator per step and holds no shared RNG state.
+   */
+  const margin = useMemo(
+    () =>
+      atDecision
+        ? marginAt({
+            runSeed: state.rngSeed,
+            depth: state.depth,
+            preset: state.preset,
+          })
+        : null,
+    [atDecision, state.rngSeed, state.depth, state.preset],
+  );
+
+  /**
+   * The facts of *this* death.
+   *
+   * Gathered here because this is the only place that holds every one at
+   * once: which page, how deep, what was still on the stage when the player
+   * went down, which turn of that fight, and how much unbanked escrow went
+   * with them. `DefeatOverlay` stays presentational.
+   */
+  const epitaphFacts = useMemo(() => {
+    if (!state.defeated) return undefined;
+    const monster = state.encounter?.combat.monster;
+    return {
+      runSeed: state.rngSeed,
+      preset: state.preset,
+      depth: state.defeatedAtDepth ?? state.depth,
+      killedBy: monster?.name ?? "Something down there",
+      wasBookmark: !!monster && "bakedEffects" in monster,
+      turns: state.defeatedTurn ?? 0,
+      carried: state.escrow.length,
+    };
+  }, [
+    state.defeated,
+    state.rngSeed,
+    state.preset,
+    state.depth,
+    state.defeatedAtDepth,
+    state.defeatedTurn,
+    state.escrow.length,
+    state.encounter,
+  ]);
+
+  /**
+   * The note itself. Returns the deterministic bank note synchronously and
+   * swaps in a generated line only if one arrives — with the story-AI flag
+   * unset (the default) it never asks, and this is a pure function of the
+   * facts above. See `use-epitaph.ts`.
+   */
+  const { note: epitaph, settled: epitaphSettled } = useEpitaph(epitaphFacts);
+
+  // Collect it. Ref-guarded per note so a re-render can't re-write, mirroring
+  // `bossGhostFiredRef` above; `markMarginFound` is itself idempotent, so
+  // this is belt and braces rather than the only defence.
+  const collectedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!margin || !address) return;
+    if (collectedRef.current === margin.id) return;
+    collectedRef.current = margin.id;
+    // `foundOn` is the page it surfaced on, which is rarely the page it was
+    // written on — that crossing is the point of the global pool, and the
+    // store kept nothing but the id until v2, so the Book could never show it.
+    markMarginFound(address, margin.id, margin.foundOn);
+  }, [margin, address]);
+
+  /**
+   * Keep the note the book just wrote about the player.
+   *
+   * This is the turn the whole marginalia system is built toward: their own
+   * note joins the ones they have been reading, which is what reveals in
+   * retrospect that every warning they found was somebody's death. Without it
+   * the epitaph showed once on the overlay and vanished, and the card's
+   * "nobody has ever been stamped back in" had no consequence anywhere.
+   *
+   * Stored as the note *as rendered*, not as the facts — see
+   * `epitaphs-local.ts`.
+   *
+   * Gated on `settled`, and ref-guarded on the id *and the text* rather than
+   * the id alone. The id is derived from the run's facts, so the bank note and
+   * a generated one carry the same one: guarding on it meant the first render
+   * wrote the bank line and the swap that followed was a no-op at both the ref
+   * and the store, so the Book kept words the player never read. Waiting for
+   * `settled` means this normally writes exactly once; keying on the text
+   * means that if it ever writes twice, the second one corrects the first.
+   */
+  const epitaphKeptRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!epitaph || !address || !epitaphSettled) return;
+    const stamp = `${epitaph.id}:${epitaph.text}`;
+    if (epitaphKeptRef.current === stamp) return;
+    epitaphKeptRef.current = stamp;
+    markEpitaphWritten(address, epitaph);
+  }, [epitaph, epitaphSettled, address]);
+
   // Lock Descend for 1 second whenever a fresh decision appears, so a
   // player mashing through combat can't blow past the decision and dive
   // deeper by accident — they have to register the choice before it arms.
@@ -432,13 +549,10 @@ export function EncounterFrame({
   }, [atDecision, state.depth]);
 
   const handleRetryBank = useCallback(async () => {
-    const reason = state.bossCleared ? "boss" : "extract";
-    const banked = await runBank(state, reason);
-    // A retry that clears the extract bank ends the delve the same way the
-    // first-pass confirm does: back to the hideout. Boss clears keep their own
-    // terminal panel, so they don't redirect.
-    if (banked && reason === "extract") router.push("/");
-  }, [router, runBank, state]);
+    // Both terminal panels own an exit now, so a successful retry just
+    // updates the bank line and leaves the player where they are.
+    await runBank(state, state.bossCleared ? "boss" : "extract");
+  }, [runBank, state]);
 
   // The always-present run controls, hosted in the Player pane so the screen
   // reads as three panes (Main · Log · Player): combat actions while a fight
@@ -508,25 +622,35 @@ export function EncounterFrame({
             // Gear is locked for the delve (see the note above), so this is
             // the weapon every blow in this run is struck with.
             equippedWeapon={state.equipped.weapon}
+            bookmark={bookmark}
           />
         ) : atDecision ? (
-          <EscrowTray
-            escrow={state.escrow}
-            preset={activePreset ?? state.preset}
-            realm={state.realm}
+          // A found note sits above the findings, both inside the same fixed
+          // slot — the note takes its natural height (`shrink-0`) and the
+          // tray flexes into the remainder, so nothing below the slot moves.
+          <div className="flex h-full flex-col gap-2">
+            {margin && <MarginFind note={margin} className="shrink-0" />}
+            <EscrowTray
+              escrow={state.escrow}
+              preset={activePreset ?? state.preset}
+              realm={state.realm}
             // Until the realm-name reveal beat the title bar shows "???", so
             // the carried-finding cards must not stamp the realm name in their
             // provenance footnote either. We gate on the SAME signal the title
-            // uses (`realmNameRevealed`, owned by the page) so the tray and the
-            // header reveal in lock-step — never one before the other.
-            realmName={realmNameRevealed ? realmName : "???"}
-          />
+              // uses (`realmNameRevealed`, owned by the page) so the tray and the
+              // header reveal in lock-step — never one before the other.
+              realmName={realmNameRevealed ? realmName : "???"}
+            />
+          </div>
         ) : state.extracted ? (
           <ExtractedPanel
             chainReady={chainReady}
             realmName={realmName}
             bankStatus={bankStatus}
             onRetryBank={handleRetryBank}
+            // A surfacing always goes home to the base — the arc's Altar
+            // landing is earned by clearing a page, not by backing out of one.
+            onLeave={() => handleLeaveRun("/")}
           />
         ) : runOver ? (
           // Boss down: the focal slot held the enemy, now it holds the thing
@@ -542,6 +666,9 @@ export function EncounterFrame({
             bankStatus={bankStatus}
             onRetryBank={handleRetryBank}
             clearReceipt={clearReceipt}
+            leaveLabel={bossReturnLabel}
+            onLeave={() => handleLeaveRun(bossReturnHref)}
+            exitArmed={!bossSelecting}
           />
         ) : null}
       </div>
@@ -582,7 +709,8 @@ export function EncounterFrame({
           escrowLost={state.escrow.length}
           depth={state.defeatedAtDepth}
           turn={state.defeatedTurn}
-          onLeave={() => router.push("/")}
+          epitaph={epitaph}
+          onLeave={() => handleLeaveRun("/")}
         />
       )}
     </div>

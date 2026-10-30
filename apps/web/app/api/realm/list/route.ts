@@ -50,6 +50,11 @@ async function handleList() {
         nextTierAt,
         totalMints,
         createdAt: r.createdAt,
+        // The page's own prose, when a model wrote some. Projected so the
+        // picker can introduce a stranger's page in its own words instead of
+        // a metadata row; `null` is the common case and callers resolve it
+        // through `realmPageFallback()`.
+        lore: r.lore,
       };
     }),
   );

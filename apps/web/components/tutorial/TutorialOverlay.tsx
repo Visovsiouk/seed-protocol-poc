@@ -3,19 +3,33 @@
 /**
  * 4-Act onboarding banner shown above the play frame.
  *
- *   Act 1  — first run, no clears: pure diegetic voice. No protocol
- *            vocabulary at all (no "Seed", no "shards", no "Genesis",
- *            no "claim"). The player just woke up; the world hasn't
- *            named itself yet.
- *   Act 2  — one starter cleared: still diegetic — "another door".
- *   Act 3  — two starters cleared: "one last door".
- *   Act 4  — three starters cleared: protocol vocabulary surfaces for
- *            the first time. The two-tier Seed gate is explained:
- *              · 0 community realms in the registry → claim now
- *              · N community realms, not yet enough community clears →
- *                "clear M more" guidance, no CTA
- *              · gate satisfied → Claim Seed CTA
- *   Act 5  — has Seed: hide entirely.
+ *   Act 1  — first run, no clears. The card has been signed and nothing
+ *            else has happened yet.
+ *   Act 2  — one stamp: the binding changed your findings' accent.
+ *   Act 3  — two stamps: one page left, and it is the finished one.
+ *   Act 4  — three stamps. The signet is on offer, and this is the first
+ *            surface that tells the player other borrowers exist.
+ *   Act 5  — signet pressed: hide entirely.
+ *
+ * ── This file was missed by the terminology migration ──────────────────────
+ * Every act above was still in the pre-rewrite register — a different word for
+ * the player, for a page, for a stamp and for a bookmark, none of them canon.
+ * None of it was catchable: the load-bearing words are all excluded from
+ * `RETIRED_TERMS` as ambiguous (see the ceiling note in `canon.ts`), so the
+ * component sweep could not see a single one.
+ *
+ * ── Act 4 used to describe a gate that does not exist ──────────────────────
+ * It told the player the Seed would not settle until they had cleared up to
+ * three *other borrowers'* pages, and `TutorialProgress` carries
+ * `communityClears` / `communityRealmCount` to support exactly that. But the
+ * Altar's button is gated on `eligibleForSeed`, which is `starterClears >= 3`
+ * and nothing else — so the requirement was stated on screen and never
+ * applied, and a player who believed it would go and do unnecessary work.
+ *
+ * The branching is kept, because *whether anyone has added a page* and
+ * *whether you have been down one* are the best hooks in the game for saying
+ * other players exist. What is gone is the claim that any of it is required.
+ * If that gate is ever made real, this copy is where it gets re-promised.
  *
  * Presentational only; the caller passes a `TutorialProgress` derived
  * from on-chain reads (`useTutorialProgress`) or `emptyTutorialProgress()`.
@@ -48,76 +62,78 @@ function copyFor(progress: TutorialProgress): ActCopy | null {
         eyebrow: "You read your way in",
         title: "A bell, a wet laugh, and mud under your hand.",
         body:
-          "You don't remember walking here — only the page that went wet, the ink that " +
-          "climbed into your hand, the floor that stopped being a floor. The mark is warm " +
-          "now, and it has started to count. Go down and meet what's waiting: what you " +
-          "strip from the dead is yours to carry out — until the Reach takes it back, and " +
-          "you with it. It has kept everyone who came this far before you.",
+          "You don't remember walking here — only the card you signed and the page that " +
+          "went wet around you. Go down and meet what's waiting: whatever you strip from " +
+          "the dead is yours to carry out, which is the easy half. The Hollow Reach has " +
+          "kept everyone who got this far before you.",
       };
     case 2:
       return {
-        eyebrow: "The Reach keeps its dead — you walked out",
+        eyebrow: "One stamp on the card",
         title: "Wet stone thins to rain on concrete.",
         body:
-          "Most who go down stay down, rewritten into the dark they fell in. You didn't. " +
-          "What you carried came with you — the protocol only changed its accent. One " +
-          "shard rests against the mark; two doors left below. Go down.",
+          "Most who go down stay down — filed into the page they fell in, holding it open " +
+          "so he can find it again. You didn't. What you carried came up with you; the " +
+          "binding only changed its accent. One stamp pressed, two pages below.",
       };
     case 3:
       return {
-        eyebrow: "Two doors closed",
-        title: "One door left, humming behind frost and glass.",
+        eyebrow: "Two stamps",
+        title: "One page left, humming behind frost and glass.",
         body:
-          "Two shards now, and the cold ahead is older than both — the dialect the protocol " +
-          "spoke first, where the writing barely holds. Go down, find what the dead station " +
-          "grew around its core, and break it before it keeps you too. Then you'll see what " +
-          "you've become.",
+          "The last one is the coldest, because he reached it first and sealed it — the " +
+          "writing there is finished and nothing in it moves. Something is still running " +
+          "behind the frost anyway. Go down and tear the bookmark out before it keeps you " +
+          "too.",
       };
     case 4: {
-      const communityRequirement = Math.min(3, progress.communityRealmCount);
-      const communityRemaining = Math.max(
-        0,
-        communityRequirement - progress.communityClears,
-      );
-      // First-ever pilgrim — nobody has raised a community realm yet.
-      // The Seed settles immediately.
-      if (progress.communityRealmCount === 0) {
+      const added = progress.communityRealmCount;
+
+      // Nobody has pressed a signet yet — this wallet would be the first page
+      // in the book that he did not write.
+      if (added === 0) {
         return {
-          eyebrow: "The three become one",
-          title: "Three doors closed. The Seed is whole.",
+          eyebrow: "The card is full",
+          title: "Three stamps, and nothing added to the book yet.",
           body:
-            "Forest, district, reactor — every dialect the protocol speaks now knows your " +
-            "shape. The three shards close against the mark and stop being shards: a Seed, " +
-            "warm and whole, the thing the wardens died reaching for. No other hands have " +
-            "raised doors yet, so there is nothing left to weigh you against. It's yours.",
+            "Three of his own pages took your mark, so the book has to take your name. " +
+            "The Altar will cut you a signet for it: one, soulbound, spent the moment you " +
+            "use it, and worth exactly one page. Nobody has pressed one yet — the registry " +
+            "holds only his three.",
           guidance:
-            "You read your way in and walked your way out — the first to. When others " +
-            "raise realms, later pilgrims will walk through them too. You were first.",
+            "Press yours into a blank quire and it is the first page in here he has to " +
+            "come back for.",
         };
       }
-      // Community realms exist, but the pilgrim hasn't cleared enough yet.
-      if (communityRemaining > 0) {
+
+      // Pages exist that borrowers added, and this one hasn't been down any.
+      if (progress.communityClears === 0) {
         return {
-          eyebrow: "The Seed waits on you",
-          title: "Three of the protocol's doors remember you.",
+          eyebrow: "The card is full, and the book has grown",
+          title: "Other hands have been adding pages while you walked.",
           body:
-            "But the registry has grown while you walked. Other hands have raised doors " +
-            "of their own, and the Seed won't settle until it has weighed you against " +
-            "them too.",
+            `The registry holds ${added} ${added === 1 ? "page" : "pages"} he did not ` +
+            "write — borrowers like you, each one spending the single signet they get. " +
+            "Your own is ready at the Altar and it does not wait on them. But those are " +
+            "where this book is actually getting longer.",
           guidance:
-            communityRemaining === 1
-              ? "Go down one more realm raised by another pilgrim, and the Seed is yours."
-              : `Go down ${communityRemaining} more realms raised by other pilgrims, and the Seed is yours.`,
+            "Go down somebody else's page and it gives up more to whoever comes next. " +
+            "Yours will want the same traffic.",
         };
       }
-      // Both tiers satisfied — Claim CTA appears.
+
+      // Has been down pages borrowers wrote. The strongest footing for the
+      // signet beat: they have seen the thing they are about to join.
       return {
-        eyebrow: "Every door, walked",
-        title: "You've gone down every door the protocol asked of you.",
+        eyebrow: "His three, and somebody else's",
+        title: "You have been down pages he never wrote.",
         body:
-          "Three founding realms, and the doors other pilgrims raised after. The shards " +
-          "are one now; the Seed has weighed you and settled. Take it — then start writing " +
-          "realms of your own.",
+          "So you already know what you are about to make: a page with your name on it, " +
+          "open to strangers, giving up more each time one of them goes down it. The Altar " +
+          "will cut your signet. One, and never another.",
+        guidance:
+          "A book still being written cannot be given a colophon. No single hand can keep " +
+          "it that way.",
       };
     }
     case 5:

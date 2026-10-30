@@ -1,7 +1,7 @@
 /**
  * Loot provenance — the soul on a finding.
  *
- * Canon: findings are what bound aspirants carried
+ * Canon: findings are what filed borrowers carried
  * before they fell. Tier is *how deep a climber got* before the world took
  * them — so the deepest gear (T4/T5) carries a trace of the one it outlived. A
  * catalog effect is not just a stat; it's a scar with a cause:
@@ -27,7 +27,7 @@ export const PROVENANCE_MIN_TIER = 4;
 
 /**
  * Effect → one-line provenance. The fiction is the cause of the mechanic, in
- * the bound-aspirant register. Keyed by catalog effect `name`.
+ * the bound-borrower register. Keyed by catalog effect `name`.
  */
 const EFFECT_PROVENANCE: Record<string, string> = {
   lifesteal:

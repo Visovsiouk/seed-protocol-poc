@@ -23,11 +23,17 @@ import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { useAccount } from "wagmi";
 import { CodexPanel } from "@/components/codex/CodexPanel";
 import { InventoryPanel } from "@/components/inventory/InventoryPanel";
+import { BookPanel } from "@/components/story/BookPanel";
+import { hasConsumedColdOpen } from "@/components/story/ColdOpenBook";
 import { AudioPanel } from "./AudioPanel";
 import { MusicNudge } from "./MusicNudge";
+import { BookNudge, hasBeenHandedBook } from "./BookNudge";
 import { useCodexStatus } from "@/lib/codex/use-codex";
 import { useCodexToasts } from "@/lib/codex/use-codex-toasts";
 import { useAudio } from "@/lib/audio/AudioProvider";
+import { useTutorialProgress } from "@/lib/reads/hooks";
+import { useFoundMargins } from "@/lib/story/use-margins";
+import { onDockOpen } from "@/lib/ui/dock-bus";
 import { fadeRise, withReducedMotion } from "@/lib/ui/motion";
 
 // Lift the dock clear of the AppShell footer (49px), and of the fixed
@@ -38,12 +44,13 @@ const DEMO_BANNER = process.env.NEXT_PUBLIC_DEMO_BANNER === "true";
 const BUTTON_BOTTOM = DEMO_BANNER ? "bottom-[5.5rem]" : "bottom-16";
 const PANEL_BOTTOM = DEMO_BANNER ? "bottom-[8.5rem]" : "bottom-28";
 
-type Panel = "codex" | "inventory" | "audio";
+type Panel = "codex" | "inventory" | "audio" | "book";
 
 const PANEL_LABEL: Record<Panel, string> = {
   codex: "Protocol codex",
   inventory: "Inventory",
   audio: "Sound settings",
+  book: "The Book",
 };
 
 /** See the `onUpdate` on the panel below — its presence is the point. */
@@ -99,11 +106,39 @@ function Speaker({ muted }: { muted: boolean }) {
   );
 }
 
+/**
+ * A closed book, seen spine-on. Hand-rolled to match `Diamond` and `Speaker`
+ * — the dock draws its own marks rather than pulling in an icon set.
+ */
+function BookGlyph() {
+  return (
+    <svg
+      aria-hidden
+      width="14"
+      height="14"
+      viewBox="0 0 14 14"
+      fill="none"
+      stroke="var(--color-preset-accent)"
+      strokeWidth="1.3"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M2.6 2.2h5.2a2 2 0 0 1 2 2v7.6H4.6a2 2 0 0 1-2-2z" />
+      <path d="M2.6 9.4h7.2" />
+      {/* The ribbon: a bookmark, which is what he leaves behind. */}
+      <path d="M11.4 2.6v6.2l-1.2-1-1.2 1V2.6z" fill="var(--color-preset-accent)" />
+    </svg>
+  );
+}
+
 export function CornerDock() {
   const { address } = useAccount();
   const { settings, supported } = useAudio();
   const { status, isLoading } = useCodexStatus(address);
   useCodexToasts(address, status, isLoading);
+  // Same React Query key `useCodexStatus` already warms, so this is a cache
+  // read rather than a second fan-out.
+  const { data: progress } = useTutorialProgress(address);
 
   const [open, setOpen] = useState<Panel | null>(null);
   const reduced = useReducedMotion();
@@ -111,6 +146,35 @@ export function CornerDock() {
   // Portal target only exists client-side; gate the first render.
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
+
+  // The Book exists for the player only once they've been handed it — i.e.
+  // once they've walked the opening (or are already past it on a returning
+  // visit). Reading localStorage is safe here because the whole dock returns
+  // `null` until `mounted`, so this never runs during SSR.
+  const signed = mounted && (hasConsumedColdOpen() || (progress?.starterClears ?? 0) > 0);
+  const margins = useFoundMargins(address, open === "book");
+
+  /**
+   * Whether the Book's one-time callout still owes the player a telling.
+   *
+   * The two nudges share one slot (the panel's), so the dock has to decide
+   * which gets it rather than letting them stack into each other. The Book
+   * wins while it's pending: it's the end of the beat the player just walked,
+   * and the music offer is an unrelated aside that can wait a page load.
+   *
+   * Read lazily so it only touches storage once, and only after `mounted`
+   * gates SSR out — `hasBeenHandedBook` returns true on the server, which
+   * would otherwise bake "already told" into the initial state.
+   */
+  const [bookNudgePending, setBookNudgePending] = useState(false);
+  useEffect(() => {
+    if (signed) setBookNudgePending(!hasBeenHandedBook());
+  }, [signed]);
+
+  // Opened from outside the dock — today that's the Base's card strip asking
+  // for the Book. See `lib/ui/dock-bus.ts` for why this is an event and not
+  // lifted state.
+  useEffect(() => onDockOpen((panel) => setOpen(panel)), []);
 
   // Escape closes whichever panel is open (popovers, not modals — no focus trap).
   useEffect(() => {
@@ -137,9 +201,18 @@ export function CornerDock() {
           onClick={() => setOpen(null)}
         />
       )}
-      {/* The one-time offer to turn music on. Shares the panel's slot, so
-          it's suppressed while a panel is open rather than stacking. */}
-      {!open && <MusicNudge bottomClass={PANEL_BOTTOM} />}
+      {/* Callouts share the panel's slot, so they're suppressed while a panel
+          is open rather than stacking — and only one of them is ever mounted,
+          because they'd otherwise overlap in the same corner. */}
+      {!open &&
+        (bookNudgePending ? (
+          <BookNudge
+            bottomClass={PANEL_BOTTOM}
+            onAnswered={() => setBookNudgePending(false)}
+          />
+        ) : (
+          <MusicNudge bottomClass={PANEL_BOTTOM} />
+        ))}
       <AnimatePresence>
         {open && (
           <motion.section
@@ -171,6 +244,8 @@ export function CornerDock() {
               />
             ) : open === "inventory" ? (
               <InventoryPanel />
+            ) : open === "book" ? (
+              <BookPanel margins={margins} signed={signed} />
             ) : (
               <AudioPanel />
             )}
@@ -206,8 +281,46 @@ export function CornerDock() {
           <Diamond />
           <span style={{ color: "var(--color-preset-accent)" }}>Inventory</span>
         </button>
-        {/* Icon-only: a third labelled pill would overflow the row on
-            narrow viewports, and the speaker glyph is self-explanatory. */}
+        {/* Icon-only, for the same reason as the speaker: the row is already
+            at its width budget with two labelled pills — a fourth labelled
+            one measured 441px against a 375px viewport. The stamp count is
+            the one number worth surfacing without opening anything, so it
+            rides as a badge and only once there's something to count.
+
+            Hidden until the player has actually been handed the book — on a
+            first visit the opening is still running, and a dock pill for an
+            artifact they haven't picked up yet would spoil its arrival.
+
+            This used to claim no first-time affordance was needed because the
+            player already knows they have it. That was a guess, and a player
+            cleared a whole page without knowing the Book existed. The pill
+            stays narrow; `BookNudge` and the Base's card strip are the
+            discovery path instead of a wider pill. */}
+        {signed && (
+          <button
+            type="button"
+            onClick={() => toggle("book")}
+            aria-expanded={open === "book"}
+            aria-label={
+              progress?.starterClears
+                ? `Open the Book (${progress.starterClears} of 3 stamped)`
+                : "Open the Book"
+            }
+            className={`${PILL_CLASS} !px-3`}
+            style={{ opacity: open === "book" ? 1 : 0.85 }}
+          >
+            <BookGlyph />
+            {(progress?.starterClears ?? 0) > 0 && (
+              <span
+                aria-hidden
+                className="font-mono text-[10px] tabular-nums"
+                style={{ color: "var(--color-preset-accent)" }}
+              >
+                {progress?.starterClears}/3
+              </span>
+            )}
+          </button>
+        )}
         {supported && (
           <button
             type="button"

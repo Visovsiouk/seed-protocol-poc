@@ -1,121 +1,205 @@
 /**
- * Cold-open beats — "The Branding at the Threshold".
+ * Cold-open beats — "The Uncatalogued Return".
  *
- * The first thing a new player sees is a five-page diegetic vignette —
- * not a tutorial, not a welcome screen. They arrive at the foot of the
- * worlds, read the makers'-roll of everyone who came before, take an
- * unfinished maker's-mark branded into their hand, learn the stake, and
- * go down through the first open door — waking in the base. Only the
- * nearest world is open; the rest stay sealed and unnamed until the ones
- * before them are mastered.
+ * A night shift in a library's returns room. A hand-bound book comes up the
+ * chute that isn't in the catalogue; procedure says check the back pocket for
+ * a date-due card. The card is full, its dates are out of order, its return
+ * column has been torn off — nobody has ever been stamped back in — and the
+ * last entry is the borrower's own handwriting on a card they have never
+ * touched. They sign it to see what they wrote. That is the whole mistake.
  *
- * Each beat grounds one plain fact under the atmosphere, so that by the
- * end a newcomer plainly knows who they are, what they must do, what a
- * fall costs, and what they are climbing toward.
+ * ── Why it is shaped like this ─────────────────────────────────────────────
+ * The previous opening was five pages of two 60–80 word paragraphs: ~800
+ * words of cosmology before the player touched the game, in one unbroken
+ * register. It did not get read. This one carries the same information in a
+ * quarter of the words, and it earns attention three ways the old one
+ * couldn't:
  *
- * Pure data so the component (`ColdOpenBook`) stays presentational and
- * the beats can be snapshot-tested.
+ *   1. **Concrete against cosmic.** A chute, a rubber stamp, a card pocket.
+ *      The old opening was cosmic imagery against cosmic stakes, so nothing
+ *      registered as strange. Here the strangeness has something to be
+ *      strange *against*.
+ *   2. **The player acts three times.** Pull the card, read their own
+ *      handwriting, sign it. Three `gate: "interaction"` beats that will not
+ *      advance until the act is performed — so the trap closes on something
+ *      they did, not something they read about.
+ *   3. **The antagonist is an absence, not an announcement.** Every borrower
+ *      on the card can be traced except the first, who scratched himself off
+ *      it; and once the player signs, a hand that isn't theirs writes `fin.`
+ *      underneath. Two gaps in an artifact the player is holding. No villain
+ *      is named anywhere in the opening.
+ *
+ * Marrow's beat is the only one in a voice other than the Book's: the player
+ * meets a former borrower, dated and signed, before gameplay — so that when
+ * marginalia starts dropping in runs, the form is already familiar.
+ *
+ * ── Budget ─────────────────────────────────────────────────────────────────
+ * Every beat's body is **≤ 25 words total**, enforced by `coldOpen.test.ts`.
+ * A word budget rather than a beat count is deliberate: the failure being
+ * guarded against is long undirected prose creeping back, and a beat count
+ * doesn't detect that.
+ *
+ * Pure data so `ColdOpenBook` stays presentational and the beats can be
+ * asserted against.
  */
 
 import type { CinematicBeat } from "./types";
 
 /**
  * A cold-open page is just a `CinematicBeat` — the cinematic player reads the
- * optional `wash`/`timing` annotations below to give the five pages a felt,
- * timed reveal instead of a static click-through.
+ * optional `voice`/`gate`/`wash`/`timing` annotations below to turn the pages
+ * into a felt, timed, interactive sequence instead of a click-through.
  */
 export type ColdOpenBeat = CinematicBeat;
 
 export const COLD_OPEN_BOOK: readonly ColdOpenBeat[] = [
   {
-    stamp: "The foot of the worlds",
+    stamp: "The returns room",
     body: [
-      "You have climbed down as far as climbing goes. This is the bottom " +
-        "of everything — a stone floor under a sky that is really the " +
-        "undersides of worlds, hung open above you like doors left ajar.",
-      "Creation was never finished. The first makers began these worlds and " +
-        "gave out before the work was done — died, wandered off, faltered — " +
-        "and their half-made worlds still turn overhead, waiting for a hand. " +
-        "Mortals come here to try for that: a maker's power. Almost none " +
-        "climb back up.",
+      "Night shift. The chute coughs up one more book, then goes quiet.",
+      "This one has no barcode.",
     ],
-    footnote: "the worlds hang open · the floor is cold",
+    cta: "Pick it up",
+    timing: { lineStagger: true },
+  },
+  {
+    stamp: "Uncatalogued",
+    body: [
+      "No accession number. No spine label. Nothing in the system matches it.",
+      "Someone bound this by hand.",
+    ],
+    cta: "Check the back pocket",
+    timing: { lineStagger: true, hold: { line: 1 } },
+  },
+  {
+    // Gate 1 — the player pulls the card out of the pocket themselves.
+    stamp: "Procedure",
+    body: ["An unidentified return gets checked for its date-due card. So: check."],
+    cta: "Pull the card",
+    gate: "interaction",
+    timing: { lineStagger: true },
+  },
+  {
+    stamp: "The card",
+    body: [
+      "Full. Both columns, stamped across decades — and out of order.",
+      "1911 above 2041. Below that, 1987.",
+    ],
     cta: "Go on",
-    timing: { lineStagger: true },
-  },
-  {
-    stamp: "The roll of makers",
-    body: [
-      "A slab of standing stone bars the first door, and it is covered edge " +
-        "to edge in names — carved, branded, scratched by everyone who ever " +
-        "stood where you stand. Most of them stop halfway. A name begun, a " +
-        "stroke that trails off and never finishes.",
-      "The topmost mark is the oldest and the only one cut clean through: " +
-        "the First Maker, the first mortal who climbed down here and climbed " +
-        "back out a god. Below it, name under unfinished name, the failures " +
-        "run down into the dark. At the very bottom there is one empty place " +
-        "left. It is exactly the size of a hand.",
-    ],
-    cta: "Set your hand to it",
     timing: { lineStagger: true, hold: { line: 1 } },
   },
   {
-    stamp: "The branding",
+    stamp: "The return column",
     body: [
-      "Something takes your hand where you touch the stone, and it burns — " +
-        "not clean, not finished. A maker's-mark, but a maker's-mark left " +
-        "half-cut, the fire still in it. It settles into the back of your " +
-        "hand and stays warm, because it is not done. Neither are you.",
-      "This is the bargain, and it is plain: master three of the worlds " +
-        "above and carry yourself back out, and the mark finishes — into a " +
-        "true-name, a maker's power that is yours to keep. Fall, and the " +
-        "world you fall in finishes it for you, the only other way a mark " +
-        "like this ever gets finished: by binding you into itself.",
+      "Someone has torn the return column off. A clean vertical tear.",
+      "Every borrower stamped out. Not one stamped back in.",
     ],
-    cta: "Understand the stake",
-    wash: "warm",
-    timing: { lineStagger: true, hold: { line: 1 } },
-  },
-  {
-    stamp: "What waits below",
-    body: [
-      "Each world above you is already ruled. Someone came this far before " +
-        "you, went down, and faltered — clung, or reached for what they " +
-        "hadn't earned, or tried to finish what should have stayed open — " +
-        "and the world bound them into its heart as its guardian-god. They " +
-        "are what you will have to master. They were mortals once, marked " +
-        "like you.",
-      "The shape of it is simple. Descend a world. Master it — put down the " +
-        "one bound at its heart — and carry a spark of it back out instead " +
-        "of being swallowed. Three worlds, three sparks. Three sparks kindle " +
-        "your Name.",
-    ],
-    cta: "Face the door",
+    cta: "Go on",
     wash: "void",
-    timing: { lineStagger: true, fadeOutToBlack: true },
+    timing: { lineStagger: true, hold: { line: 1 } },
   },
   {
-    stamp: "The first door",
+    // The player meets a margin voice before gameplay, so the form reads as
+    // familiar the first time a note drops in a run.
+    stamp: "In the margin",
+    voice: "margin",
     body: [
-      "Only the nearest door will open — the others stay sealed and unnamed " +
-        "until the ones before them fall. Beyond it: wet leaves, wet stone, " +
-        "a world still growing because it is the least finished of the " +
-        "three, and somewhere down in the green, a wet laugh that has been " +
-        "waiting a long time for someone to come down.",
-      "The mark on your hand throbs once, warm, and starts to count. You " +
-        "step back from the stone. This is the base — the last dry ground " +
-        "before the worlds. From here, there is only down.",
+      "Don't waste the hours I wasted hunting for the return line. It is gone. Plan around it.",
     ],
-    footnote: "you are at the foot of the worlds",
-    cta: "Wake",
+    footnote: "E. Marrow · 1911",
+    cta: "Keep reading",
     timing: { lineStagger: true },
+  },
+  {
+    // The first borrower, and the only one with nothing to trace him by.
+    //
+    // Two earlier versions tried to animate this: the line wrote itself, was
+    // struck through, and rewrote, so the player would "meet the antagonist as
+    // an edit happening while they read." It did not communicate — a struck
+    // line with no established convention behind it reads as a typo or as UI
+    // noise, in either direction, and a device that needs a design document to
+    // parse is a failed device. The whole revision apparatus was removed with
+    // it rather than left dead.
+    //
+    // What survived is the fact, stated plainly, with the card right below it
+    // showing the same scratch. The *absence* is the characterisation: every
+    // other borrower on that card can be traced, and he made sure he can't be.
+    // That is also his weakness, and it is on screen before gameplay starts.
+    stamp: "The topmost entry",
+    body: [
+      "The topmost entry is dated 1788. Everyone under it signed their name.",
+      "Not this one. Scratched out, hard enough to go through the paper.",
+    ],
+    cta: "Go on",
+    wash: "danger",
+    timing: { lineStagger: true, hold: { line: 1 }, fadeOutToBlack: true },
+  },
+  {
+    // Gate 2 — the player chooses to look at the last entry.
+    stamp: "The last entry",
+    body: ["The last entry is not a stamp. It is handwriting.", "It is yours."],
+    cta: "Look closer",
+    gate: "interaction",
+    timing: { lineStagger: true, hold: { line: 1 } },
+  },
+  {
+    // Gate 3 — the mistake. Offered as a real choice, because forcing it at
+    // the exact moment the story claims the player made a mistake is what
+    // makes a mistake feel like somebody else's. Refusing is the better beat:
+    // the card is already signed in your hand, dated tonight, which is the
+    // hook from page one paying off. See `ColdOpenBook`'s `refused` branch.
+    stamp: "Signing",
+    body: [
+      "Dated tonight, on a card you have never touched.",
+      "There is a pen. Nobody is making you pick it up.",
+    ],
+    // What the act costs, revealed after it. Lives here rather than in
+    // `ColdOpenBook`'s renderFrame — as JSX it was invisible to the word
+    // budget, and this beat was putting ~74 words on screen against a
+    // ceiling of 25 (see `afterGate` in types.ts).
+    //
+    // Deliberately one wording for both buttons. The frame offers "Sign the
+    // card" and "Close the book"; they resolve identically, and saying so
+    // plainly is the beat rather than a shortcut around it — refusing is what
+    // proves the line was already signed. An earlier version forked the
+    // prose, which made the refusal read as the interesting path and the
+    // signature as the dull one, when the point is that there is no fork.
+    //
+    // No gloss on `fin.` either. The Book describes and never explains; what
+    // the word means is `COLOPHON.SIGN`'s business in canon.ts, and a reader
+    // who does not know it still reads a stranger's hand closing their entry.
+    afterGate: [
+      "The line is signed in your hand, dated tonight. It was always signed.",
+      "A hand that is not yours writes one word under it: fin.",
+    ],
+    cta: "Sign the card",
+    gate: "interaction",
+    wash: "warm",
+    timing: { lineStagger: true },
+  },
+  {
+    stamp: "The other side",
+    body: [
+      "The returns room is on the other side of the book now.",
+      "The door it was behind is a page.",
+    ],
+    footnote: "you are inside it",
+    cta: "Begin",
+    timing: { lineStagger: true, hold: { line: 1 } },
   },
 ] as const;
 
 /**
  * localStorage key recording that the player has consumed the cold-open.
- * On returning visits, the landing surfaces the continue card directly.
- * Versioned so we can re-introduce the opening if the content rewrites —
- * bumped to `.v3` for the full "Branding at the Threshold" rewrite.
+ * On returning visits, the landing surfaces the base directly.
+ *
+ * Versioned so a content rewrite can re-introduce the opening — bumped to
+ * `.v4` for "The Uncatalogued Return". The prefix is also normalised here:
+ * this was the last key still on the bare `seed-protocol:` namespace while
+ * every other key in the app (`codex-flags`, `codex-seen`, `equipped`,
+ * `audio`, `deployment-id`) uses `seed-protocol-poc:`.
+ *
+ * Deliberately NOT in `DEPLOYMENT_SCOPED_KEYS` (lib/persistence/deployment-
+ * guard.ts): a chain reset must not make a returning player re-read the book.
  */
-export const COLD_OPEN_STORAGE_KEY = "seed-protocol:cold-open-consumed.v3";
+export const COLD_OPEN_STORAGE_KEY = "seed-protocol-poc:cold-open-consumed.v4";

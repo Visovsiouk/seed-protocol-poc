@@ -37,6 +37,9 @@
  * the metadata from `/api/realm/[address]/meta` and runs the engine in
  * the preset/boss the player picked.
  *
+ * Step (4) also kicks off `POST /api/story/page` to give the new page its
+ * lore. Fire-and-forget and outside the ceremony — see `requestPageLore`.
+ *
  * Resume handling: any failure after step (1) leaves a clone on-chain with
  * no schemas/delegate/charter — and `ecosystemOf(owner)` non-zero, which
  * used to dead-end the page on "already founded". We now probe
@@ -49,7 +52,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import {
   useAccount,
   usePublicClient,
@@ -64,6 +67,7 @@ import { jitteredFees } from "@/lib/contracts/fee-jitter";
 import { useCreateEcosystem } from "@/lib/contracts/factory";
 import { useRegisterRealmSchemas } from "@/lib/contracts/register-schemas";
 import { useTutorialProgress } from "@/lib/reads/hooks";
+import { queryKeys } from "@/lib/reads/cache";
 import { ProtocolSurfaceGate } from "@/components/guards/ProtocolSurfaceGate";
 import { RealmSpawnFeed, type SpawnPhase } from "@/components/create/RealmSpawnFeed";
 import { AppShell, Panel, Button, Stamp, Rule, Chip } from "@/components/ui";
@@ -146,8 +150,68 @@ async function fetchNextSigner(): Promise<NextSignerReply> {
   return (await res.json()) as NextSignerReply;
 }
 
+/**
+ * Ask the server to give the new page its lore. Fire-and-forget, on purpose.
+ *
+ * Nothing in the founding rite depends on the answer. The realm is registered,
+ * playable and on-chain by the time this runs; the route persists what it gets
+ * and `/api/realm/[address]/meta` falls back to the deterministic bank until
+ * then, so the only thing a failure costs is a slightly less specific
+ * paragraph on the way in. Awaiting it would put an outbound model call —
+ * with its own timeout — between the player's fourth signature and the "realm
+ * founded" panel, which is the worst possible place to add a wait.
+ *
+ * Not deduped here either: the route is idempotent in SQL (`setRealmLore`
+ * writes `WHERE page_text IS NULL`), which is the only place a dedupe can be
+ * correct across the retry loop, two tabs, and a resumed rite.
+ *
+ * Deliberately NOT gated on `storyAiClientHint`, unlike the epitaph request.
+ * The two surfaces have asymmetric costs for a wrong hint: a skipped epitaph
+ * is one banked note and the next death tries again, where a skipped page
+ * request is the only moment anything asks for this realm's lore — nothing
+ * re-triggers it later. Founding a realm costs four wallet signatures, so the
+ * waste on a flag-off install is one cheap no-op per realm ever created, which
+ * is a better trade than a deploy that set the server flag but not the public
+ * mirror getting blank pages forever.
+ */
+function requestPageLore(
+  realmAddress: `0x${string}`,
+  queryClient: QueryClient,
+): void {
+  void fetch("/api/story/page", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ realmAddress }),
+    // The request must outlive the navigation to /play/realm/[address] that
+    // follows a successful create.
+    keepalive: true,
+  })
+    .catch(() => {
+      // Narration is never an error the creator needs to see.
+    })
+    .finally(() => {
+      // Drop the realm's cached meta now that its lore may have landed.
+      //
+      // Without this the creator is the one player who can never see their own
+      // page: `realm-meta` is held at `staleTime: Infinity` (deliberately, so
+      // a page's prose cannot shift under someone mid-run), so whoever reads
+      // the row first pins the answer for the session. Founding a realm and
+      // walking straight into it beats this request, which pins
+      // `realmPageFallback` — a different bookmark *name*, not just a
+      // different paragraph — while every later visitor gets the model's.
+      //
+      // `invalidateQueries` rather than a shorter `staleTime`: it refetches
+      // once, here, on the only event that can change the answer, instead of
+      // making every read re-check forever.
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.realmMeta(realmAddress),
+      });
+    });
+}
+
 export default function CreatePage() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { address } = useAccount();
   const publicClient = usePublicClient();
   const { createEcosystem } = useCreateEcosystem();
@@ -285,6 +349,7 @@ export default function CreatePage() {
       });
       const body = (await res.json()) as RegisterReply;
       if (body.ok) {
+        requestPageLore(body.realm.address, queryClient);
         return {
           ecosystem: body.realm.address,
           signerAddress: body.realm.signerAddress,

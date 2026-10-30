@@ -34,6 +34,23 @@ import type { Preset } from "@/lib/engine/types";
  */
 export const PLAYER_REALM_SIGNER_INDEX_START = 4;
 
+/**
+ * Generated lore for a player-authored page, when a model produced some.
+ *
+ * All three fields or none — see `getPlayerRealm`. Prose that was never
+ * reviewed by a human, which is what `source` records; today the only value
+ * written is `"model"`, because a *banked* fallback is deliberately not
+ * persisted (it is a pure function of the address, so it needs no row, and
+ * storing it would permanently lock a realm to the fallback it got on the one
+ * day the key was missing).
+ */
+export type RealmLoreRow = {
+  pageText: string;
+  bookmarkName: string;
+  bookmarkLine: string;
+  source: "model";
+};
+
 export type PlayerRealmRow = {
   address: `0x${string}`;
   owner: `0x${string}`;
@@ -43,6 +60,12 @@ export type PlayerRealmRow = {
   /** Custom accent hex (`#rrggbb`), or null to inherit the genre default. */
   accent: string | null;
   signerIndex: number;
+  /**
+   * Generated page lore, or `null` when this realm has none — which is the
+   * default and not a defect. Callers resolve `null` through
+   * `realmPageFallback()`; see `lib/story/page-bank.ts`.
+   */
+  lore: RealmLoreRow | null;
   /**
    * The realm's own on-chain schema IDs (decimal strings, since `uint256`
    * overflows JS `number`), registered during `/create`. `null` for realms
@@ -66,6 +89,10 @@ type Row = {
   loot_schema_id: string | null;
   max_tier: number;
   created_at: number;
+  page_text: string | null;
+  bookmark_name: string | null;
+  bookmark_line: string | null;
+  lore_source: string | null;
 };
 
 let cached: DatabaseType | undefined;
@@ -97,7 +124,11 @@ function open(): DatabaseType {
       clear_receipt_schema_id TEXT,
       loot_schema_id          TEXT,
       max_tier     INTEGER NOT NULL DEFAULT 2 CHECK (max_tier BETWEEN 1 AND 5),
-      created_at   INTEGER NOT NULL
+      created_at   INTEGER NOT NULL,
+      page_text     TEXT,
+      bookmark_name TEXT,
+      bookmark_line TEXT,
+      lore_source   TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_player_realms_owner ON player_realms(owner);
     CREATE INDEX IF NOT EXISTS idx_player_realms_preset ON player_realms(preset);
@@ -109,6 +140,10 @@ function open(): DatabaseType {
     "accent TEXT",
     "clear_receipt_schema_id TEXT",
     "loot_schema_id TEXT",
+    "page_text TEXT",
+    "bookmark_name TEXT",
+    "bookmark_line TEXT",
+    "lore_source TEXT",
   ]) {
     try {
       db.exec(`ALTER TABLE player_realms ADD COLUMN ${col}`);
@@ -120,6 +155,23 @@ function open(): DatabaseType {
   return db;
 }
 
+/**
+ * Lore is all-or-nothing on the way out, even though SQLite stores it as four
+ * independent nullable columns. A row with a page paragraph and no bookmark
+ * name would render as two voices describing one room, so a partially
+ * populated set — only reachable by hand-editing the db file — collapses to
+ * `null` and the caller falls back to the bank for everything.
+ */
+function rowToLore(r: Row): RealmLoreRow | null {
+  if (!r.page_text || !r.bookmark_name || !r.bookmark_line) return null;
+  return {
+    pageText: r.page_text,
+    bookmarkName: r.bookmark_name,
+    bookmarkLine: r.bookmark_line,
+    source: "model",
+  };
+}
+
 function rowToRealm(r: Row): PlayerRealmRow {
   return {
     address: r.address as `0x${string}`,
@@ -129,6 +181,7 @@ function rowToRealm(r: Row): PlayerRealmRow {
     name: r.name,
     accent: r.accent ?? null,
     signerIndex: r.signer_index,
+    lore: rowToLore(r),
     clearReceiptSchemaId: r.clear_receipt_schema_id ?? null,
     lootSchemaId: r.loot_schema_id ?? null,
     createdAt: r.created_at,
@@ -220,8 +273,44 @@ export function insertPlayerRealm(input: {
     name: input.name,
     accent: input.accent ?? null,
     signerIndex: input.signerIndex,
+    // A realm is always born without lore. `/create` asks for it immediately
+    // afterwards (see `app/api/story/page/route.ts`) and the founding rite
+    // does not wait on the answer.
+    lore: null,
     clearReceiptSchemaId: input.clearReceiptSchemaId ?? null,
     lootSchemaId: input.lootSchemaId ?? null,
     createdAt,
   };
+}
+
+/**
+ * Persist generated lore for a realm, once.
+ *
+ * `WHERE page_text IS NULL` makes this the idempotency point for the whole
+ * generation flow: two concurrent POSTs (a double-click, a retry, two tabs)
+ * both call the model but only the first write lands, and the loser reads the
+ * winner's text back. Returns whether this call was the one that wrote, so
+ * the route can tell "I generated this" from "somebody beat me to it".
+ *
+ * Only ever called with model output — see `RealmLoreRow`.
+ */
+export function setRealmLore(
+  address: `0x${string}`,
+  lore: { pageText: string; bookmarkName: string; bookmarkLine: string },
+): boolean {
+  const db = open();
+  const res = db
+    .prepare(`
+      UPDATE player_realms
+         SET page_text = ?, bookmark_name = ?, bookmark_line = ?,
+             lore_source = 'model'
+       WHERE address = ? AND page_text IS NULL
+    `)
+    .run(
+      lore.pageText,
+      lore.bookmarkName,
+      lore.bookmarkLine,
+      address.toLowerCase(),
+    );
+  return res.changes > 0;
 }

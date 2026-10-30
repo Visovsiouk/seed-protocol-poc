@@ -13,7 +13,7 @@
  * (cold wind, dripping water, broken stones) so the bank reads as the
  * same world even when individual lines vary. Fantasy sits at the *alive*
  * end of the finishing motif — wet, green, least-finished — and its
- * archaeology is of the bound aspirants who came down before you (see
+ * archaeology is of the filed borrowers who came down before you (see
  *  taxonomy / history).
  */
 
@@ -268,7 +268,7 @@ export const fantasyBank: FlavorBank = {
       "Water beads black at the foot of every trunk and refuses to fall. Something the world half-made keeps circling these roots, looking for the way it came in.",
       "Someone carved the same mark into the bark over and over, getting it wrong each time — a climber trying to name themselves down here, before they understood a name is only cut at the top.",
     ],
-    // Depth 2 — the Set. Aspirants fully set into the world's service; its
+    // Depth 2 — the Set. Borrowers fully set into the world's service; its
     // wildlife, its dead, its keepers.
     stone_ruin: [
       "Toppled columns, and the smell of rain on stone that was never outdoors. A door at the far end is barred — from your side, by a hand that wanted nothing else to follow it down.",
@@ -276,7 +276,7 @@ export const fantasyBank: FlavorBank = {
       "A broken altar, dark with stains still wet. Whoever knelt here is part of the floor now, set into the world's keeping.",
     ],
     crypt_hall: [
-      "A hall of dry air and chiselled names — more than one wall has run out of room. These are not the world's dead. They are its staff: aspirants it bound to tend the door.",
+      "A hall of dry air and chiselled names — more than one wall has run out of room. These are not the world's dead. They are its staff: borrowers it bound to tend the door.",
       "Sarcophagi line both walls. One stands open and clean inside, waiting — the world keeps a place ready for whoever it sets in next.",
       "Cold climbs from the flagstones like it's looking for you. The Set used to be warm too, once, before the Reach gave them their work.",
     ],
@@ -292,21 +292,21 @@ export const fantasyBank: FlavorBank = {
     // Near-boss — the Near-gods wear the warden's nature; the wet wood pulls tight.
     inner_sanctum: [
       "The chamber holds its breath. Whatever the Reach bound here is waiting for you — and so are the last climbers who got this far, grown into near-gods of her, half her thorns and half their own fear.",
-      "Tall windows, no light through them. The air in here was made wrong, the way the Hag was made wrong: an aspirant who stayed too long, worked into the room around her.",
+      "Tall windows, no light through them. The air in here was made wrong, the way the Hag was made wrong: a borrower who stayed too long, worked into the room around her.",
     ],
   },
   bossPhases: {
-    // I · cling — the aspirant surfaces; the ruin names itself.
+    // I · cling — the borrower surfaces; the ruin names itself.
     forest_hag_phase2: [
       "The Hag laughs through broken teeth, and her thorns sharpen — the Reach defending what it made of her.",
       "Bramble erupts from the ground. She walks lighter now, the way someone walks who has decided never to climb back out.",
       "For a breath her eyes hold a mortal's fear — I only wanted to keep it, the wet wood says, in her voice — then the Reach pours back in, and she is only the Hag again.",
     ],
-    // Community wardens — bound aspirants in the same dialect, each a variation
+    // Community wardens — filed borrowers in the same dialect, each a variation
     // on the same three ruins (cling / hoard / linger).
     lich_phase2: [
       "The Lich raises both hands; the air grows colder, the way a mortal goes cold who hoarded years instead of a name.",
-      "Black light blooms behind the Lich's ribs — and for a breath, the terror of an aspirant who has outlasted everything but the door he won't walk.",
+      "Black light blooms behind the Lich's ribs — and for a breath, the terror of a borrower who has outlasted everything but the door he won't walk.",
     ],
     dragon_phase2: [
       "The Dragon's scales darken. It draws a deep, slow breath over the pile it could not bear to leave.",

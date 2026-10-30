@@ -76,20 +76,26 @@ const STARTER_MECHANICS_BY_PRESET: Record<
 };
 
 const STARTER_DISPLAY_BY_PRESET: Record<Preset, { name: string; tagline: string }> = {
+  // "world" → "page" across all three. `canon.test.ts` deliberately keeps
+  // the bare word "world" out of RETIRED_TERMS (too many innocent uses to
+  // police), and it documents this file as reviewed rather than asserted
+  // because importing it pulls in `lib/env.ts` — which is exactly how these
+  // three survived the migration. The revision-state wording is kept: it is
+  // the gradient `PAGES[preset].revision` encodes.
   fantasy: {
     name: "The Hollow Reach",
     tagline:
-      "An unfinished world still wet and growing, wild at the least-made edge of creation. Somewhere ahead, the Forest Hag laughs — an aspirant who loved it too much to leave, and wears it now as a face.",
+      "An unfinished page, still wet and still growing. Somewhere ahead the Forest Hag laughs — a borrower who loved it too much to leave, and wears it now as a face.",
   },
   scifi: {
     name: "Drift Station Ker-7",
     tagline:
-      "A world finished into silence, frost sealing the inside of the hull. Something at the core tried to write the last line of creation — and is still holding it shut.",
+      "A page finished into silence, frost sealing the inside of the hull. Something at the core tried to write the last line of the book — and is still holding it shut.",
   },
   cyberpunk: {
     name: "Black Ice District",
     tagline:
-      "A world half-set, neon curing on wet concrete. The ICE at its heart knows your name before you give it — it wears a name it tried to steal, and could not.",
+      "A page half-set, neon curing on wet concrete. The ICE at its heart knows your name before you give it — it wears a name it tried to steal, and could not.",
   },
 };
 
