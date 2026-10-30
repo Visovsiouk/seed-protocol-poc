@@ -46,6 +46,7 @@ import { RealmClearedInterstitial } from "@/components/game/RealmClearedIntersti
 import { creatorPageCleared, ctaLabel } from "@/lib/story/progression";
 import { AppShell, Panel } from "@/components/ui";
 import { useRealms } from "@/lib/reads/hooks";
+import { queryKeys } from "@/lib/reads/cache";
 import { useMintLoot } from "@/lib/contracts/loot";
 import { useMintClearReceipt } from "@/lib/contracts/boss-cleared";
 import {
@@ -119,7 +120,9 @@ export default function CreatorRealmPlayPage() {
   // never changes after the create flow. A 404 collapses to
   // `registered = null` and the page falls back to trial mode.
   const metaQuery = useQuery({
-    queryKey: ["realm-meta", address],
+    // Through the catalog so the create flow's post-generation invalidation
+    // lands on this exact key — see `queryKeys.realmMeta`.
+    queryKey: address ? queryKeys.realmMeta(address) : ["realm-meta", "none"],
     enabled: !!address,
     staleTime: Infinity,
     queryFn: async () => (address ? fetchRealmMeta(address) : null),

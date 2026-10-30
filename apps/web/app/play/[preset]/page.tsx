@@ -600,12 +600,24 @@ export default function PlayPage() {
                     // rather than left for the player to discover in the Book
                     // later. `starterClears` is already projected to include
                     // the clear that just happened.
-                    stamp={{
-                      preset,
-                      page: PAGES[preset].name,
-                      count: projectedProgress.starterClears,
-                      total: REALM_ORDER.length,
-                    }}
+                    //
+                    // Passed only when this clear actually moved the counter.
+                    // `projectedProgress` short-circuits for a preset already
+                    // in `tutorial.cleared`, so a post-arc re-clear leaves the
+                    // two equal — and without this check the beat would animate
+                    // a press and assert "takes your mark" for a clear that
+                    // pressed nothing. The creator route omits `stamp` for the
+                    // same reason.
+                    stamp={
+                      projectedProgress.starterClears !== tutorial.starterClears
+                        ? {
+                            preset,
+                            page: PAGES[preset].name,
+                            count: projectedProgress.starterClears,
+                            total: REALM_ORDER.length,
+                          }
+                        : undefined
+                    }
                     address={address}
                   />
                 ) : null

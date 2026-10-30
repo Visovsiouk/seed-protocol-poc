@@ -17,7 +17,16 @@ export const queryKeys = {
   adoption: () => ["adoption"] as const,
   realms: () => ["realms"] as const,
   playerRealms: () => ["player-realms"] as const,
-  realmMeta: (addr: `0x${string}`) => ["realm-meta", addr] as const,
+  /**
+   * Lowercased, because a realm's identity is case-insensitive but a query key
+   * is not. The route reads the address from the URL and lowercases it, while
+   * `/api/realm/register` replies with the checksummed form — so a writer
+   * invalidating with one and a reader subscribed to the other would miss each
+   * other silently, which is the worst way for a cache key to be wrong.
+   * Normalised here rather than at each call site so that cannot happen.
+   */
+  realmMeta: (addr: `0x${string}`) =>
+    ["realm-meta", addr.toLowerCase() as `0x${string}`] as const,
   starterRealm: (preset: string) => ["starter-realm", preset] as const,
   budget: (addr: `0x${string}`) => ["budget", addr] as const,
   activity: (addr: `0x${string}`) => ["activity", addr] as const,

@@ -52,7 +52,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import {
   useAccount,
   usePublicClient,
@@ -67,6 +67,7 @@ import { jitteredFees } from "@/lib/contracts/fee-jitter";
 import { useCreateEcosystem } from "@/lib/contracts/factory";
 import { useRegisterRealmSchemas } from "@/lib/contracts/register-schemas";
 import { useTutorialProgress } from "@/lib/reads/hooks";
+import { queryKeys } from "@/lib/reads/cache";
 import { ProtocolSurfaceGate } from "@/components/guards/ProtocolSurfaceGate";
 import { RealmSpawnFeed, type SpawnPhase } from "@/components/create/RealmSpawnFeed";
 import { AppShell, Panel, Button, Stamp, Rule, Chip } from "@/components/ui";
@@ -173,7 +174,10 @@ async function fetchNextSigner(): Promise<NextSignerReply> {
  * is a better trade than a deploy that set the server flag but not the public
  * mirror getting blank pages forever.
  */
-function requestPageLore(realmAddress: `0x${string}`): void {
+function requestPageLore(
+  realmAddress: `0x${string}`,
+  queryClient: QueryClient,
+): void {
   void fetch("/api/story/page", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -181,13 +185,33 @@ function requestPageLore(realmAddress: `0x${string}`): void {
     // The request must outlive the navigation to /play/realm/[address] that
     // follows a successful create.
     keepalive: true,
-  }).catch(() => {
-    // Narration is never an error the creator needs to see.
-  });
+  })
+    .catch(() => {
+      // Narration is never an error the creator needs to see.
+    })
+    .finally(() => {
+      // Drop the realm's cached meta now that its lore may have landed.
+      //
+      // Without this the creator is the one player who can never see their own
+      // page: `realm-meta` is held at `staleTime: Infinity` (deliberately, so
+      // a page's prose cannot shift under someone mid-run), so whoever reads
+      // the row first pins the answer for the session. Founding a realm and
+      // walking straight into it beats this request, which pins
+      // `realmPageFallback` — a different bookmark *name*, not just a
+      // different paragraph — while every later visitor gets the model's.
+      //
+      // `invalidateQueries` rather than a shorter `staleTime`: it refetches
+      // once, here, on the only event that can change the answer, instead of
+      // making every read re-check forever.
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.realmMeta(realmAddress),
+      });
+    });
 }
 
 export default function CreatePage() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { address } = useAccount();
   const publicClient = usePublicClient();
   const { createEcosystem } = useCreateEcosystem();
@@ -325,7 +349,7 @@ export default function CreatePage() {
       });
       const body = (await res.json()) as RegisterReply;
       if (body.ok) {
-        requestPageLore(body.realm.address);
+        requestPageLore(body.realm.address, queryClient);
         return {
           ecosystem: body.realm.address,
           signerAddress: body.realm.signerAddress,

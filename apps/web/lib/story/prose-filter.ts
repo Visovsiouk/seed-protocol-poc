@@ -53,12 +53,52 @@ export const ARTEFACTS: readonly RegExp[] = [
 ];
 
 /**
+ * What ends a sentence. **One definition, used by everything below.**
+ *
+ * Counting and truncating used to disagree: truncation treated `."` as an
+ * ending (`/[.!?]+["']?/`) while counting required whitespace after the
+ * terminator itself (`/[.!?]+(?:\s|$)/`), which the closing quote is not. So
+ * quoted dialogue was undercounted, and a four-sentence note walked through a
+ * three-sentence cap — the one check that exists to keep a model's answer
+ * inside the voice.
+ *
+ *   - `[.!?]+` so `...` and `?!` are one ending, not several.
+ *   - `["']?` carries a closing quote along with the terminator it belongs to:
+ *     `He said "run."` must not be cut to `He said "run.` with the quote left
+ *     hanging open.
+ *   - The lookahead, rather than consuming the following space, is what lets
+ *     the same pattern serve both callers — counting needs every ending, and
+ *     truncation needs their offsets.
+ *
+ * Global, and only ever used with `matchAll`, which clones the regex instead of
+ * advancing a shared `lastIndex`.
+ */
+export const SENTENCE_END = /[.!?]+["']?(?=\s|$)/g;
+
+/**
+ * Terminators that end a word rather than a sentence.
+ *
+ * Without this, the *last* period inside the truncation window might belong to
+ * an initial — and a 435-character page whose only other terminator falls past
+ * the cap gets cut to `…written by V.`, which then passes every remaining
+ * check: it ends in a terminator, and it counts as one sentence. That fragment
+ * is persisted by `setRealmLore` and read by every visitor to the page, so it
+ * is the one failure here with a permanent consequence.
+ *
+ * A single capital letter is the common case (`V. Raine`, `E. Marrow` — the
+ * borrowers are all written this way, so the model imitates it). The named
+ * abbreviations are the rest of what turns up in period prose.
+ */
+const NOT_A_SENTENCE_END = /(?:\b[A-Z]|\b(?:Mr|Mrs|Ms|Dr|Prof|St|Jr|Sr|vs|etc|Inc|Ltd|No|Fig|Vol|ca|cf))$/;
+
+/**
  * Trim to the last complete sentence at or under `max` characters.
  *
  * Prose that stops mid-word reads as a bug; prose that stops a sentence early
  * reads as a hand that ran out of room, which is free characterisation.
  * Returns `null` when not even one sentence fits, because a hard-cut fragment
- * is worse than the bank line it would replace.
+ * is worse than the bank line it would replace — and that now includes a
+ * window whose only candidate endings are abbreviations.
  */
 export function truncateAtSentence(text: string, max: number): string | null {
   const trimmed = text.trim();
@@ -66,14 +106,11 @@ export function truncateAtSentence(text: string, max: number): string | null {
 
   const window = trimmed.slice(0, max);
 
-  // Walk every sentence ending in the window and keep the last. Scanning for
-  // the *end offset* of the match rather than its index is what carries a
-  // closing quote along with the terminator it belongs to — `He said "run."`
-  // must not be cut to `He said "run.` with the quote left hanging open.
-  // `[.!?]+` so `...` and `?!` are one ending, not several.
-  const re = /[.!?]+["']?/g;
+  // Walk every candidate ending and keep the last real one. Scanning for the
+  // *end offset* rather than the index is what keeps the closing quote.
   let end = -1;
-  for (let m = re.exec(window); m !== null; m = re.exec(window)) {
+  for (const m of window.matchAll(SENTENCE_END)) {
+    if (NOT_A_SENTENCE_END.test(window.slice(0, m.index))) continue;
     end = m.index + m[0].length;
   }
   if (end === -1) return null;
@@ -84,8 +121,16 @@ export function truncateAtSentence(text: string, max: number): string | null {
 
 /** Sentence count, counting a run of terminators (`...`, `?!`) as one. */
 export function countSentences(text: string): number {
-  const matches = text.trim().match(/[.!?]+(?:\s|$)/g);
-  return matches ? matches.length : text.trim() ? 1 : 0;
+  const trimmed = text.trim();
+  if (trimmed.length === 0) return 0;
+  let n = 0;
+  for (const m of trimmed.matchAll(SENTENCE_END)) {
+    if (NOT_A_SENTENCE_END.test(trimmed.slice(0, m.index))) continue;
+    n += 1;
+  }
+  // Prose with no terminator at all is still one sentence — the caller's
+  // end-of-sentence check is what rejects it, not the count.
+  return n > 0 ? n : 1;
 }
 
 /**

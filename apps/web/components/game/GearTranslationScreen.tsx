@@ -50,11 +50,22 @@ export function GearTranslationScreen({
   preset,
   equipped,
   onDescend,
+  record = true,
 }: {
   realm: `0x${string}`;
   preset: Preset;
   equipped: { weapon?: AssetCardType; armor?: AssetCardType };
   onDescend: () => void;
+  /**
+   * Whether this mount is a real descent and may write to the player's record.
+   *
+   * `false` for the art gallery, which mounts this screen for real — same
+   * component, same `useAccount()` — with hand-made demo cards. Without the
+   * opt-out, opening `/art` with a wallet connected wrote a crossing that
+   * player never made into `crossings.v1`, which is deliberately not
+   * deployment-scoped and so outlived every chain reset.
+   */
+  record?: boolean;
 }) {
   const reduced = useReducedMotion();
   const { address } = useAccount();
@@ -73,8 +84,11 @@ export function GearTranslationScreen({
    * same pass records it (see `crossings-local.ts`). Without that the screen
    * showed the proof of the canon's central claim for eight seconds and then
    * discarded it; the Book's pages tab now keeps it.
+   *
+   * Both writes are gated on `record`: a demo mount is not a descent.
    */
   useEffect(() => {
+    if (!record) return;
     const toPreset = presetForRealm(realm) ?? preset;
     if (!toPreset) return;
     let crossed = false;
@@ -88,7 +102,7 @@ export function GearTranslationScreen({
       markCrossing(address, from, toPreset);
     }
     if (crossed) setCodexFlag(address, "crossRealmCarry");
-  }, [address, realm, preset, equipped.weapon, equipped.armor]);
+  }, [record, address, realm, preset, equipped.weapon, equipped.armor]);
 
   return (
     <motion.section

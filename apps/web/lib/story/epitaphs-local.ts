@@ -71,9 +71,19 @@ export function loadEpitaphs(player: `0x${string}` | undefined): MarginNote[] {
 /**
  * Record the note the book wrote about this death.
  *
- * Idempotent on `note.id`, which is `epitaphId(facts)` — derived from the run
+ * One row per death: `note.id` is `epitaphId(facts)` — derived from the run
  * seed and depth rather than from a clock, so the same death is the same key
  * forever and a reload of the defeat screen cannot duplicate a row.
+ *
+ * **Re-writing an existing id replaces its prose rather than being dropped.**
+ * The id is a function of the run's facts and not of the text, so the bank
+ * note and a generated one share it — and first-write-wins meant the bank line
+ * won every race against the model's, which is precisely the drift the
+ * prose-not-facts decision above exists to prevent. The position in the list
+ * is kept, because it is the order the deaths happened in, not the order they
+ * were written. Callers should still only write once the note has stopped
+ * changing (`useEpitaph`'s `settled`); this makes a late correction possible
+ * rather than making it the plan.
  */
 export function markEpitaphWritten(
   player: `0x${string}` | undefined,
@@ -85,8 +95,16 @@ export function markEpitaphWritten(
     const store = read();
     const key = player.toLowerCase();
     const rows = Array.isArray(store[key]) ? store[key]! : [];
-    if (rows.some((n) => n.id === note.id)) return;
-    store[key] = [...rows, note];
+    const at = rows.findIndex((n) => n.id === note.id);
+    if (at >= 0) {
+      // Same words already on record — don't touch storage at all.
+      if (rows[at]!.text === note.text) return;
+      const next = [...rows];
+      next[at] = note;
+      store[key] = next;
+    } else {
+      store[key] = [...rows, note];
+    }
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
   } catch {
     // Storage disabled or full — worst case the note isn't kept. The player

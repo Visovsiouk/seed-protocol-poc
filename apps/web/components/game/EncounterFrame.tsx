@@ -488,7 +488,7 @@ export function EncounterFrame({
    * unset (the default) it never asks, and this is a pure function of the
    * facts above. See `use-epitaph.ts`.
    */
-  const epitaph = useEpitaph(epitaphFacts);
+  const { note: epitaph, settled: epitaphSettled } = useEpitaph(epitaphFacts);
 
   // Collect it. Ref-guarded per note so a re-render can't re-write, mirroring
   // `bossGhostFiredRef` above; `markMarginFound` is itself idempotent, so
@@ -514,16 +514,24 @@ export function EncounterFrame({
    * "nobody has ever been stamped back in" had no consequence anywhere.
    *
    * Stored as the note *as rendered*, not as the facts — see
-   * `epitaphs-local.ts`. Ref-guarded on id like the find above; the store is
-   * idempotent on id as well, so a reload of the defeat screen is a no-op.
+   * `epitaphs-local.ts`.
+   *
+   * Gated on `settled`, and ref-guarded on the id *and the text* rather than
+   * the id alone. The id is derived from the run's facts, so the bank note and
+   * a generated one carry the same one: guarding on it meant the first render
+   * wrote the bank line and the swap that followed was a no-op at both the ref
+   * and the store, so the Book kept words the player never read. Waiting for
+   * `settled` means this normally writes exactly once; keying on the text
+   * means that if it ever writes twice, the second one corrects the first.
    */
   const epitaphKeptRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!epitaph || !address) return;
-    if (epitaphKeptRef.current === epitaph.id) return;
-    epitaphKeptRef.current = epitaph.id;
+    if (!epitaph || !address || !epitaphSettled) return;
+    const stamp = `${epitaph.id}:${epitaph.text}`;
+    if (epitaphKeptRef.current === stamp) return;
+    epitaphKeptRef.current = stamp;
     markEpitaphWritten(address, epitaph);
-  }, [epitaph, address]);
+  }, [epitaph, epitaphSettled, address]);
 
   // Lock Descend for 1 second whenever a fresh decision appears, so a
   // player mashing through combat can't blow past the decision and dive

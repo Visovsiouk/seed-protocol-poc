@@ -89,8 +89,14 @@ describe("sanitizeEpitaph", () => {
   it("counts sentences after truncating, not before", () => {
     // Four sentences, but only the first two fit. Those two are a good note,
     // and refusing them would waste a call that already succeeded.
-    const text = `A. B. ${"c".repeat(EPITAPH_MAX_CHARS)}. D.`;
-    expect(sanitizeEpitaph(text)).toBe("A. B.");
+    //
+    // Deliberately worded rather than `A. B.`: a single capital before a
+    // period is an initial as far as `prose-filter` is concerned, because
+    // `V. Raine` is a shape the borrowers' own signatures teach the model and
+    // one-letter sentences are not a thing. The ordering under test here is
+    // truncate-then-count, which is independent of that.
+    const text = `It ended. I stayed. ${"c".repeat(EPITAPH_MAX_CHARS)}. Nothing else.`;
+    expect(sanitizeEpitaph(text)).toBe("It ended. I stayed.");
   });
 
   it("never returns anything over the character cap", () => {

@@ -74,3 +74,82 @@ describe("getRealmRateLimits", () => {
     ).toBeGreaterThan(0);
   });
 });
+
+describe("getStoryAiEnv", () => {
+  const STORY_KEYS = [
+    "STORY_AI_ENABLED",
+    "STORY_AI_MODEL",
+    "STORY_AI_TIMEOUT_MS",
+    "STORY_AI_RATE_LIMIT_PER_IP_PER_10MIN",
+    "ANTHROPIC_API_KEY",
+  ] as const;
+
+  async function freshStoryEnv(over: Record<string, string | undefined>) {
+    for (const k of STORY_KEYS) delete process.env[k];
+    for (const [k, v] of Object.entries(over)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+    vi.resetModules();
+    return import("@/lib/env");
+  }
+
+  it("falls back to defaults on a bare environment", async () => {
+    const env = await freshStoryEnv({});
+    expect(env.getStoryAiEnv().STORY_AI_ENABLED).toBe("false");
+    expect(env.storyAiEnabled()).toBe(false);
+  });
+
+  it.each([
+    ["a mis-cased flag", { STORY_AI_ENABLED: "TRUE" }],
+    ["a non-numeric timeout", { STORY_AI_TIMEOUT_MS: "6s" }],
+    ["a negative rate limit", { STORY_AI_RATE_LIMIT_PER_IP_PER_10MIN: "-1" }],
+    ["an empty model", { STORY_AI_MODEL: "" }],
+  ])("does not throw on %s", async (_label, over) => {
+    // Regression guard for the whole story-AI contract. `.default()` only
+    // substitutes for an *absent* value, so a present-but-invalid one used to
+    // make `.parse` throw — and because `withStoryGuards` reads the rate limit
+    // before the handler runs, that surfaced as a 500 from every
+    // /api/story/* request. The routes promise narration can never change a
+    // response code, and this is where that is kept.
+    const env = await freshStoryEnv(over);
+    expect(() => env.getStoryAiEnv()).not.toThrow();
+    expect(env.getStoryAiEnv().STORY_AI_ENABLED).toBe("false");
+    expect(env.storyAiEnabled()).toBe(false);
+  });
+
+  it("warns rather than failing silently, naming the key", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const env = await freshStoryEnv({ STORY_AI_ENABLED: "TRUE" });
+      env.getStoryAiEnv();
+      expect(warn).toHaveBeenCalledOnce();
+      expect(warn.mock.calls[0]![0]).toContain("STORY_AI_ENABLED");
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("still reads a valid environment", async () => {
+    const env = await freshStoryEnv({
+      STORY_AI_ENABLED: "true",
+      ANTHROPIC_API_KEY: "sk-ant-test",
+      STORY_AI_TIMEOUT_MS: "1234",
+    });
+    expect(env.getStoryAiEnv().STORY_AI_TIMEOUT_MS).toBe(1234);
+    expect(env.storyAiEnabled()).toBe(true);
+  });
+
+  it("memoises, so one bad value warns once rather than per request", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const env = await freshStoryEnv({ STORY_AI_TIMEOUT_MS: "soon" });
+      env.getStoryAiEnv();
+      env.getStoryAiEnv();
+      env.getStoryAiEnv();
+      expect(warn).toHaveBeenCalledOnce();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+});

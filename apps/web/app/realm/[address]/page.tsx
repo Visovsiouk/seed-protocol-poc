@@ -24,6 +24,7 @@ import { MetricsRow } from "@/components/realm/MetricsRow";
 import { BossLeaderboard } from "@/components/realm/BossLeaderboard";
 import { RealmAssetsGrid } from "@/components/realm/RealmAssetsGrid";
 import { useRealms } from "@/lib/reads/hooks";
+import { queryKeys } from "@/lib/reads/cache";
 import { listStarterRealms } from "@/lib/contracts/starter-realms";
 import { getSeededSchemaIds } from "@/lib/contracts/seeded-realms";
 import { resolveRealmDetail, type RealmDetail } from "@/lib/contracts/realm-detail";
@@ -215,7 +216,9 @@ export default function RealmDashboardPage() {
   // metadata hardcoded in starter-realms.ts; creator realms need this
   // to get name, preset, bossId, maxTier, and lootSchemaId.
   const metaQuery = useQuery({
-    queryKey: ["realm-meta", address],
+    // Same key as the play route and the create flow's invalidation, through
+    // the catalog — see `queryKeys.realmMeta`.
+    queryKey: address ? queryKeys.realmMeta(address) : ["realm-meta", "none"],
     enabled: !!address && detail?.kind === "creator",
     staleTime: Infinity,
     queryFn: async () => (address ? fetchCreatorMeta(address) : null),

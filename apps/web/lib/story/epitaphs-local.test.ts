@@ -78,6 +78,47 @@ describe("epitaphs-local", () => {
     expect(loadEpitaphs(A)).toHaveLength(2);
   });
 
+  it("replaces the prose when the same death is written with new words", () => {
+    // `epitaphId` hashes the run's facts, not the text, so the bank note and a
+    // generated one share an id. Dropping the second write meant the bank line
+    // won the race and the Book showed words the player never read — the drift
+    // this store holds prose to prevent.
+    const bank = noteAt(3);
+    markEpitaphWritten(A, bank);
+    markEpitaphWritten(A, { ...bank, text: "What the model actually said." });
+
+    const rows = loadEpitaphs(A);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.text).toBe("What the model actually said.");
+  });
+
+  it("keeps a corrected note in the position the death happened", () => {
+    markEpitaphWritten(A, noteAt(1));
+    markEpitaphWritten(A, noteAt(2));
+    markEpitaphWritten(A, noteAt(3));
+    markEpitaphWritten(A, { ...noteAt(2), text: "Rewritten by the model." });
+
+    const rows = loadEpitaphs(A);
+    expect(rows.map((n) => n.id)).toEqual([
+      noteAt(1).id,
+      noteAt(2).id,
+      noteAt(3).id,
+    ]);
+    expect(rows[1]!.text).toBe("Rewritten by the model.");
+  });
+
+  it("does not touch storage when the words are unchanged", () => {
+    const note = noteAt(3);
+    markEpitaphWritten(A, note);
+    const setItem = vi.spyOn(window.localStorage, "setItem");
+    try {
+      markEpitaphWritten(A, note);
+      expect(setItem).not.toHaveBeenCalled();
+    } finally {
+      setItem.mockRestore();
+    }
+  });
+
   it("namespaces by player", () => {
     markEpitaphWritten(A, noteAt(1));
     markEpitaphWritten(B, noteAt(2));

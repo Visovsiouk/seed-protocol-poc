@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect, useState } from "react";
+
 import { Panel } from "@/components/ui";
 import { BankStatusLine, type BankStatus } from "./BankStatus";
 import { ChoiceRow, type Choice } from "./ChoiceRow";
@@ -28,6 +30,14 @@ export type ClearReceiptStatus =
  *
  * `blocked` is for a mint still holding the player's loot, never for a
  * cosmetic receipt: a slow clearReceipt must not trap anyone on this screen.
+ *
+ * While `blocked`, leaving takes two presses rather than one. The exit stays
+ * reachable on purpose — a stuck chain must not be a locked door — but the
+ * first press now says what leaving costs. Navigating away unmounts the tree
+ * that owns the mint loop and `BankStatusLine`'s retry, so a finding that
+ * fails after the player has gone is dropped with nothing left to report it:
+ * previously the only exit from a cleared run was an auto-return gated on the
+ * bank being `done`, and that guard went when the player got a button.
  */
 function RunExit({
   label,
@@ -38,6 +48,44 @@ function RunExit({
   onLeave: () => void;
   blocked: boolean;
 }) {
+  const [armed, setArmed] = useState(false);
+
+  // Disarm the moment the findings land, so a confirm the player opened during
+  // the mint doesn't outlive the reason for it.
+  useEffect(() => {
+    if (!blocked) setArmed(false);
+  }, [blocked]);
+
+  if (blocked && armed) {
+    return (
+      <div className="flex flex-col gap-2">
+        <p className="font-mono text-[10px] uppercase tracking-[0.16em] opacity-70">
+          Your findings are still being recorded. Leave now and anything that
+          fails is lost.
+        </p>
+        <ChoiceRow
+          ariaLabel="Leave before the findings are recorded"
+          choices={
+            [
+              {
+                key: "wait",
+                label: "Wait for them",
+                variant: "primary",
+                onClick: () => setArmed(false),
+              },
+              {
+                key: "leave-anyway",
+                label: "Leave anyway",
+                onClick: onLeave,
+              },
+            ] satisfies Choice[]
+          }
+          showHint={false}
+        />
+      </div>
+    );
+  }
+
   return (
     <ChoiceRow
       ariaLabel="Leave the page"
@@ -50,7 +98,7 @@ function RunExit({
             // to the bank status instead; still pressable, because a stuck
             // chain must not be a locked door.
             variant: blocked ? "default" : "primary",
-            onClick: onLeave,
+            onClick: blocked ? () => setArmed(true) : onLeave,
           },
         ] satisfies Choice[]
       }

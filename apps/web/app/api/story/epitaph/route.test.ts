@@ -164,6 +164,41 @@ describe("POST /api/story/epitaph", () => {
     __resetStoryAiEnv();
   });
 
+  it.each([
+    ["a mis-cased flag", "STORY_AI_ENABLED", "TRUE"],
+    ["a non-numeric timeout", "STORY_AI_TIMEOUT_MS", "6s"],
+    ["an unparseable rate limit", "STORY_AI_RATE_LIMIT_PER_IP_PER_10MIN", "lots"],
+  ])(
+    "still answers 200 with the bank when the env has %s",
+    async (_label, key, value) => {
+      // The contract in this route's docblock is that narration can never
+      // change a response code. `.default()` only fills in an *absent* value,
+      // so a present-but-invalid one used to throw out of `withStoryGuards` —
+      // which reads the rate limit before the handler runs — and every request
+      // here became a 500 with no bank note in it.
+      const before = process.env[key];
+      process.env[key] = value;
+      const { __resetStoryAiEnv } = await import("@/lib/env");
+      __resetStoryAiEnv();
+      __resetStoryRateLimit();
+      generateEpitaph.mockResolvedValue(null);
+
+      try {
+        const res = await post(FACTS, "7.7.7.7");
+        expect(res.status).toBe(200);
+        await expect(res.json()).resolves.toMatchObject({
+          ok: true,
+          source: "bank",
+        });
+      } finally {
+        if (before === undefined) delete process.env[key];
+        else process.env[key] = before;
+        __resetStoryAiEnv();
+        __resetStoryRateLimit();
+      }
+    },
+  );
+
   it("never emits prose over the character cap", async () => {
     // The route trusts `generateEpitaph` to have sanitised, but the bank note
     // is composed here and must respect the same ceiling the overlay is laid

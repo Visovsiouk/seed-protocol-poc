@@ -27,32 +27,55 @@ import type { MarginNote } from "./marginalia";
  * edited. The rule the filter encodes — generated prose is never shown
  * unreviewed — is worth enforcing at the point of render too.
  *
- * ── Deliberately NOT persisted ─────────────────────────────────────────────
- * The epitaph's id goes into the margins store (that's how a death joins the
- * collected notes), but the *text* does not: the bank is deterministic in the
- * run seed, so the note recomposes identically forever without storing a word.
- * A generated upgrade is therefore transient by design — it belongs to the
- * moment the player died, and the canonical note is the one the book can
- * always rewrite from the seed.
+ * ── Why it reports `settled` ───────────────────────────────────────────────
+ * The note is *persisted* by the caller (`epitaphs-local.ts` keeps the note as
+ * rendered, so the Book never shows a player different words than the ones
+ * they died to). That write therefore has to happen after this hook has
+ * stopped changing its mind, or it records the bank line and the player reads
+ * the generated one — a margin note that rewrites itself between readings,
+ * which is the exact failure the store was built to avoid. `settled` is that
+ * signal: true when nothing further will arrive, immediately so on the default
+ * flag-off path.
  */
-export function useEpitaph(facts: EpitaphFacts | undefined): MarginNote | undefined {
+export function useEpitaph(facts: EpitaphFacts | undefined): {
+  note: MarginNote | undefined;
+  settled: boolean;
+} {
   // Keyed on the identity of the death, so a re-render never re-fetches and a
   // *new* death always does. Stringified rather than object-compared because
   // `facts` is rebuilt by the caller's `useMemo` on unrelated state changes.
+  // Covers every field the request body sends, so two deaths that differ only
+  // in `preset` or `wasBookmark` cannot share an answer.
   const key = facts
-    ? `${facts.runSeed}:${facts.depth}:${facts.killedBy}:${facts.turns}:${facts.carried}`
+    ? `${facts.runSeed}:${facts.preset}:${facts.depth}:${facts.killedBy}:${facts.wasBookmark}:${facts.turns}:${facts.carried}`
     : "";
 
   const [generated, setGenerated] = useState<{ key: string; text: string } | null>(
     null,
   );
-  const askedRef = useRef<string>("");
+  // The key whose request has reached a terminal state. State rather than a
+  // ref because the caller gates a write on it and so has to re-render.
+  const [settledKey, setSettledKey] = useState<string | null>(null);
+
+  // Read inside the request effect instead of depended on. `facts` is an
+  // object identity the caller rebuilds on unrelated state changes, and
+  // depending on it meant every such change tore down an in-flight request —
+  // which, paired with a latch that was set before the fetch and never
+  // cleared, discarded the answer permanently. `key` is the real identity of
+  // the work, and it encodes every field the request body reads.
+  //
+  // Assigned in an effect rather than during render: a render React discards
+  // must not be able to leave anything behind, and this hook is mounted inside
+  // a strict-mode double-invoke. Declared above the request effect so it has
+  // already run by the time that one fires on the same commit.
+  const factsRef = useRef(facts);
+  useEffect(() => {
+    factsRef.current = facts;
+  }, [facts]);
 
   useEffect(() => {
-    if (!facts || !storyAiClientHint) return;
-    // One request per death, even under strict-mode double-invocation.
-    if (askedRef.current === key) return;
-    askedRef.current = key;
+    const current = factsRef.current;
+    if (!current || !storyAiClientHint) return;
 
     const ctrl = new AbortController();
     // The server has its own (tighter) ceiling; this one exists for the case
@@ -66,31 +89,45 @@ export function useEpitaph(facts: EpitaphFacts | undefined): MarginNote | undefi
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
-            runSeed: facts.runSeed,
-            preset: facts.preset,
-            depth: facts.depth,
-            killedBy: facts.killedBy,
-            wasBookmark: facts.wasBookmark,
-            turns: facts.turns,
-            carried: facts.carried,
+            runSeed: current.runSeed,
+            preset: current.preset,
+            depth: current.depth,
+            killedBy: current.killedBy,
+            wasBookmark: current.wasBookmark,
+            turns: current.turns,
+            carried: current.carried,
           }),
           signal: ctrl.signal,
         });
-        if (!res.ok) return;
+        if (!res.ok) {
+          setSettledKey(key);
+          return;
+        }
 
         const json = (await res.json()) as Partial<EpitaphResponse>;
         // `source: "bank"` means the server already fell back, and it fell
         // back to the exact text this hook is rendering — so there is nothing
         // to swap in. Checked explicitly to make that a no-op rather than a
         // pointless state update that re-renders the overlay.
-        if (json.source !== "model") return;
+        if (json.source !== "model") {
+          setSettledKey(key);
+          return;
+        }
 
         const clean = sanitizeEpitaph(json.text);
         if (clean) setGenerated({ key, text: clean });
+        // Settled either way: a rejected answer means the bank note is final.
+        setSettledKey(key);
       } catch {
         // Abort, offline, parse failure — all the same non-event. The player
         // has a note either way, and a death screen must never surface a
         // narration error.
+        //
+        // Deliberately does NOT settle. An abort is the one outcome that is
+        // not an answer: strict mode aborts the first of its two mounts, and
+        // settling here would both mark a death final before its real request
+        // landed and let the caller persist a bank note it is about to
+        // replace. Every genuine outcome settles above.
       } finally {
         window.clearTimeout(timer);
       }
@@ -100,15 +137,19 @@ export function useEpitaph(facts: EpitaphFacts | undefined): MarginNote | undefi
       window.clearTimeout(timer);
       ctrl.abort();
     };
-  }, [facts, key]);
+  }, [key]);
 
-  if (!facts) return undefined;
+  if (!facts) return { note: undefined, settled: true };
 
   const base = epitaphFallback(facts);
+  // Nothing is coming on the default path, so the bank note is final on the
+  // first render — the overlay and the Book agree without waiting.
+  const settled = !storyAiClientHint || settledKey === key;
+
   // Guard on `key`: a generated line from the *previous* death must never
   // survive into the next one's overlay.
   if (generated && generated.key === key) {
-    return { ...base, text: generated.text };
+    return { note: { ...base, text: generated.text }, settled };
   }
-  return base;
+  return { note: base, settled };
 }

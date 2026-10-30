@@ -152,6 +152,12 @@ export function getRealmRateLimits(): RealmRateLimits {
  * environment.** That is load-bearing rather than tidy: the routes must
  * degrade to the hand-authored bank on a machine with no configuration at
  * all, and an env parse that throws would turn "no key" into a 500.
+ *
+ * Defaults alone are not enough to deliver that, because `.default()` only
+ * substitutes for an **absent** value — `STORY_AI_ENABLED=TRUE` or
+ * `STORY_AI_TIMEOUT_MS=6s` is present and invalid, and `.parse` throws on it.
+ * A bare environment was safe while a typo'd one took every `/api/story/*`
+ * request to a 500. `getStoryAiEnv()` below closes that with `safeParse`.
  */
 const storyAiSchema = z.object({
   STORY_AI_ENABLED: z.enum(["true", "false"]).default("false"),
@@ -184,10 +190,36 @@ export type StoryAiEnv = z.infer<typeof storyAiSchema>;
 
 let cachedStoryAiEnv: StoryAiEnv | null = null;
 
-/** Lazily parse story-AI env. Cannot throw on a bare environment. */
+/**
+ * Lazily parse story-AI env. Cannot throw — on a bare environment *or* an
+ * invalid one.
+ *
+ * An invalid value is warned about and then dropped in favour of the defaults,
+ * rather than propagated. The routes promise that narration can never change a
+ * response code (see `app/api/story/epitaph/route.ts`), and this is the only
+ * place that promise can be kept: a throw here surfaces as a 500 from inside
+ * `withStoryGuards`, which reads the rate limit before the handler runs.
+ *
+ * It warns rather than failing silently because the failure is otherwise
+ * invisible in the direction that matters — `STORY_AI_ENABLED=TRUE` would be
+ * read as "off" while the operator believes they switched it on.
+ */
 export function getStoryAiEnv(): StoryAiEnv {
   if (cachedStoryAiEnv) return cachedStoryAiEnv;
-  cachedStoryAiEnv = storyAiSchema.parse(process.env);
+  const parsed = storyAiSchema.safeParse(process.env);
+  if (parsed.success) {
+    cachedStoryAiEnv = parsed.data;
+  } else {
+    const keys = [
+      ...new Set(parsed.error.issues.map((i) => String(i.path[0]))),
+    ].join(", ");
+    console.warn(
+      `[story-ai] ignoring invalid env (${keys}) — falling back to defaults, so generation is off. Valid values: STORY_AI_ENABLED=true|false, the rest positive integers.`,
+    );
+    // `{}` rather than `process.env`: every field is defaulted, so an empty
+    // object is the one input guaranteed to parse.
+    cachedStoryAiEnv = storyAiSchema.parse({});
+  }
   return cachedStoryAiEnv;
 }
 
