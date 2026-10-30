@@ -73,6 +73,17 @@ const PROSE_PROVIDERS: Record<string, () => string[]> = {
       const lore = bookmarks.bookmarkLore(id);
       return [lore.intro, lore.turn, lore.fell ?? ""];
     }),
+  // A page's distinct-clearer count, said as a sentence. Exported as a
+  // function, so the namespace walker can't see it — swept across every branch
+  // (no clearers, one, several, and the T5 terminal case with no next rung).
+  pageReach: () =>
+    [
+      { distinctClearers: 0, nextTierAt: 20 },
+      { distinctClearers: 1, nextTierAt: 20 },
+      { distinctClearers: 7, nextTierAt: 20 },
+      { distinctClearers: 34, nextTierAt: 50 },
+      { distinctClearers: 50, nextTierAt: null },
+    ].map((args) => progression.pageReachLine(args)),
   // Every effect line plus both tier fallbacks. The effect names mirror the
   // catalog; an unknown one exercises the tier path.
   provenance: () => {

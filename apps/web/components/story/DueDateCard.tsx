@@ -26,6 +26,9 @@
 import { PlayerSigil } from "@/components/art/PlayerSigil";
 import { CardEntries } from "@/components/story/CardEntries";
 import { Stamp } from "@/components/ui";
+import { usePlayerRealms } from "@/lib/reads/hooks";
+import { BORROWERS, stampDate } from "@/lib/story/canon";
+import { shortAddress } from "@/lib/utils";
 import {
   signetLine,
   type CardStamp,
@@ -123,7 +126,7 @@ export function DueDateCard({
 
       {card.returnColumnTorn && (
         <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--color-danger)] opacity-75">
-          Return column torn. No way to sign out.
+          Return column torn. Nobody has ever been stamped back in.
         </p>
       )}
 
@@ -131,6 +134,127 @@ export function DueDateCard({
         <Stamp tone="muted">Before you</Stamp>
         <CardEntries freshRow={card.signed} signed={card.signed} />
       </div>
+
+      <BesideYou />
+    </div>
+  );
+}
+
+/**
+ * The rows that are not finished yet.
+ *
+ * `CardEntries` above is the borrowers who came *before* — six names across two
+ * centuries, every one stamped out and not one stamped back in. This is the
+ * other half of the same fact, and the story had no account of it anywhere:
+ * every live player is a borrower too, holding the same book at the same time.
+ * Their pages are in the registry under their own address, and one of them will
+ * read the player's line the way the player reads the margins.
+ *
+ * ── Why there is no total here ─────────────────────────────────────────────
+ * The Base already counts quires added (`BookThickness` in `RealmSelector`),
+ * and it counts them from the *on-chain registry* while these rows come from
+ * the *registration db*. A realm that was deployed but never registered
+ * through `/create` is in the first and not the second, so the two numbers can
+ * legitimately disagree. Printing both near each other would read as a bug, so
+ * this surface shows rows and lets the Base own the arithmetic.
+ */
+function BesideYou() {
+  const { data, isLoading, isError } = usePlayerRealms();
+
+  // Newest first. `listPlayerRealms` returns `ORDER BY created_at ASC` and a
+  // Map preserves that, so this re-sorts rather than trusting the order.
+  // `createdAt` is unix seconds — see `insertPlayerRealm` in realm-db.ts.
+  const recent = data
+    ? [...data.values()].sort((a, b) => b.createdAt - a.createdAt).slice(0, 3)
+    : [];
+
+  return (
+    <div className="flex flex-col gap-2">
+      <Stamp tone="muted">Beside you</Stamp>
+
+      {isLoading ? (
+        <p className="font-mono text-[10px] uppercase tracking-[0.16em] opacity-50">
+          Reading the registry…
+        </p>
+      ) : isError ? (
+        /*
+         * An unreadable registry is not an empty one, and this distinction is
+         * not pedantry: `/api/realm/list` fans out a chain read per realm to
+         * resolve tiers, so it returns 500 whenever the node is unreachable —
+         * which is the *normal* state with no local chain running. Without this
+         * branch the card confidently told the player nobody had added a page
+         * while the db held several. Found in a browser, not by the suite.
+         */
+        <p className="text-[11px] leading-relaxed opacity-65">
+          The registry will not read right now, so there is no telling who else
+          is holding this book.
+        </p>
+      ) : recent.length === 0 ? (
+        <p className="text-[11px] leading-relaxed opacity-65">
+          No borrower has added a page yet. The rows under yours are still
+          blank — which has never been true of this card for long.
+        </p>
+      ) : (
+        <>
+          {/*
+           * `table-fixed` is load-bearing, not tidiness. Under the default
+           * auto layout the table ignores `w-full` and grows to its content's
+           * min-content width — a long page name took it to 481px inside a
+           * 341px dock, and because this wrapper is `overflow-hidden` the
+           * column was *clipped* rather than ellipsised, so `truncate` below
+           * never fired. Fixed layout makes the 100% real and the column
+           * widths definite, which is what `truncate` needs to work at all.
+           * `CardEntries` gets away with auto layout only because a signature
+           * is always short.
+           */}
+          <div className="overflow-hidden rounded-[2px] border border-[var(--border-1)] bg-[color-mix(in_oklab,var(--color-preset-fg)_7%,transparent)] font-mono text-[11px] leading-none">
+            <table className="w-full table-fixed border-collapse">
+              <caption className="sr-only">
+                Pages other borrowers have added, newest first.
+              </caption>
+              <thead>
+                <tr className="text-[9px] uppercase tracking-[0.2em] opacity-55">
+                  <th
+                    scope="col"
+                    className="w-[6.25rem] px-2 py-1.5 text-left font-normal"
+                  >
+                    Added
+                  </th>
+                  <th scope="col" className="px-2 py-1.5 text-left font-normal">
+                    Page
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {recent.map((r) => (
+                  <tr
+                    key={r.address}
+                    className="border-t border-[var(--border-1)]/60"
+                  >
+                    <td className="whitespace-nowrap px-2 py-1.5 align-top tabular-nums opacity-70">
+                      {stampDate(formatStampDate(r.createdAt))}
+                    </td>
+                    <td className="min-w-0 px-2 py-1.5">
+                      <span className="block truncate opacity-85">
+                        {r.name}
+                      </span>
+                      <span className="mt-1 block truncate text-[9px] opacity-55">
+                        {shortAddress(r.owner)}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <p className="text-[11px] leading-relaxed opacity-60">
+            Added while you were down there, by hands you will never meet. One
+            of them will read your line the way you read{" "}
+            {BORROWERS.marrow.name}&apos;s.
+          </p>
+        </>
+      )}
     </div>
   );
 }

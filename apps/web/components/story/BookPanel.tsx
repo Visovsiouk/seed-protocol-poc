@@ -39,7 +39,14 @@ import { emptyTutorialProgress } from "@/lib/tutorial/progress";
 import { dueDateCard } from "@/lib/story/card";
 import { PAGES } from "@/lib/story/canon";
 import { REALM_ORDER } from "@/lib/story/progression";
-import { noteSignature, type MarginNote } from "@/lib/story/marginalia";
+import {
+  marginHands,
+  noteSignature,
+  type MarginHandId,
+  type MarginNote,
+} from "@/lib/story/marginalia";
+import type { MarginsCollection } from "@/lib/story/use-margins";
+import type { Preset } from "@/lib/engine/types";
 import { loadCrossings, type Crossing } from "@/lib/story/crossings-local";
 
 type Tab = "card" | "margins" | "pages";
@@ -50,13 +57,15 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "pages", label: "Pages" },
 ];
 
+const NO_MARGINS: MarginsCollection = { found: new Map(), mine: [], count: 0 };
+
 export function BookPanel({
-  /** Notes the borrower has found, newest first. */
-  margins = [],
+  /** What the borrower has read, and where each note turned up. */
+  margins = NO_MARGINS,
   /** Whether the borrower has signed the card (owned by the caller). */
   signed,
 }: {
-  margins?: readonly MarginNote[];
+  margins?: MarginsCollection;
   signed: boolean;
 }) {
   const { address } = useAccount();
@@ -124,8 +133,8 @@ export function BookPanel({
               ].join(" ")}
             >
               {t.label}
-              {t.id === "margins" && margins.length > 0 && (
-                <span className="ml-1 opacity-70">{margins.length}</span>
+              {t.id === "margins" && margins.count > 0 && (
+                <span className="ml-1 opacity-70">{margins.count}</span>
               )}
             </button>
           );
@@ -139,15 +148,52 @@ export function BookPanel({
         tabIndex={0}
       >
         {tab === "card" && <DueDateCard card={card} address={address} />}
-        {tab === "margins" && <Margins notes={margins} />}
+        {tab === "margins" && <Margins margins={margins} />}
         {tab === "pages" && <Pages card={card} crossings={crossings} />}
       </div>
     </div>
   );
 }
 
-function Margins({ notes }: { notes: readonly MarginNote[] }) {
-  if (notes.length === 0) {
+/**
+ * The margins, as a correspondence rather than a log.
+ *
+ * ── What was wrong ─────────────────────────────────────────────────────────
+ * This used to be one flat newest-first list of every note the player had
+ * found. Thirty-nine fragments by three people across a hundred and thirty
+ * years, shuffled into the order the player happened to clear rooms in, with
+ * no indication of whose hand you were reading or what you were missing. The
+ * notes were never the problem — each one is written to survive being read
+ * first, cold, mid-run. The view threw away everything that made the
+ * collection worth keeping afterwards.
+ *
+ * ── What it does now ───────────────────────────────────────────────────────
+ * Groups by hand (`marginHands()`), keeps each hand's notes in the order that
+ * hand wrote them, and renders the ones still missing as blank ruled lines —
+ * so the shape of what you don't have is visible, and a hand is something you
+ * can finish. Each found note also shows the page it turned up on, which is
+ * the canon's own answer to how a note from 1911 is legible in 2041.
+ *
+ * ── Accordion, not a modal ─────────────────────────────────────────────────
+ * One hand open at a time, because the dock popover is `max-h-[70dvh]` and six
+ * hands' worth of notes and gaps is a multi-thousand-pixel scroll otherwise.
+ * Plain buttons with `aria-expanded`/`aria-controls` and **no focus trap** —
+ * the dock is explicit that its popovers are not modals and Tab must still
+ * walk out of them.
+ */
+function Margins({
+  margins,
+}: {
+  margins: MarginsCollection;
+}) {
+  const hands = marginHands();
+  // `null` means every hand is closed, which is the honest starting state:
+  // the player opened a tab, not a person.
+  const [open, setOpen] = useState<MarginHandId | "mine" | null>(null);
+
+  const total = hands.reduce((n, h) => n + h.notes.length, 0);
+
+  if (margins.count === 0 && margins.mine.length === 0) {
     return (
       <div className="flex flex-col gap-2">
         <Body size="sm">
@@ -159,19 +205,144 @@ function Margins({ notes }: { notes: readonly MarginNote[] }) {
   }
 
   return (
-    <ul className="flex flex-col gap-4">
-      {notes.map((n) => (
-        <li
-          key={n.id}
-          className="flex flex-col gap-1 border-l border-[var(--border-2)] pl-3"
+    <div className="flex flex-col gap-2">
+      <p className="font-mono text-[10px] uppercase tracking-[0.18em] opacity-55">
+        {margins.count} of {total} read
+      </p>
+
+      {/* The player's own hand. Stored as rendered rather than as bank ids,
+          so it has no entry in `marginHands()` and gets its own section —
+          and it is the only hand with no gaps to show, because the book
+          writes a new one each time rather than drawing from a bank. */}
+      {margins.mine.length > 0 && (
+        <Section
+          id="mine"
+          label="your own hand"
+          meta={`${margins.mine.length} ${margins.mine.length === 1 ? "note" : "notes"}`}
+          open={open === "mine"}
+          onToggle={() => setOpen(open === "mine" ? null : "mine")}
         >
-          <MarginLine size="sm">{n.text}</MarginLine>
-          <MarginSignature>
-            {noteSignature(n)} · {n.date}
-          </MarginSignature>
-        </li>
-      ))}
-    </ul>
+          <ul className="flex flex-col gap-4">
+            {margins.mine.map((n) => (
+              <FoundNote key={n.id} note={n} on={null} />
+            ))}
+          </ul>
+        </Section>
+      )}
+
+      {hands.map((hand) => {
+        const read = hand.notes.filter((n) => margins.found.has(n.id)).length;
+        return (
+          <Section
+            key={hand.id}
+            id={hand.id}
+            label={hand.signature}
+            meta={`${read} of ${hand.notes.length}${hand.year ? ` · ${hand.year}` : ""}`}
+            open={open === hand.id}
+            onToggle={() => setOpen(open === hand.id ? null : hand.id)}
+          >
+            <ul className="flex flex-col gap-4">
+              {hand.notes.map((n) =>
+                margins.found.has(n.id) ? (
+                  <FoundNote
+                    key={n.id}
+                    note={n}
+                    on={margins.found.get(n.id) ?? null}
+                  />
+                ) : (
+                  <MissingNote key={n.id} />
+                ),
+              )}
+            </ul>
+          </Section>
+        );
+      })}
+    </div>
+  );
+}
+
+function Section({
+  id,
+  label,
+  meta,
+  open,
+  onToggle,
+  children,
+}: {
+  id: string;
+  label: string;
+  meta: string;
+  open: boolean;
+  onToggle: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="border-t border-[var(--border-1)]/70 pt-2 first:border-t-0">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        aria-controls={`margin-hand-${id}`}
+        className="flex w-full items-baseline justify-between gap-3 py-1 text-left transition-opacity hover:opacity-100"
+        style={{ opacity: open ? 1 : 0.75 }}
+      >
+        <span className="min-w-0 truncate font-[family-name:var(--font-margin)] text-[15px]">
+          {label}
+        </span>
+        <span className="shrink-0 font-mono text-[9px] uppercase tracking-[0.16em] tabular-nums opacity-60">
+          {meta}
+        </span>
+      </button>
+      {open && (
+        <div id={`margin-hand-${id}`} className="pb-2 pt-2">
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FoundNote({
+  note,
+  on,
+}: {
+  note: MarginNote;
+  on: Preset | null;
+}) {
+  return (
+    <li className="flex flex-col gap-1 border-l border-[var(--border-2)] pl-3">
+      <MarginLine size="sm">{note.text}</MarginLine>
+      <MarginSignature>
+        {noteSignature(note)} · {note.date}
+      </MarginSignature>
+      {/* Where it surfaced, which is rarely where it was written. Absent for
+          finds recorded before the store kept the page — see margins-local. */}
+      {on && (
+        <span className="font-mono text-[9px] uppercase tracking-[0.14em] opacity-45">
+          found on {PAGES[on].name}
+        </span>
+      )}
+    </li>
+  );
+}
+
+/**
+ * A note this hand wrote that the player has not turned up.
+ *
+ * A ruled blank rather than a lock or a count: the page is there, the writing
+ * on it simply hasn't been read yet. This is what turns the tab from a feed
+ * into something with a shape you can see the end of.
+ */
+function MissingNote() {
+  return (
+    <li className="flex flex-col gap-1 border-l border-dashed border-[var(--border-1)] pl-3">
+      <span className="sr-only">An unread note by this hand.</span>
+      <span
+        aria-hidden
+        className="block h-[1px] w-full bg-[var(--border-2)] opacity-40"
+        style={{ marginTop: "0.75rem", marginBottom: "0.75rem" }}
+      />
+    </li>
   );
 }
 

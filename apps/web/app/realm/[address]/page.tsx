@@ -465,6 +465,9 @@ export default function RealmDashboardPage() {
               preset={effectivePreset}
               lootSchemaId={lootSchemaId}
               clearReceiptSchemaId={clearReceiptSchemaId}
+              // Only a page a borrower wrote earns tier from its clearer
+              // count; the founding three are pinned at T2 forever.
+              earnsTier={detail.kind === "creator"}
             />
             <div className="grid gap-6 lg:grid-cols-2">
               {effectivePreset && (

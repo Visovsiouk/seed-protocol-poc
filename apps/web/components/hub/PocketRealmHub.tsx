@@ -95,12 +95,17 @@ function ShardTrack({ shards }: { shards: number }) {
 /**
  * The Forge — where a signet gets pressed into a blank quire.
  *
- * This is the ending of the story, not an advanced feature, and the copy has
- * to carry that: a signet also lets you sign out, signing out shuts the book
- * with everyone still inside, and the only move that isn't his is to add a
- * page. The previous version read as a crafting menu instead — an earned
- * inscription, a half-made place to finish, a substance to pick and a jailer
- * to install in its heart. Wrong vocabulary and the wrong promise.
+ * Not an advanced feature, and the copy has to carry why. An earlier version
+ * made the signet a way out of the book and this room the argument against
+ * taking it — but no such action exists anywhere in this codebase, so the
+ * tension rested on a choice the player is never offered. That framing is
+ * retired (see `RETIRED_TERMS`). What is actually enforced reads better
+ * anyway: soulbound, spent on first use, one page per borrower ever
+ * (`BINDING.QUIRES_PER_BORROWER`), permanent and public in the registry.
+ *
+ * Before that it read as a crafting menu — an earned inscription, a half-made
+ * place to finish, a substance to pick and a jailer to install in its heart.
+ * Wrong vocabulary and the wrong promise.
  *
  * Nothing automated found it. The load-bearing words in that copy are all
  * excluded from `RETIRED_TERMS` as ambiguous, so it survived four commits
@@ -124,14 +129,13 @@ function ForgeRoom() {
           The forge
         </h3>
         <p className="text-sm leading-relaxed opacity-75">
-          Your signet will let you sign out. Don&apos;t — the book shuts behind
-          whoever does, with everyone still inside, and he has been working
-          toward that for two hundred years. Press it into a blank quire
-          instead. Say what era the page is written in, who gets filed into its
-          heart to hold it open, and leave it in the registry for the next
-          borrower to find. A book still being written cannot be given a
-          colophon, and every page another hand adds is one more he has to come
-          back for.
+          Your signet is soulbound, and it is spent the moment you use it: one
+          page, once, and never another. Say what era it is written in and what
+          kind of thing holds it open — the book decides who that turns out to
+          be. Then it sits in the registry under your name, and every borrower
+          after you is free to walk down it. A book still being written cannot
+          be given a colophon, and no one hand can add enough pages to keep it
+          open. That is what the others are for.
         </p>
       </header>
       <Link href="/create" prefetch className="self-start">

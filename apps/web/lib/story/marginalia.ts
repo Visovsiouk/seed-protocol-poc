@@ -40,7 +40,7 @@
 import { encodePacked, keccak256 } from "viem";
 import { createRng } from "@/lib/engine/rng";
 import type { Preset } from "@/lib/engine/types";
-import { borrower, type BorrowerId } from "./canon";
+import { CARD_ENTRIES, borrower, type BorrowerId } from "./canon";
 
 export type MarginNote = {
   /** Stable id — the localStorage key and the React key. */
@@ -326,30 +326,119 @@ const NOTES: readonly MarginNote[] = [
   },
 
   // ── Unsigned ────────────────────────────────────────────────────────────
-  // Borrowers the card doesn't name. One of these is in the player's own
-  // hand, which they have no way to know on a first read.
+  // Borrowers the card doesn't name. `by` is kept so each keeps its writer's
+  // voice while it is being edited, but it is *not* attribution: `signature`
+  // overrides it, which is what `noteSignature()` resolves and what both the
+  // in-run find and the Book render.
+  //
+  // That override was missing until the collection was grouped by hand and the
+  // bug fell out of it: without it, `noteSignature()` fell through to `by` and
+  // these rendered as "E. Marrow · signature scratched out" — naming the
+  // borrower in the same breath as saying the signature is gone, directly
+  // against this section's own heading. The ambiguity is the point of these
+  // three; one of them could be in the player's own hand and they have no way
+  // to tell.
   {
     id: "u-01",
     by: "marrow",
+    signature: "unsigned",
     date: "signature scratched out",
     text: "Do not finish it. Whatever else you do down here. Do not help him finish it.",
   },
   {
     id: "u-02",
     by: "salk",
+    signature: "unsigned",
     date: "signature scratched out",
     text: "The stamps aren't the way out. The stamps are so the book has to admit you exist. Different thing. Better thing.",
   },
   {
     id: "u-03",
     by: "raine",
+    signature: "unsigned",
     date: "signature scratched out",
-    text: "You will get the chance to sign out. Everyone does. That is the trap, and it is the last one.",
+    text: "Stop looking for the way out. There isn't one, there never was, and every hour you spend hunting it is an hour he spends writing.",
   },
 ];
 
 /** Every note in the bank. Exposed for tests and for the Book's empty state. */
 export const MARGIN_NOTES = NOTES;
+
+/** A writer the collection groups by: a named borrower, or the scratched-out. */
+export type MarginHandId = BorrowerId | "unsigned";
+
+export type MarginHand = {
+  id: MarginHandId;
+  /** How this hand signs itself — the section's own label. */
+  signature: string;
+  /** The year the card stamps against them, or `null` when unsigned. */
+  year: number | null;
+  /** Everything they wrote, in the order they wrote it. */
+  notes: readonly MarginNote[];
+};
+
+/**
+ * Which hand a note belongs to.
+ *
+ * **Signature-presence is checked first, and that ordering is load-bearing.**
+ * The three scratched-out notes carry a real `by` *and* a `signature` override
+ * saying the signature is gone. Reading `by` first would file each one neatly
+ * under its author — handing the player exactly the fact the scratch-out is
+ * there to withhold, and quietly deleting the best beat in the bank.
+ */
+export function handOf(note: MarginNote): MarginHandId {
+  if (note.signature) return "unsigned";
+  return note.by ?? "unsigned";
+}
+
+/**
+ * The bank, grouped into the hands that wrote it.
+ *
+ * ── Why grouped, and why in this order ─────────────────────────────────────
+ * Read in discovery order the notes are a log: thirty-nine fragments by three
+ * people across a hundred and thirty years, shuffled by the accident of which
+ * rooms the player happened to clear. Grouped by hand and kept in the order
+ * each person wrote them, the same notes become what they always were —
+ * Marrow's eleven descents in sequence, answered by Raine a century later.
+ *
+ * The hands come out in `CARD_ENTRIES` order, which is deliberately *not*
+ * chronological: it is the order the names appear on the date-due card the
+ * player is carrying. The Book and the card then agree about who comes where,
+ * and the scramble the card is built around survives into the collection
+ * instead of being quietly sorted away. The unsigned go last — they have no
+ * row on the card, which is the whole point of them.
+ *
+ * Pure and allocation-cheap; the bank is a module constant, so callers may
+ * call this per render without ceremony.
+ */
+export function marginHands(): readonly MarginHand[] {
+  const byHand = new Map<MarginHandId, MarginNote[]>();
+  for (const note of NOTES) {
+    const id = handOf(note);
+    const list = byHand.get(id);
+    if (list) list.push(note);
+    else byHand.set(id, [note]);
+  }
+
+  const hands: MarginHand[] = [];
+  for (const id of CARD_ENTRIES) {
+    const notes = byHand.get(id);
+    if (!notes || notes.length === 0) continue;
+    const who = borrower(id);
+    hands.push({ id, signature: who.signature, year: who.year, notes });
+  }
+
+  const unsigned = byHand.get("unsigned");
+  if (unsigned && unsigned.length > 0) {
+    hands.push({
+      id: "unsigned",
+      signature: "unsigned",
+      year: null,
+      notes: unsigned,
+    });
+  }
+  return hands;
+}
 
 export function noteById(id: string): MarginNote | undefined {
   return NOTES.find((n) => n.id === id);

@@ -1,8 +1,14 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { MARGIN_NOTES, marginAt, noteById } from "./marginalia";
-import { BORROWERS, RETIRED_TERMS } from "./canon";
+import {
+  MARGIN_NOTES,
+  handOf,
+  marginAt,
+  marginHands,
+  noteById,
+} from "./marginalia";
+import { BORROWERS, CARD_ENTRIES, RETIRED_TERMS } from "./canon";
 
 const SEED_A = "0x1111111111111111111111111111111111111111111111111111111111111111" as const;
 const SEED_B = "0x2222222222222222222222222222222222222222222222222222222222222222" as const;
@@ -183,5 +189,71 @@ describe("marginalia — the engine firewall", () => {
   it("uses a domain separator, so it can never collide with engine sub-seeds", () => {
     const src = readFileSync(join(__dirname, "marginalia.ts"), "utf8");
     expect(src).toContain('"margin"');
+  });
+});
+
+describe("marginHands", () => {
+  it("accounts for every note exactly once", () => {
+    const grouped = marginHands().flatMap((h) => h.notes.map((n) => n.id));
+    expect(grouped.length).toBe(MARGIN_NOTES.length);
+    expect(new Set(grouped).size).toBe(MARGIN_NOTES.length);
+  });
+
+  it("keeps a scratched-out note away from the author it names", () => {
+    // The three unsigned notes carry a real `by` *and* a signature override
+    // saying the signature is gone. Grouping on `by` would file them under
+    // their author and hand the player the exact fact the scratch-out exists
+    // to withhold — so signature-presence has to win.
+    const scratched = MARGIN_NOTES.filter((n) => n.signature);
+    expect(scratched.length).toBeGreaterThan(0);
+    for (const n of scratched) {
+      expect(n.by, "fixture: these carry an author to be hidden").toBeDefined();
+      expect(handOf(n)).toBe("unsigned");
+    }
+
+    const unsigned = marginHands().find((h) => h.id === "unsigned");
+    expect(unsigned?.notes.map((n) => n.id).sort()).toEqual(
+      scratched.map((n) => n.id).sort(),
+    );
+    // And none of them leaked into their author's section.
+    for (const hand of marginHands()) {
+      if (hand.id === "unsigned") continue;
+      for (const n of hand.notes) expect(n.signature).toBeUndefined();
+    }
+  });
+
+  it("orders hands the way the card does, with the unsigned last", () => {
+    const hands = marginHands().map((h) => h.id);
+    expect(hands[hands.length - 1]).toBe("unsigned");
+
+    // Named hands follow `CARD_ENTRIES`, which is deliberately not
+    // chronological — the Book and the date-due card agree about who comes
+    // where, scramble included.
+    const named = hands.filter((h) => h !== "unsigned");
+    const expected = CARD_ENTRIES.filter((id) => named.includes(id));
+    expect(named).toEqual(expected);
+    // Proof the order really is the card's and not just sorted by year.
+    const years = named.map((id) => BORROWERS[id as keyof typeof BORROWERS].year);
+    expect(years).not.toEqual([...years].sort((a, b) => a - b));
+  });
+
+  it("keeps each hand's notes in the order that hand wrote them", () => {
+    // Within a section the bank's own order is the person's chronology, which
+    // is what turns eleven fragments back into one borrower's descents.
+    for (const hand of marginHands()) {
+      const bankOrder = MARGIN_NOTES.filter((n) => handOf(n) === hand.id).map(
+        (n) => n.id,
+      );
+      expect(hand.notes.map((n) => n.id)).toEqual(bankOrder);
+    }
+  });
+
+  it("labels every hand with a signature and a year it can show", () => {
+    for (const hand of marginHands()) {
+      expect(hand.signature).toMatch(/.+/);
+      expect(hand.notes.length).toBeGreaterThan(0);
+      if (hand.id === "unsigned") expect(hand.year).toBeNull();
+      else expect(hand.year).toBeGreaterThan(1700);
+    }
   });
 });

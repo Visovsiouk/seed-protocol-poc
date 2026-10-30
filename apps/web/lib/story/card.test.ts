@@ -172,10 +172,12 @@ describe("signetLine", () => {
     expect(lineFor(["fantasy", "cyberpunk", "scifi"])).toContain("owes you a signet");
   });
 
-  it("points at the blank quire once the signet is cut, never at signing out", () => {
-    // The turn the whole story rests on: a signet lets you sign out, and
-    // signing out shuts the book with everyone still inside. This line must
-    // never offer that as the reward.
+  it("points at the blank quire once the signet is cut, never at leaving", () => {
+    // The signet is soulbound and spent on first use: it is worth exactly one
+    // page and nothing else. It is emphatically *not* a way out of the book —
+    // no such action exists in this app or its contracts, and that phrasing is
+    // on `RETIRED_TERMS` precisely because it promised one. The assertion below
+    // is the guard against it coming back as the reward.
     const line = lineFor(["fantasy", "cyberpunk", "scifi"], true);
     expect(line).toContain("blank quire");
     expect(line.toLowerCase()).not.toContain("sign out");

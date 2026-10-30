@@ -72,7 +72,7 @@ export function RealmActivityFeed({
       className="flex flex-col gap-3 p-4"
     >
       <header className="flex items-baseline justify-between gap-2">
-        <Stamp>Recent activity</Stamp>
+        <Stamp>What this page has given up</Stamp>
         {activity.isFetching && (
           <span className="text-[10px] opacity-65">refreshing…</span>
         )}
@@ -86,8 +86,8 @@ export function RealmActivityFeed({
         </p>
       ) : !activity.data || activity.data.length === 0 ? (
         <p className="text-sm opacity-70">
-          No mints on this realm yet. Clear the boss or accept a loot drop to
-          populate the feed.
+          Nothing has come up out of this page yet. Tear out its bookmark, or
+          carry a finding back up, and it starts keeping a record.
         </p>
       ) : (
         <ul className="flex flex-col gap-1.5">

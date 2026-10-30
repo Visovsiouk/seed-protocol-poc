@@ -60,9 +60,10 @@ export type DueDateCard = {
   /** How many slots are stamped, 0..3. Convenience for badges. */
   stampCount: number;
   /**
-   * Always true in the PoC. The tear is what makes signing out impossible and
-   * authorship the only way on, so it is modelled explicitly rather than
-   * hardcoded in the view — a later chapter that repairs the card has
+   * Always true in the PoC. Nobody has ever been stamped back in: there is no
+   * mechanism anywhere in this codebase for leaving the book, and the tear is
+   * the honest statement of that. It is modelled explicitly rather than
+   * hardcoded in the view so a later chapter that repairs the card has
    * somewhere to say so.
    */
   returnColumnTorn: boolean;

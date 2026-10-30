@@ -3,8 +3,14 @@
  *
  * Canon: a bookmark holds a page so it can be found again. He doesn't kill
  * borrowers, he *files* them — binds one into a page's heart so he can come
- * back and keep revising it. Every boss is one of these. Tearing a bookmark
- * out is why clearing a page matters: the page stops being findable.
+ * back and keep revising it. Every boss is one of these.
+ *
+ * Tearing one out is why clearing a page matters, but it does not *remove*
+ * anything: the realm stays in the registry and stays playable by everyone,
+ * including the player who just cleared it. What a clear costs him is the trip
+ * back to file somebody else. An earlier version of this copy claimed the page
+ * became unreachable, which the registry contradicts on its face — see
+ * `RETIRED_TERMS`.
  *
  * ── What changed, and why ──────────────────────────────────────────────────
  * This replaces `wardens.ts`, which was unreachable — `wardenLore()` was
@@ -209,7 +215,7 @@ const FALLBACK: Omit<BookmarkLore, "borrower"> = {
   turn:
     "For a breath the thing wears a mortal's face: someone who came this far " +
     "and did not carry themselves out. Then the page pours back in.",
-  fell: "It falls, and the page stops being findable. You did not stay.",
+  fell: "It falls, and the page is nobody's to hold for a while. You did not stay.",
 };
 
 /** Resolve a boss id to its bookmark, with a canon-true fallback. */

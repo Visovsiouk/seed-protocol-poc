@@ -123,6 +123,21 @@ export type PlayerRealmMeta = {
   /** Raw `AssetMinted` count — popularity signal (e.g. Featured). */
   totalMints: number;
   createdAt: number;
+  /**
+   * The page's own generated prose, or `null` — which is the default and not a
+   * defect. Resolve `null` through `realmPageFallback()`
+   * (`lib/story/page-bank.ts`), which is deterministic per realm address, so
+   * every page has words to introduce itself with either way.
+   *
+   * Mirrors `RealmLoreRow` in `lib/server/realm-db.ts` rather than importing
+   * it: that module opens sqlite at import time and is server-only.
+   */
+  lore: {
+    pageText: string;
+    bookmarkName: string;
+    bookmarkLine: string;
+    source: "model";
+  } | null;
 };
 
 async function fetchPlayerRealms(): Promise<

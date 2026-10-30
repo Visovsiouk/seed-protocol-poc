@@ -8,7 +8,9 @@ import {
   interstitialFor,
   lockStateFor,
   nextStarterFor,
+  pageReachLine,
 } from "./progression";
+import { realmTierProgress } from "@/lib/reads/realm-tier";
 
 // Build a minimal progress snapshot for the CTA-shape tests. `cleared`
 // is irrelevant for `interstitialFor` (it reads only `starterClears`),
@@ -167,6 +169,41 @@ describe("creatorPageCleared", () => {
     for (const mine of [true, false]) {
       expect(creatorPageCleared({ ...ARGS, mine }).cta.kind).toBe("open-picker");
     }
+  });
+});
+
+describe("pageReachLine", () => {
+  // The cooperative mechanic in words. The numbers in the sentence have to be
+  // the numbers that actually cap the loot roll, so these drive the line from
+  // `realmTierProgress` rather than hardcoding thresholds a second time.
+  function lineFor(clearers: number): string {
+    const reach = realmTierProgress(clearers);
+    return pageReachLine({
+      distinctClearers: clearers,
+      nextTierAt: reach.nextTierAt,
+    });
+  }
+
+  it("names the next rung, and it matches the curve that caps the loot", () => {
+    expect(lineFor(0)).toContain("At 20");
+    expect(lineFor(19)).toContain("At 20");
+    // 20 clearers is T4, so the rung on offer becomes 50.
+    expect(lineFor(20)).toContain("At 50");
+    expect(lineFor(49)).toContain("At 50");
+  });
+
+  it("stops promising more once the page is giving up everything", () => {
+    // T5 is terminal: `nextTierAt` is null and the copy must not invent a rung.
+    const line = lineFor(50);
+    expect(line).not.toMatch(/\bAt \d+\b/);
+    expect(line).toContain("everything it has");
+  });
+
+  it("counts hands, and agrees with itself about the number", () => {
+    expect(lineFor(0)).toContain("No hands");
+    // Singular vs plural: a stat cell can print "1 hands", prose cannot.
+    expect(lineFor(1)).toContain("1 hand has");
+    expect(lineFor(2)).toContain("2 hands have");
   });
 });
 

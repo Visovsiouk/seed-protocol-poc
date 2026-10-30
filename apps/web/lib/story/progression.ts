@@ -61,16 +61,70 @@ export function nextStarterFor(starterClears: number): Preset | null {
   return REALM_ORDER[starterClears] ?? null;
 }
 
+/**
+ * The hero panel once the trial is done.
+ *
+ * An earlier version made the signet a way out of the book and the whole beat
+ * an argument against taking it. Nothing in this codebase has ever offered the
+ * player that choice (see `RETIRED_TERMS`), so the tension rested on an action
+ * that did not exist. What the signet actually is, is contract-enforced: one
+ * quire, pressed once, because the Seed is soulbound and `ecosystemOf(owner)`
+ * pins on first use. `BINDING.QUIRES_PER_BORROWER` is the fact this copy is
+ * built on, and it is what makes the last sentence true rather than hopeful.
+ */
+/**
+ * What a page's distinct-clearer count means, said as a sentence.
+ *
+ * ── Why this exists at all ─────────────────────────────────────────────────
+ * `lib/reads/realm-tier.ts` holds the single most cooperative mechanic in the
+ * game: a player page's loot ceiling is earned by *distinct people beating it*
+ * — T3 under 20 clearers, T4 under 50, T5 at 50 and up. Descending a stranger's
+ * page permanently makes it richer for whoever comes next.
+ *
+ * That shipped as a stat cell labelled "Distinct clearers", which states the
+ * number and none of the meaning. A player reading it has no way to learn that
+ * other borrowers are the reason the page pays out, which is the whole premise
+ * of the story this copy belongs to.
+ *
+ * ── Why it's a lib and not JSX ─────────────────────────────────────────────
+ * Same reasoning as `card.ts`'s `signetLine`: `canon.test.ts` sweeps module
+ * prose exhaustively, while its component sweep is a substring match that can
+ * only carry unambiguous phrases. Prose in a lib is covered more tightly.
+ *
+ * `earnsTier` is required rather than inferred because the three founding pages
+ * are pinned at T2 and never climb — saying "at 20 it gives up more" on a
+ * starter would be a flat lie. The caller knows which kind of page it is
+ * (`RealmDetail.kind === "creator"`); this module cannot.
+ *
+ * Thresholds come from `realmTierProgress()` rather than being restated here,
+ * so the copy cannot drift from the curve that actually caps the loot roll.
+ */
+export function pageReachLine(args: {
+  distinctClearers: number;
+  nextTierAt: number | null;
+}): string {
+  const { distinctClearers: n, nextTierAt } = args;
+
+  if (nextTierAt === null) {
+    return `${n} hands have been down this page. It gives up everything it has.`;
+  }
+  if (n <= 0) {
+    return `No hands down this page yet. At ${nextTierAt} it starts giving up more.`;
+  }
+  return `${n} ${n === 1 ? "hand has" : "hands have"} been down this page. At ${nextTierAt} it starts giving up more.`;
+}
+
 export const STORY_HERO_OPEN = {
   eyebrow: "The card is spent",
-  title: "Three stamps, and a signet of your own. Don't sign out — write.",
+  title: "Three stamps. The book has taken your hand.",
   body:
-    "You went down three pages and carried yourself back out of all three, so the book had to " +
-    "admit your name. That is what a signet is. It will let you sign out, and signing out shuts " +
-    "the book behind you with everyone still inside — which is exactly what he has been working " +
-    "toward for two hundred years. So press it into a blank quire instead. A book that is still " +
-    "being written cannot be given a colophon, and every page another hand adds is one more he " +
-    "has to come back for.",
+    "You went down three of his own pages and carried yourself back out of all three, so the " +
+    "book had to take your name. That is what a signet is — and it is not a way out. There is " +
+    "no way out; the return column came off this card before you were born. What it is, is one " +
+    "blank quire, pressed once. One page, permanent, in the registry under your name, and every " +
+    "borrower after you free to walk down it. A book still being written cannot be given a " +
+    "colophon — and no single hand can add enough pages to keep it open. That is why there are " +
+    "others.",
 } as const;
 
 /**
@@ -134,8 +188,9 @@ export function interstitialFor(args: {
       body:
         "For one breath the wet wood lets her be a woman again — someone who mastered this " +
         "page in 1847 and could not bear to leave it. I only wanted to keep it, she says. " +
-        "Then you tear the bookmark out, and the page stops being findable. Your mark goes " +
-        "on the card: one stamp, and the first thing you have that he cannot revise.",
+        "Then you tear the bookmark out, and he loses his way back here until he files " +
+        "somebody else. Your mark goes on the card: one stamp, and the first thing you have " +
+        "that he cannot revise.",
       cta: { kind: "warp-next", label: "Carry yourself out", nextPreset:"cyberpunk" },
     };
   }
@@ -173,12 +228,13 @@ export function interstitialFor(args: {
   // Any community-realm clear, or out-of-band starter clears post-arc.
   return {
     eyebrow: "Bookmark torn out",
-    title: "Another page that has stopped being findable.",
+    title: "Another one he will have to come back and replace.",
     body:
       "Whatever was holding this one open wore a mortal's face for a breath on the way down — " +
       "someone who came this far and did not carry themselves back out. This page was written " +
-      "by a hand like yours, which is why he has to come back for it at all. Its findings are " +
-      "yours to carry up, and the registry still has pages nobody has reached the bookmark of.",
+      "by a hand like yours, which is why he has to come back for it at all. The page stays " +
+      "where it is, open to anyone; what you carried up is yours. And the registry still has " +
+      "pages nobody has reached the bookmark of.",
     cta: { kind: "open-picker", label: "Back to the base" },
   };
 }
@@ -231,7 +287,8 @@ export function creatorPageCleared(args: {
       `${bookmarkName} was filed into ${pageName} so it could always be found again, and you have ` +
       `just taken that away from whoever was coming back for it. A borrower wrote this page with a ` +
       `signet they earned — the way Ker wrote his — so it is an addition to the book rather than ` +
-      `part of the authorized edition. What you carried up is yours. The page stays, unfindable.`,
+      `part of the authorized edition. What you carried up is yours. The page stays, and the next ` +
+      `hand down it will find more than you did.`,
     cta: { kind: "open-picker", label: "Back to the base" },
   };
 }

@@ -13,6 +13,15 @@
  * Pure presentation: the parent owns the tx state machine and passes the
  * current `phase`. Motion uses the shared ledger stagger and honours
  * `prefers-reduced-motion` via `withReducedMotion`.
+ *
+ * ── Why the beat titles stay technical ─────────────────────────────────────
+ * The surrounding story is in canon, but the four beats below name their
+ * actual contract calls on purpose: this screen is where the protocol claim is
+ * demonstrated rather than asserted, and watching `createEcosystem` →
+ * `registerSchema` → `setMinter` land in sequence *is* the demo. Only the
+ * framing above them speaks in the book's voice. Note also that this is the
+ * player's *own* ceremony — it is not a feed of other borrowers founding
+ * pages, and nothing here should imply it is.
  */
 
 import { motion, useReducedMotion } from "framer-motion";
@@ -72,7 +81,7 @@ export function RealmSpawnFeed({
       className="flex flex-col gap-4 p-5"
     >
       <header className="flex items-baseline justify-between gap-2">
-        <Stamp tone="accent">Spawning realm</Stamp>
+        <Stamp tone="accent">Binding your quire in</Stamp>
         <span className="font-mono text-[10px] uppercase tracking-widest opacity-65">
           {phase === "done"
             ? `${BEAT_COUNT} / ${BEAT_COUNT} stamped`

@@ -292,8 +292,36 @@ function OpenPickerHero({ progress }: { progress: TutorialProgress }) {
         {STORY_HERO_OPEN.title}
       </h2>
       <Body size="sm">{STORY_HERO_OPEN.body}</Body>
+      <BookThickness added={progress.communityRealmCount} />
       <Rule tone="muted" />
     </header>
+  );
+}
+
+/**
+ * How thick the book has got.
+ *
+ * The card stops at three because three stamps is the trial, not the length of
+ * the game. After it, the measure that matters is no longer the player's own
+ * progress but the registry's length — which is why this sits immediately under
+ * the hero's claim that no single hand can add enough pages. The sentence above
+ * makes a promise; this line is the only evidence for it on screen.
+ *
+ * `communityRealmCount` is the registry minus the three founding pages
+ * (`useTutorialProgress` already partitions them, see `lib/reads/hooks.ts`), so
+ * it is exactly "quires borrowers have added" and costs no extra chain read.
+ *
+ * Deliberately no target. Nothing in the system knows how many quires it takes
+ * before the binding will not close, and `canon.ts` carries no constant for one
+ * — so this counts up and never implies a finish line.
+ */
+function BookThickness({ added }: { added: number }) {
+  return (
+    <p className="font-mono text-[11px] uppercase tracking-[0.16em] opacity-60">
+      {added <= 0
+        ? "No quires added yet. The next signet pressed is the first."
+        : `${added} ${added === 1 ? "quire" : "quires"} added. Every one is a page he has to come back for.`}
+    </p>
   );
 }
 

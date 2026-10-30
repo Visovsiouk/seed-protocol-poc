@@ -6,9 +6,13 @@ import { Panel, ExplorerLink } from "@/components/ui";
 
 export function RecentSalesFeed() {
   const { data, isLoading } = useRecentSales();
-  if (isLoading) return <p className="text-xs opacity-70">Loading sales…</p>;
+  if (isLoading) return <p className="text-xs opacity-70">Reading the ledger…</p>;
   if (!data || data.length === 0) {
-    return <p className="text-xs opacity-70">No sales in the last 1000 blocks.</p>;
+    return (
+      <p className="text-xs opacity-70">
+        Nothing has changed hands in the last 1000 blocks.
+      </p>
+    );
   }
   return (
     <ul className="flex flex-col gap-2 text-sm">

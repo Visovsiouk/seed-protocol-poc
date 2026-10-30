@@ -311,7 +311,7 @@ export const scifiBank: FlavorBank = {
     ],
     void_prince_phase2: [
       "The Prince's silhouette flickers — phasing at the cold, finished edge he chose over turning back to name himself.",
-      "Reality strains around him; he crowned himself over the sealed silence rather than climb back and sign out.",
+      "Reality strains around him; he crowned himself over the sealed silence rather than climb back and add a page of his own.",
       "He smiles in a direction you can't look — a borrower who mistook the end of the making for a throne.",
     ],
     reactor_wyrm_phase2: [

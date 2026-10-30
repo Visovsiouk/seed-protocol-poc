@@ -32,12 +32,38 @@
  * A *bookmark* is how he files one. Bind a borrower into a page's heart and
  * the page can always be found again for revision. Every boss is a bookmark.
  *
- * ── The counter ────────────────────────────────────────────────────────────
- * Three stamps earn a signet; a signet means you can sign out. Signing out
- * closes the book with everyone still inside, which is exactly what he wants.
- * So you press the signet into a blank quire and write a new page instead — a
- * book still being written cannot be given a colophon. That is `/create`, and
- * it is the ending rather than an advanced feature.
+ * ── Why it never ends ──────────────────────────────────────────────────────
+ * You tear a bookmark out; he files another. Nothing a borrower does removes
+ * a page — it stays in the registry, re-enterable, by everyone, forever. What
+ * a clear costs him is a return trip, and that is the whole of it.
+ *
+ * An earlier version of this canon had cleared pages "stop being findable",
+ * which the registry makes false on its face: every realm persists and stays
+ * playable by anyone. Those phrasings are retired below.
+ *
+ * ── The counter, and why one hand cannot be it ─────────────────────────────
+ * His edition has a fixed extent; that is what makes it finishable at all.
+ * Three stamps earn a signet, and a signet presses into a blank quire — one
+ * page, permanent, public, and exactly one per borrower, because the signet is
+ * soulbound and single-use (`ecosystemOf(owner)` pins after the first, and the
+ * Forge station disappears). So the only way this book outgrows what one hand
+ * can revise is more hands. See `BINDING`.
+ *
+ * The signet does **not** let anyone leave. There is no sign-out anywhere in
+ * this codebase — the old copy's central tension rested on an action no player
+ * is ever offered, which is the exact failure the rewrite existed to fix. The
+ * torn return column is the honest version of the same fact, and the sign-out
+ * vocabulary is retired below.
+ *
+ * ── Two tenses of "borrower" ───────────────────────────────────────────────
+ * The seven names below are borrowers who were here *before* — filed, escaped,
+ * or dealing. Every live player is a borrower too, writing in the same book at
+ * the same time: their pages sit in the registry under their own address, their
+ * clears are permanent public receipts, and a page gives up more the more
+ * distinct hands have been down it (`lib/reads/realm-tier.ts`).
+ *
+ * Same word, two tenses. Copy must not imply that every borrower is dead — the
+ * margins are the ones who came before, the registry is the ones beside you.
  *
  * Pure data. No hooks, no chain reads, no prose.
  */
@@ -250,6 +276,35 @@ export const COLOPHON = {
   FIRST_BORROWED: "1788-04-09",
 } as const;
 
+// ── The binding ────────────────────────────────────────────────────────────
+
+/**
+ * The arithmetic the endgame rests on.
+ *
+ * A quire is a gathered stack of folded pages — the unit a hand-bound book is
+ * assembled from, and what a borrower adds when they press a signet into a
+ * blank one. Both numbers below are *descriptions of enforced mechanics*, not
+ * flavour, which is why they belong in canon rather than in the copy that
+ * quotes them:
+ *
+ *   - `AUTHORIZED_PAGES` is the founding edition, the three he wrote himself.
+ *     It is the length of `REALM_ORDER` and the number of slots on the card.
+ *     Deliberately duplicated here as a *story* fact: three stamps is the
+ *     trial, and `progression.ts` owns the play order independently.
+ *   - `QUIRES_PER_BORROWER` is 1 because the signet is soulbound and spent on
+ *     first use. This is the load-bearing one. It is what makes "no single
+ *     hand can outgrow his edition" arithmetic rather than sentiment — a book
+ *     that needs more pages than one borrower can add needs more borrowers,
+ *     and the contract enforces that, not the prose.
+ *
+ * There is no constant here for how many quires it takes to break the binding,
+ * because nothing in the system knows. Copy must not invent one.
+ */
+export const BINDING = {
+  AUTHORIZED_PAGES: 3,
+  QUIRES_PER_BORROWER: 1,
+} as const;
+
 // ── Pages ──────────────────────────────────────────────────────────────────
 
 /**
@@ -415,4 +470,56 @@ export const RETIRED_TERMS: readonly string[] = [
   "warden intel",
   "the world re-makes",
   "new world's law",
+  // ── Added when the premise was corrected ────────────────────────────────
+  // Two families of phrasing that were not merely stale but *false*.
+  //
+  // The sign-out family described the signet as permission to leave the book,
+  // and the whole middle of the story was an argument against taking it. There
+  // is no such action anywhere in this app or its contracts — it was an
+  // abstraction with nothing underneath, which is the exact failure the
+  // rewrite existed to remove. Safe to ban as bare words: the wallet UI says
+  // "Disconnect", so these have no innocent use here.
+  "sign out",
+  "signing out",
+  "sign-out",
+  // The findable family claimed a cleared page became unreachable. Every realm
+  // persists in the registry and stays playable by everyone forever, so this
+  // contradicted the mechanics on its face. "being findable" covers both the
+  // present and past tense that shipped.
+  "being findable",
+  "unfindable",
+  // ── Added when the 4-act onboarding banner was finally migrated ──────────
+  // `components/tutorial/TutorialOverlay.tsx` had been missed by the original
+  // migration entirely — every act was in the pre-rewrite register. These are
+  // the phrases it actually shipped.
+  //
+  // Only phrases, and only these, because the overlay's load-bearing words are
+  // all unbannable. This is the clearest demonstration of the ceiling yet:
+  //
+  //   - the player-noun it used is also a *loot item* name ("…'s Brand", a
+  //     canonical fire blade referenced from `lib/engine/types.ts` and
+  //     `lib/contracts/starter-realms.ts`), so the bare word has a legitimate
+  //     and permanent home in the catalog.
+  //   - the progress-noun it used is a live component (`ShardTrack`), live
+  //     identifiers in `GenesisLedger`, and ordinary combat narration in
+  //     `lib/flavor/scifi.ts` ("…drive into you for {dmg}").
+  //   - the page-noun it used is a live station id (`Station = "doors"`) and a
+  //     key in `components/hub/station-event.ts`.
+  //   - its word for the card's counter is a substring of "the market", which
+  //     the Bazaar surface says.
+  //
+  // Four separate reasons, none fixable by a denylist. New copy still needs a
+  // reader; this list only stops these exact sentences returning.
+  "other pilgrims",
+  "another pilgrim",
+  "later pilgrims",
+  "raised doors",
+  "the protocol's doors",
+  "three shards",
+  "the shards are one",
+  "the shards close",
+  "rests against the mark",
+  "the mark is warm",
+  "weighed you against",
+  "shard track",
 ];

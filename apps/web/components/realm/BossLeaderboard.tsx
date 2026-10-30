@@ -1,11 +1,20 @@
 "use client";
 
 /**
- * `<BossLeaderboard/>` — ranked list of clear receipts on a realm.
+ * `<BossLeaderboard/>` — the page's own record of everyone who has been down
+ * it, ranked by clear receipt.
  *
  * Rank by fewest turns ascending; ties broken by higher remaining HP,
  * then earlier blockNumber. The reader (`fetchRealmStats`) sorts; this
  * component just renders.
+ *
+ * ── Why the copy matters here ──────────────────────────────────────────────
+ * Every row is a different living borrower, their address, how long the fight
+ * took them and how much blood they had left — minted on-chain and permanent.
+ * It is the most direct evidence in the game that other people are reading the
+ * same book, and it shipped labelled as a scoreboard with a tiebreak rule.
+ * Named as what it is, it does the job the margins do for the dead: somebody
+ * will read your line.
  *
  * Works for both starter and creator realms — the parent passes the
  * realm's clearReceipt schemaId (seeded for starters, the row's own id
@@ -44,20 +53,27 @@ export function BossLeaderboard({
       aria-label="Boss leaderboard"
       className="flex flex-col gap-3 p-4"
     >
-      <header className="flex items-baseline justify-between gap-2">
-        <Stamp>Boss leaderboard</Stamp>
-        <span className="text-[10px] opacity-65">fewest turns wins</span>
+      <header className="flex flex-col gap-1.5">
+        <div className="flex items-baseline justify-between gap-2">
+          <Stamp>Every hand down this page</Stamp>
+          <span className="text-[10px] opacity-65">fewest turns first</span>
+        </div>
+        <p className="text-[11px] leading-relaxed opacity-65">
+          The page keeps this, and it does not forget. Whoever comes next reads
+          your line the way you read the margins.
+        </p>
       </header>
 
       {stats.isLoading ? (
-        <p className="text-sm opacity-70">Tallying clears…</p>
+        <p className="text-sm opacity-70">Counting the hands…</p>
       ) : stats.isError ? (
         <p className="text-sm text-[var(--color-danger)]">
-          Failed to load leaderboard.
+          Failed to load the record.
         </p>
       ) : rows.length === 0 ? (
         <p className="text-sm opacity-70">
-          No boss clears yet. Be the first to drop the realm boss.
+          Nobody has torn this bookmark out yet. Yours would be the first line
+          on it.
         </p>
       ) : (
         <ol className="flex flex-col gap-1.5">

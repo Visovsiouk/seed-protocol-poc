@@ -79,7 +79,7 @@ export const CODEX_STEPS: readonly CodexStep[] = [
     wpRef: "§2.1 · §8.3",
     proves:
       "Your clear receipts form a multi-metric, time-spanning contribution proof — the structured evidence the Seed contract validates.",
-    cta: { label: "Check the shard track", target: "doors" },
+    cta: { label: "Check your stamps", target: "doors" },
   },
   {
     id: "seed",

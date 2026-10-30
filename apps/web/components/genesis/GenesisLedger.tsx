@@ -9,10 +9,13 @@
  * with that page's own accent and reveals its name. When all three are down
  * the luminous claim CTA unseals.
  *
- * The turn the whole story rests on happens here: a signet means you *can*
- * sign out, and signing out shuts the book with everyone still inside — so
- * the copy below never offers it as the reward. What it offers is the blank
- * quire.
+ * The turn the whole story rests on happens here, and it is not the one an
+ * earlier version claimed. The signet is not permission to leave the book;
+ * no such action exists anywhere in this codebase, and that framing is
+ * retired (see `RETIRED_TERMS`). What it is, is soulbound, spent on first
+ * use, and worth exactly one page ever (`BINDING.QUIRES_PER_BORROWER`) — so
+ * the copy below offers the blank quire, because that is the only thing on
+ * the other side of it.
  *
  * Reconstructed honestly from chain: it reads the player's per-realm
  * `BossCleared` history via `useTutorialProgress` and posts to
@@ -110,14 +113,14 @@ export function GenesisLedger({
           <Rule />
           <h2 className="font-mono text-2xl font-medium tracking-[-0.015em]">
             {progress.hasSeed
-              ? "The signet is yours. Don't sign out."
+              ? "The signet is yours. One page, once."
               : allShardsRecovered
                 ? "The card is full. It will cut you a signet."
                 : "Three stamps, one signet"}
           </h2>
           <p className="text-sm leading-relaxed opacity-75">
             {progress.hasSeed
-              ? "It is soulbound: it cannot be forked, bought, or copied — Vesna Kord is still in the ICE for trying the last one. And it will let you sign out, which is the trap, because the book shuts behind whoever does and everyone still inside stays inside. Press it into a blank quire instead."
+              ? "It is soulbound: it cannot be forked, bought, or copied — Vesna Kord is still in the ICE for trying the last one. And it is spent the moment you use it, so what you have is one page, ever. Press it into a blank quire and it stands in the registry under your name, open to every borrower who comes after you."
               : allShardsRecovered
                 ? "Three pages bore your mark deep enough to be vouched for independently, so the book has to admit your name. That is all a signet is — not a reward, a proof. Aurelio Ker earned one in 1908 and used it exactly right, then reached for the last page and was filed into his own work. You get the same choice he got."
                 : "Each founding page takes your mark when its bookmark is torn out. The pages still below keep their names until you go down to them. Fill the card and the Altar will read it."}

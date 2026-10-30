@@ -498,7 +498,10 @@ export function EncounterFrame({
     if (!margin || !address) return;
     if (collectedRef.current === margin.id) return;
     collectedRef.current = margin.id;
-    markMarginFound(address, margin.id);
+    // `foundOn` is the page it surfaced on, which is rarely the page it was
+    // written on — that crossing is the point of the global pool, and the
+    // store kept nothing but the id until v2, so the Book could never show it.
+    markMarginFound(address, margin.id, margin.foundOn);
   }, [margin, address]);
 
   /**
