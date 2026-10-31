@@ -487,7 +487,15 @@ export type CombatState = {
    * On non-boss combats this stays false.
    */
   phase2PlayerBuffed: boolean;
-  /** Turns of bleed DoT remaining on the monster (per-attacker is overkill for PoC). */
+  /**
+   * Turns of bleed DoT remaining on the monster (per-attacker is overkill
+   * for PoC).
+   *
+   * Monster-directed only, and that is why boss-side `bleed` is the one
+   * catalog effect with no monster call site in combat.ts: honouring it
+   * needs a second, player-directed counter, not a second reader of this
+   * one. Do not repoint this field at the player.
+   */
   bleedStacks: number;
   /** Suppressed catalog effects on the player, set at boss phase 2 if applicable. */
   suppressedEffects: CatalogEffectName[];
@@ -673,7 +681,11 @@ export type CombatBeat = {
   crit: boolean;
   /** Natural-1 auto-miss. */
   fumble: boolean;
-  /** Monster swings only: the player evaded, so no attack was rolled. */
+  /**
+   * The target evaded, so no attack was rolled: the player's
+   * `dodge_chance` on a monster swing, or a boss's baked `dodge_chance`
+   * on a player swing. Always accompanied by `hit: false`.
+   */
   dodged: boolean;
   /** Damage dealt to the *other* party. 0 on a miss or dodge. */
   damage: number;

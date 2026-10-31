@@ -179,7 +179,8 @@ const bosses = {
     id: "black_ice",
     preset: "cyberpunk" as const,
     name: "Black ICE",
-    baseHp: 38,
+    // 38 → 28
+    baseHp: 28,
     attackDie: 6 as const,
     ac: 14,
     bakedEffects: ["crit_chance", "armor_pierce"] as ["crit_chance", "armor_pierce"],
@@ -195,7 +196,8 @@ const bosses = {
     id: "ceo",
     preset: "cyberpunk" as const,
     name: "The CEO",
-    baseHp: 40,
+    // 40 → 52
+    baseHp: 52,
     attackDie: 6 as const,
     ac: 14,
     bakedEffects: ["lifesteal", "dodge_chance"] as ["lifesteal", "dodge_chance"],
@@ -208,7 +210,8 @@ const bosses = {
     id: "ghost",
     preset: "cyberpunk" as const,
     name: "The Ghost",
-    baseHp: 36,
+    // 36 → 29
+    baseHp: 29,
     attackDie: 6 as const,
     ac: 15,
     bakedEffects: ["multi_hit", "bleed"] as ["multi_hit", "bleed"],
@@ -222,7 +225,8 @@ const bosses = {
     id: "rogue_god",
     preset: "cyberpunk" as const,
     name: "The Rogue God",
-    baseHp: 38,
+    // 38 → 24
+    baseHp: 24,
     attackDie: 6 as const,
     ac: 15,
     bakedEffects: ["damage_reduction", "thorns"] as ["damage_reduction", "thorns"],
@@ -235,7 +239,8 @@ const bosses = {
     id: "matron",
     preset: "cyberpunk" as const,
     name: "The Matron",
-    baseHp: 36,
+    // 36 → 35
+    baseHp: 35,
     attackDie: 6 as const,
     ac: 14,
     bakedEffects: ["regen", "crit_chance"] as ["regen", "crit_chance"],

@@ -179,27 +179,49 @@ const bosses = {
     id: "forest_hag",
     preset: "fantasy" as const,
     name: "The Forest Hag",
-    baseHp: 36,
+    // 36 → 24. Starter bosses are tuned against RUN completion
+    // (`balance-sweep.ts --mode=run`), not the full-HP boss sweep: this is
+    // the last room of the tutorial run, so the player arrives at ~74% HP
+    // and the full-HP number is not a condition anyone meets. 24 puts
+    // fantasy at ~32% cleared at T2. Full-HP T2 reads ~82%, deliberately
+    // above the non-starter band below.
+    baseHp: 24,
     attackDie: 6 as const,
     ac: 14,
     bakedEffects: ["dodge_chance", "regen"] as ["dodge_chance", "regen"],
     phase2NarrationKey: "forest_hag_phase2",
     phase2AttackDie: 6 as const,
+    // Suppresses the *player's* regen armor, not the Hag's own baked regen
+    // (`getMonsterEffectValue` ignores `suppressedEffects` by design). Phase
+    // 2 is therefore "it keeps healing and you stop" — intended.
     phase2SuppressEffect: "regen" as const,
     element: "unholy" as const,
     weakTo: "fire" as const,
     resistTo: "unholy" as const,
   },
-  //  tuning: non-starter bosses target 30–55% win at T2, same
-  // band as the starter forest_hag. Recipe mirrors the starter
-  // (attackDie 6 / phase2 8); each boss's baseHp is scaled against
-  // how punishing its `bakedEffects` are — DR+thorns combos need
-  // less HP, pure-DPS combos can carry more.
+  // Tuning: non-starter bosses target 30–55% win at T2 on the full-HP boss
+  // sweep (`balance-sweep.ts --bosses`); all twelve currently measure
+  // 40.8–43.6%. Recipe mirrors the starter (attackDie 6 / phase2 8); each
+  // boss's baseHp is scaled against how punishing its `bakedEffects` are —
+  // DR+thorns combos need far less HP, and a pair with a dead half needs
+  // more.
+  //
+  // These numbers were re-measured after the monster side of combat started
+  // honouring `dodge_chance`, `damage_reduction`, `thorns`, `lifesteal` and
+  // `regen`; before that only `armor_pierce`, `crit_chance` and `multi_hit`
+  // did anything to a boss, and the roster had drifted to a 9–97% spread
+  // split by which bosses happened to declare a live pair. Any edit to a
+  // boss's `bakedEffects` now moves its difficulty, so re-run the sweep.
+  //
+  // `bleed` is still inert on the monster side (no player-directed DoT slot
+  // — see the combat.ts module docblock), so a boss declaring it is tuned as
+  // if it had one effect. The Lich is the fantasy case.
   lich: {
     id: "lich",
     preset: "fantasy" as const,
     name: "The Lich",
-    baseHp: 42,
+    // 42 → 45
+    baseHp: 45,
     attackDie: 6 as const,
     ac: 14,
     bakedEffects: ["lifesteal", "bleed"] as ["lifesteal", "bleed"],
@@ -214,7 +236,8 @@ const bosses = {
     id: "dragon",
     preset: "fantasy" as const,
     name: "The Dragon",
-    baseHp: 36,
+    // 36 → 27
+    baseHp: 27,
     attackDie: 6 as const,
     ac: 14,
     bakedEffects: ["multi_hit", "armor_pierce"] as ["multi_hit", "armor_pierce"],
@@ -228,7 +251,8 @@ const bosses = {
     id: "warden",
     preset: "fantasy" as const,
     name: "The Stone Warden",
-    baseHp: 38,
+    // 38 → 24
+    baseHp: 24,
     attackDie: 6 as const,
     ac: 15,
     bakedEffects: ["damage_reduction", "thorns"] as ["damage_reduction", "thorns"],
@@ -240,7 +264,8 @@ const bosses = {
     id: "vampire",
     preset: "fantasy" as const,
     name: "The Vampire Lord",
-    baseHp: 38,
+    // 38 → 42
+    baseHp: 42,
     attackDie: 6 as const,
     ac: 14,
     bakedEffects: ["lifesteal", "crit_chance"] as ["lifesteal", "crit_chance"],

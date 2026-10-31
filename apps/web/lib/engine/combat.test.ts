@@ -752,3 +752,372 @@ describe("resolveRound — nat-20 and nat-1", () => {
     expect(stumbles).toBeGreaterThan(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Monster-side baked effects
+//
+// Regression cover for a bug where only three of the nine catalog effects
+// had a monster-side call site in combat.ts (`armor_pierce`, `crit_chance`,
+// `multi_hit`). The other six were declared by bosses across all three
+// flavour banks and did nothing at all, which is why two boss profiles
+// differing only in baked effects used to measure byte-identically.
+//
+// The sweep below is the shape of the test that would have caught it, so it
+// is written as a property over the whole catalog rather than six one-offs:
+// baking an effect must change the fight. `bleed` is the single declared
+// exception and is asserted to be inert, so that the day someone adds a
+// player-directed DoT slot this test fails and tells them to move it.
+// ---------------------------------------------------------------------------
+
+/** A boss identical to `baseBoss` except for its baked effects. */
+function bossWith(effects: CatalogEffectName[]): BossDef {
+  return {
+    ...baseBoss,
+    bakedEffects: effects as BossDef["bakedEffects"],
+  };
+}
+
+/**
+ * Run a fixed multi-round fight and reduce it to a string. Any mechanical
+ * difference — HP on either side, a changed roll order, an extra narration
+ * line — changes the signature.
+ *
+ * The opening state is chosen so every effect has something to bite on:
+ * `monsterHp` starts below `baseHp` (so monster regen/lifesteal have
+ * headroom to heal into), `playerAc` is low enough that the monster lands
+ * often (lifesteal, armor_pierce), and the weapon is strong enough that a
+ * hit clears `damage_reduction` and survives to show up.
+ */
+function fightSignature(boss: BossDef, seedIndex: number): string {
+  const equipped = { weapon: card("weapon", 8, 3, 0, 0, [], undefined, 2) };
+  let state = makeState({
+    monster: boss,
+    monsterHp: 40,
+    playerHp: 60,
+    playerMaxHp: 60,
+    playerAc: 11,
+    bossPhase: 1,
+  });
+  const parts: string[] = [];
+  for (let round = 0; round < 12; round++) {
+    const seedHex = (seedIndex * 1000 + round).toString(16).padStart(64, "0");
+    const r = resolveRound(
+      state,
+      attack,
+      equipped,
+      createRng(`0x${seedHex}` as `0x${string}`),
+    );
+    state = r.state;
+    parts.push(`${state.monsterHp}/${state.playerHp}/${r.lines.length}`);
+    if (r.monsterDefeated || r.playerDefeated) break;
+  }
+  return parts.join("|");
+}
+
+/** True when baking `effects` changes the fight on at least one seed. */
+function divergesFromVanilla(effects: CatalogEffectName[]): boolean {
+  for (let seed = 0; seed < 40; seed++) {
+    const vanilla = fightSignature(bossWith([]), seed);
+    const baked = fightSignature(bossWith(effects), seed);
+    if (vanilla !== baked) return true;
+  }
+  return false;
+}
+
+describe("resolveRound — monster baked effects are actually read", () => {
+  // The eight names with a monster-side call site. Each must change the
+  // fight; a name that silently does nothing is the original bug.
+  const LIVE: CatalogEffectName[] = [
+    "armor_pierce",
+    "crit_chance",
+    "multi_hit",
+    "dodge_chance",
+    "damage_reduction",
+    "thorns",
+    "lifesteal",
+    "regen",
+  ];
+
+  for (const effect of LIVE) {
+    it(`boss ${effect} changes the fight`, () => {
+      expect(divergesFromVanilla([effect])).toBe(true);
+    });
+  }
+
+  it("boss bleed is inert — it has no monster-side call site by design", () => {
+    // Not an oversight: honouring this needs a player-directed DoT counter,
+    // and `CombatState.bleedStacks` is monster-directed only. If this test
+    // starts failing because bleed was wired up, delete it — but do not
+    // "fix" it by pointing bleedStacks at the player.
+    expect(divergesFromVanilla(["bleed"])).toBe(false);
+  });
+
+  it("a boss's own baked effects ignore suppressedEffects", () => {
+    // `suppressedEffects` is the *player's* suppression list (boss.ts
+    // narrates it "Your X stops working"). forest_hag bakes regen AND sets
+    // phase2SuppressEffect: "regen", which must mean "the Hag keeps
+    // healing, your regen armor goes quiet" — not a boss suppressing itself.
+    const boss = bossWith(["regen"]);
+    const equipped = { weapon: card("weapon", 4, 0, 0, 0) };
+    const base = makeState({
+      monster: boss,
+      monsterHp: 20,
+      bossPhase: 2,
+      suppressedEffects: ["regen"],
+    });
+    const r = resolveRound(base, secondary, equipped, createRng(SEED));
+    expect(r.lines.some((l) => /knits shut/.test(l.text))).toBe(true);
+    expect(r.state.monsterHp).toBe(21);
+  });
+});
+
+describe("resolveRound — monster regen", () => {
+  const equipped = { weapon: card("weapon", 4, 0, 0, 0) };
+
+  it("heals the boss at the top of its turn", () => {
+    // Secondary means the player never swings, so regen is the only thing
+    // that can move monsterHp upward.
+    const state = makeState({ monster: bossWith(["regen"]), monsterHp: 20 });
+    const r = resolveRound(state, secondary, equipped, createRng(SEED));
+    expect(r.state.monsterHp).toBe(21);
+    expect(r.lines.some((l) => /knits shut, recovering 1 HP/.test(l.text))).toBe(
+      true,
+    );
+  });
+
+  it("clamps at the boss's max HP", () => {
+    const boss = bossWith(["regen"]);
+    const state = makeState({ monster: boss, monsterHp: boss.baseHp });
+    const r = resolveRound(state, secondary, equipped, createRng(SEED));
+    expect(r.state.monsterHp).toBe(boss.baseHp);
+    expect(r.lines.some((l) => /knits shut/.test(l.text))).toBe(false);
+  });
+
+  it("does not undo a killing blow", () => {
+    // The boss dies on the player's swing in step 2; step 3 — and with it
+    // regen — must not run at all.
+    const state = makeState({
+      monster: bossWith(["regen"]),
+      monsterHp: 1,
+    });
+    const strong = { weapon: card("weapon", 12, 10, 0, 0, [], undefined, 6) };
+    let sawDeath = false;
+    for (let i = 0; i < 20 && !sawDeath; i++) {
+      const seedHex = i.toString(16).padStart(64, "0");
+      const r = resolveRound(
+        state,
+        attack,
+        strong,
+        createRng(`0x${seedHex}` as `0x${string}`),
+      );
+      if (!r.monsterDefeated) continue;
+      sawDeath = true;
+      expect(r.state.monsterHp).toBe(0);
+      expect(r.lines.some((l) => /knits shut/.test(l.text))).toBe(false);
+    }
+    expect(sawDeath).toBe(true);
+  });
+});
+
+describe("resolveRound — monster lifesteal", () => {
+  it("heals the boss off the damage it deals", () => {
+    // playerAc 2 so the monster cannot miss except on a nat-1; Secondary so
+    // the player never damages the boss.
+    const equipped = { weapon: card("weapon", 4, 0, 0, 0) };
+    let sawDrink = false;
+    for (let i = 0; i < 30 && !sawDrink; i++) {
+      const seedHex = i.toString(16).padStart(64, "0");
+      const state = makeState({
+        monster: bossWith(["lifesteal"]),
+        monsterHp: 20,
+        playerHp: 40,
+        playerMaxHp: 40,
+        playerAc: 2,
+      });
+      const r = resolveRound(
+        state,
+        secondary,
+        equipped,
+        createRng(`0x${seedHex}` as `0x${string}`),
+      );
+      if (r.lines.some((l) => /drinks the wound/.test(l.text))) {
+        sawDrink = true;
+        expect(r.state.monsterHp).toBeGreaterThan(20);
+      }
+    }
+    expect(sawDrink).toBe(true);
+  });
+
+  it("does not drain past the boss's max HP", () => {
+    const boss = bossWith(["lifesteal"]);
+    const equipped = { weapon: card("weapon", 4, 0, 0, 0) };
+    for (let i = 0; i < 30; i++) {
+      const seedHex = i.toString(16).padStart(64, "0");
+      const state = makeState({
+        monster: boss,
+        monsterHp: boss.baseHp,
+        playerHp: 40,
+        playerMaxHp: 40,
+        playerAc: 2,
+      });
+      const r = resolveRound(
+        state,
+        secondary,
+        equipped,
+        createRng(`0x${seedHex}` as `0x${string}`),
+      );
+      expect(r.state.monsterHp).toBeLessThanOrEqual(boss.baseHp);
+    }
+  });
+});
+
+describe("resolveRound — monster damage_reduction", () => {
+  it("absorbs a flat amount off each player hit", () => {
+    const equipped = { weapon: card("weapon", 12, 10, 0, 0, [], undefined, 6) };
+    let compared = 0;
+    for (let i = 0; i < 40 && compared === 0; i++) {
+      const seedHex = i.toString(16).padStart(64, "0");
+      const seed = `0x${seedHex}` as `0x${string}`;
+      const plain = resolveRound(
+        makeState({ monster: bossWith([]), monsterHp: 60 }),
+        attack,
+        equipped,
+        createRng(seed),
+      );
+      const armored = resolveRound(
+        makeState({ monster: bossWith(["damage_reduction"]), monsterHp: 60 }),
+        attack,
+        equipped,
+        createRng(seed),
+      );
+      if (!plain.beats[0]?.hit) continue;
+      compared++;
+      // MONSTER_EFFECT_STRENGTH.damage_reduction is 2.
+      expect(armored.beats[0]!.damage).toBe(plain.beats[0]!.damage - 2);
+      expect(armored.lines.some((l) => /\(-2 absorbed\)/.test(l.text))).toBe(
+        true,
+      );
+    }
+    expect(compared).toBe(1);
+  });
+
+  it("never reduces a landed hit below 1 damage", () => {
+    // A d4 unarmed player against DR 2 would otherwise deal 0 forever and
+    // the fight could never end. The min-1-on-a-hit rule wins instead.
+    const equipped = { weapon: card("weapon", 4, 10, 0, 0) };
+    let hits = 0;
+    for (let i = 0; i < 60; i++) {
+      const seedHex = i.toString(16).padStart(64, "0");
+      const r = resolveRound(
+        makeState({ monster: bossWith(["damage_reduction"]), monsterHp: 60 }),
+        attack,
+        equipped,
+        createRng(`0x${seedHex}` as `0x${string}`),
+      );
+      const beat = r.beats[0]!;
+      if (beat.actor === "player" && beat.hit) {
+        hits++;
+        expect(beat.damage).toBeGreaterThanOrEqual(1);
+      }
+    }
+    expect(hits).toBeGreaterThan(0);
+  });
+});
+
+describe("resolveRound — monster thorns", () => {
+  it("reflects damage back on a landed player swing", () => {
+    const equipped = { weapon: card("weapon", 12, 10, 0, 0, [], undefined, 6) };
+    let sawBite = false;
+    for (let i = 0; i < 30 && !sawBite; i++) {
+      const seedHex = i.toString(16).padStart(64, "0");
+      const state = makeState({
+        monster: bossWith(["thorns"]),
+        monsterHp: 60,
+        playerHp: 50,
+        playerMaxHp: 50,
+      });
+      const r = resolveRound(
+        state,
+        attack,
+        equipped,
+        createRng(`0x${seedHex}` as `0x${string}`),
+      );
+      if (r.lines.some((l) => /bites back for 2/.test(l.text))) sawBite = true;
+    }
+    expect(sawBite).toBe(true);
+  });
+
+  it("can kill the player during their own swing, and skips the monster's turn", () => {
+    const equipped = { weapon: card("weapon", 12, 10, 0, 0, [], undefined, 6) };
+    let sawKill = false;
+    for (let i = 0; i < 40 && !sawKill; i++) {
+      const seedHex = i.toString(16).padStart(64, "0");
+      const state = makeState({
+        monster: bossWith(["thorns"]),
+        monsterHp: 60,
+        playerHp: 2,
+        playerMaxHp: 50,
+      });
+      const r = resolveRound(
+        state,
+        attack,
+        equipped,
+        createRng(`0x${seedHex}` as `0x${string}`),
+      );
+      if (!r.playerDefeated) continue;
+      sawKill = true;
+      expect(r.state.playerHp).toBe(0);
+      // A dead player is not swung at: no monster beat was produced.
+      expect(r.beats.every((b) => b.actor === "player")).toBe(true);
+    }
+    expect(sawKill).toBe(true);
+  });
+});
+
+describe("resolveRound — monster dodge_chance", () => {
+  it("evades player swings without rolling a d20", () => {
+    // attackBonus 10 vs AC 14 means the only non-fumble misses are dodges.
+    const equipped = { weapon: card("weapon", 8, 10, 0, 0) };
+    let dodges = 0;
+    for (let i = 0; i < 200; i++) {
+      const seedHex = i.toString(16).padStart(64, "0");
+      const r = resolveRound(
+        makeState({ monster: bossWith(["dodge_chance"]), monsterHp: 60 }),
+        attack,
+        equipped,
+        createRng(`0x${seedHex}` as `0x${string}`),
+      );
+      if (r.lines.some((l) => /slips aside/.test(l.text))) {
+        dodges++;
+        const beat = r.beats[0]!;
+        expect(beat.actor).toBe("player");
+        expect(beat.dodged).toBe(true);
+        expect(beat.hit).toBe(false);
+        expect(beat.damage).toBe(0);
+      }
+    }
+    // MONSTER_EFFECT_STRENGTH.dodge_chance is 12%.
+    expect(dodges).toBeGreaterThan(5);
+    expect(dodges).toBeLessThan(60);
+  });
+
+  it("is not granted by the player's own Secondary→Dodge flag", () => {
+    // guaranteedDodgeThisTurn is the player's auto-dodge; a vanilla boss
+    // must not inherit it and start evading.
+    const equipped = { weapon: card("weapon", 8, 10, 0, 0) };
+    for (let i = 0; i < 40; i++) {
+      const seedHex = i.toString(16).padStart(64, "0");
+      const r = resolveRound(
+        makeState({
+          monster: bossWith([]),
+          monsterHp: 60,
+          guaranteedDodgeThisTurn: true,
+        }),
+        attack,
+        equipped,
+        createRng(`0x${seedHex}` as `0x${string}`),
+      );
+      expect(r.lines.some((l) => /slips aside/.test(l.text))).toBe(false);
+    }
+  });
+});

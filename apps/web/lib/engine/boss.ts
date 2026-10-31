@@ -4,12 +4,17 @@
  * Boss combat differs from regular monster combat in two places:
  *   1. Bosses carry **baked-in catalog effects** (e.g. Lich: lifesteal+bleed).
  *      Combat resolution reads these via `getMonsterEffectValue` in catalog.ts;
- *      this module doesn't need to do anything special for them.
+ *      this module doesn't need to do anything special for them. Eight of the
+ *      nine catalog names have monster-side call sites; `bleed` does not, so
+ *      a boss that bakes it gets nothing from that half of its pair. See the
+ *      `combat.ts` module docblock for why that one is left out.
  *   2. At 50% HP, a **phase transition** fires once: the boss's attack die
  *      bumps to `phase2AttackDie` (combat.ts already keys off `bossPhase===2`)
  *      and an optional `phase2SuppressEffect` is added to
  *      `state.suppressedEffects`, removing one player effect for the rest of
- *      the fight.
+ *      the fight. Player-side only: `getMonsterEffectValue` ignores the
+ *      list, so naming an effect the boss also bakes suppresses the
+ *      player's copy and not the boss's.
  *
  * The phase check is a separate pass, run by the encounter loop *after*
  * `resolveRound` returns and before the next player action. Keeping it out
