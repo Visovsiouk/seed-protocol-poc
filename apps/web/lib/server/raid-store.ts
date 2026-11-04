@@ -159,6 +159,13 @@ const SCHEMA = `
     ON raid_contribution(edition, created_at);
   CREATE INDEX IF NOT EXISTS idx_raid_contribution_player
     ON raid_contribution(edition, player);
+
+  CREATE TABLE IF NOT EXISTS raid_unlock (
+    id         INTEGER PRIMARY KEY CHECK (id = 1),
+    t5_clears  INTEGER NOT NULL DEFAULT 0 CHECK (t5_clears >= 0),
+    first_t5_at INTEGER,
+    updated_at INTEGER NOT NULL
+  );
 `;
 
 /**
@@ -244,6 +251,9 @@ export function openNextEdition(
   totalHp: number,
   now = Math.floor(Date.now() / 1000),
 ): RaidEdition {
+  // `RAID_EDITION_HP` is the configured default, but it is the *caller's* job
+  // to read it — this module stays free of env so tests and scripts can hand
+  // it any number without a environment in place.
   if (!Number.isInteger(totalHp) || totalHp <= 0) {
     throw new Error(`totalHp must be a positive integer, got ${totalHp}`);
   }
@@ -611,6 +621,69 @@ export function listContributors(
       attempts: r.attempts,
       killingBlow: r.killing_blow === 1,
     }));
+}
+
+// ---------------------------------------------------------------------------
+// The unlock gate — counted forward, never scanned
+// ---------------------------------------------------------------------------
+
+export type RaidUnlock = {
+  /** Clears of T5 realms recorded so far. */
+  t5Clears: number;
+  /** Unix seconds of the first T5 clear, or null before there is one. */
+  firstT5At: number | null;
+  updatedAt: number | null;
+};
+
+/**
+ * Read the unlock counter. Zeroed rather than absent before the first clear,
+ * so callers never branch on "no row yet".
+ */
+export function getRaidUnlock(db: DatabaseType): RaidUnlock {
+  const row = db
+    .prepare<
+      [],
+      { t5_clears: number; first_t5_at: number | null; updated_at: number }
+    >("SELECT t5_clears, first_t5_at, updated_at FROM raid_unlock WHERE id = 1")
+    .get();
+  return {
+    t5Clears: row?.t5_clears ?? 0,
+    firstT5At: row?.first_t5_at ?? null,
+    updatedAt: row?.updated_at ?? null,
+  };
+}
+
+/**
+ * Record one clear of a T5 realm.
+ *
+ * **Counted forward on purpose.** The gate's natural phrasing — "how many
+ * times have T5 realms been cleared" — reads like a query, and answering it
+ * by query is the trap: `fetchRealmActivityCounts` is an **uncapped**
+ * `AssetMinted` scan per realm behind a 15s cache, so evaluating it on
+ * demand means scanning the full history of every realm in the registry on
+ * a cache miss. At the moment a clear is minted the route already knows the
+ * realm and can resolve its tier from that same cache, so incrementing an
+ * integer there turns an O(realms × history) read into an O(1) one.
+ *
+ * Call this **only** for a receipt that was actually minted by this request.
+ * `/api/realm/boss-cleared` returns early on an already-minted replay, which
+ * is what keeps a retried submission from counting twice — the idempotency
+ * lives in that route's mint path, not here, because this has no key to
+ * dedupe on.
+ */
+export function bumpT5Clears(
+  db: DatabaseType,
+  now = Math.floor(Date.now() / 1000),
+): RaidUnlock {
+  db.prepare(
+    `INSERT INTO raid_unlock (id, t5_clears, first_t5_at, updated_at)
+     VALUES (1, 1, ?, ?)
+     ON CONFLICT(id) DO UPDATE
+       SET t5_clears  = t5_clears + 1,
+           first_t5_at = COALESCE(first_t5_at, ?),
+           updated_at  = ?`,
+  ).run(now, now, now, now);
+  return getRaidUnlock(db);
 }
 
 /** How many attempts a player has already spent on an edition. */

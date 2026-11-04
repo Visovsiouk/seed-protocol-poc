@@ -24,6 +24,14 @@ let raid: typeof import("./raid-db");
 beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), "raid-db-test-"));
   process.env.REALMS_DB_PATH = join(dir, "realms.db");
+  // `raid-db.ts` reads the gate threshold from `lib/env`, which parses its
+  // public schema at module load — so these have to exist before the import
+  // below, the same reason `lib/env.test.ts` sets them at its top level.
+  process.env.NEXT_PUBLIC_CHAIN ??= "anvil";
+  process.env.NEXT_PUBLIC_RPC_URL ??= "http://127.0.0.1:8545";
+  // A small threshold so the gate can actually be crossed here. Set before
+  // the import because `getRaidEnv` caches on first read.
+  process.env.RAID_UNLOCK_T5_CLEARS = "3";
   raid = await import("./raid-db");
 });
 
@@ -31,6 +39,7 @@ afterAll(async () => {
   const { closeRealmsDb } = await import("./sqlite");
   closeRealmsDb();
   delete process.env.REALMS_DB_PATH;
+  delete process.env.RAID_UNLOCK_T5_CLEARS;
   rmSync(dir, { recursive: true, force: true });
 });
 
@@ -111,6 +120,40 @@ describe("raid-db", () => {
       currentHp: 250,
       felled: false,
     });
+  });
+
+  it("keeps the gate shut until the counter reaches the threshold", () => {
+    // Env is read lazily and cached on first call, so this test fixes the
+    // threshold by having set RAID_UNLOCK_T5_CLEARS in beforeAll.
+    const required = raid.raidGate().required;
+    expect(required).toBe(3);
+    expect(raid.raidGate()).toMatchObject({
+      unlocked: false,
+      t5Clears: 0,
+      remaining: 3,
+      overridden: false,
+    });
+
+    raid.recordT5Clear();
+    raid.recordT5Clear();
+    expect(raid.raidGate()).toMatchObject({ unlocked: false, remaining: 1 });
+
+    raid.recordT5Clear();
+    expect(raid.raidGate()).toMatchObject({
+      unlocked: true,
+      t5Clears: 3,
+      remaining: 0,
+      overridden: false,
+    });
+  });
+
+  it("does not go backwards past the threshold", () => {
+    raid.recordT5Clear();
+    expect(raid.raidGate()).toMatchObject({ unlocked: true, t5Clears: 4 });
+  });
+
+  it("reports the configured edition HP", () => {
+    expect(raid.defaultEditionHp()).toBe(10_214);
   });
 
   it("keeps the contributor record of the felled edition", () => {

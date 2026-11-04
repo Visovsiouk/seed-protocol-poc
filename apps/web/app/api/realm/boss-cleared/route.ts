@@ -301,7 +301,60 @@ async function handleBossCleared(req: Request) {
     });
   }
 
+  // Only player realms carry the earned-tier curve, so only they can feed
+  // the gate. A starter realm is the tutorial and has no tier to reach.
+  if (playerRow) {
+    await countClearTowardRaidGate({ realm, clearReceiptSchemaId });
+  }
+
   return reply(200, { ok: true, tokenId: tokenId.toString(), txHash: hash });
+}
+
+/**
+ * S5's forward counter: if the realm just cleared is at T5, add one to the
+ * raid's unlock tally.
+ *
+ * Placed here, after the receipt's transaction has confirmed and *after* the
+ * `already_minted` early return, so a retried submission cannot count twice —
+ * the replay path never reaches this line. That early return is the whole
+ * idempotency story; the counter itself has no key to dedupe on.
+ *
+ * Reads the tier through `countDistinctClearers`, which is the same 15s-memo
+ * the loot cap already uses, so on the hot path this is a cache hit rather
+ * than a fresh uncapped event scan. It is also why the gate is counted
+ * forward at all: answering "how many T5 clears have there been" by query
+ * would mean scanning every realm's full history.
+ *
+ * **Never throws.** The receipt is already minted on chain by the time we
+ * get here, so a failure to tally must not turn a successful clear into an
+ * error response — the player's receipt is real either way and the only
+ * casualty is one tick of a tunable counter.
+ */
+async function countClearTowardRaidGate(args: {
+  realm: `0x${string}`;
+  clearReceiptSchemaId: bigint;
+}): Promise<void> {
+  try {
+    const [{ countDistinctClearers, playerRealmMaxTier }, { raidGate, recordT5Clear }] =
+      await Promise.all([
+        import("@/lib/reads/realm-tier"),
+        import("@/lib/server/raid-db"),
+      ]);
+    // Once the gate is open the tally has no consumer, and resolving a tier
+    // costs a (possibly uncached) full-history scan — so stop paying for it
+    // on every clear for the rest of the deployment's life.
+    if (raidGate().unlocked) return;
+    const distinctClearers = await countDistinctClearers({
+      realm: args.realm,
+      clearReceiptSchemaId: args.clearReceiptSchemaId,
+    });
+    if (playerRealmMaxTier(distinctClearers) < 5) return;
+    recordT5Clear();
+  } catch (e) {
+    console.warn(
+      `[raid] failed to count a T5 clear for ${args.realm}: ${e instanceof Error ? e.message : String(e)}`,
+    );
+  }
 }
 
 // Rate limit + JSON-guaranteed error envelope. See lib/server/realm-guards.ts.

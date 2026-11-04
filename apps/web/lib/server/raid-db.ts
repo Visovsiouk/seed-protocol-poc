@@ -27,12 +27,15 @@ import "server-only";
  * anybody is looking at it.
  */
 
+import { getRaidEnv, raidUnlockOverridden } from "@/lib/env";
 import {
   advanceAttempt,
+  bumpT5Clears,
   countPlayerAttempts,
   getContribution,
   getCurrentEdition,
   getEdition,
+  getRaidUnlock,
   listContributions,
   listContributors,
   migrateRaidTables,
@@ -42,6 +45,7 @@ import {
   type ContributorTotal,
   type RaidContribution,
   type RaidEdition,
+  type RaidUnlock,
   type RecordAttemptInput,
   type RecordAttemptResult,
 } from "./raid-store";
@@ -159,4 +163,54 @@ export function openEdition(totalHp: number): RaidEdition {
   const e = openNextEdition(db(), totalHp);
   invalidate();
   return e;
+}
+
+// ---------------------------------------------------------------------------
+// The unlock gate
+// ---------------------------------------------------------------------------
+
+export type RaidGate = {
+  unlocked: boolean;
+  t5Clears: number;
+  required: number;
+  /** Clears still needed, or 0 once open. */
+  remaining: number;
+  /** True when `RAID_UNLOCK_OVERRIDE` forced it rather than the counter. */
+  overridden: boolean;
+};
+
+/**
+ * Is the raid open? A single integer read plus an env threshold.
+ *
+ * The override is reported rather than hidden: a gate that is open because
+ * an operator forced it is a materially different state from one the players
+ * opened, and a surface that cannot tell them apart will eventually claim
+ * the community achieved something it didn't.
+ */
+export function raidGate(): RaidGate {
+  const required = getRaidEnv().RAID_UNLOCK_T5_CLEARS;
+  const { t5Clears } = getRaidUnlock(db());
+  const overridden = raidUnlockOverridden();
+  return {
+    unlocked: overridden || t5Clears >= required,
+    t5Clears,
+    required,
+    remaining: Math.max(0, required - t5Clears),
+    overridden,
+  };
+}
+
+/**
+ * Record a T5-realm clear against the gate.
+ *
+ * Callers must only invoke this for a receipt their own request minted — see
+ * `bumpT5Clears` in the store for where the idempotency actually lives.
+ */
+export function recordT5Clear(): RaidUnlock {
+  return bumpT5Clears(db());
+}
+
+/** HP the next edition opens at when the caller has no explicit figure. */
+export function defaultEditionHp(): number {
+  return getRaidEnv().RAID_EDITION_HP;
 }

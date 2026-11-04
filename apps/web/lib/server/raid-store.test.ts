@@ -16,10 +16,12 @@ import Database, { type Database as DatabaseType } from "better-sqlite3";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   advanceAttempt,
+  bumpT5Clears,
   correctCurrentHp,
   countPlayerAttempts,
   getContribution,
   getCurrentEdition,
+  getRaidUnlock,
   listContributions,
   listContributors,
   migrateRaidTables,
@@ -554,6 +556,54 @@ describe("correctCurrentHp", () => {
   it("refuses a value above the edition total or below zero", () => {
     expect(() => correctCurrentHp(db, 1, 1001)).toThrow(/exceeds/);
     expect(() => correctCurrentHp(db, 1, -1)).toThrow(/non-negative/);
+  });
+});
+
+describe("the unlock counter", () => {
+  // The plan is explicit that this is the part that has to be right in
+  // production, because the gate itself can be forced open with an env var
+  // but a miscounted tally is silent.
+  it("starts zeroed rather than absent, so callers never branch on no-row", () => {
+    expect(getRaidUnlock(db)).toEqual({
+      t5Clears: 0,
+      firstT5At: null,
+      updatedAt: null,
+    });
+  });
+
+  it("counts each clear exactly once", () => {
+    for (let i = 1; i <= 5; i++) {
+      expect(bumpT5Clears(db).t5Clears).toBe(i);
+    }
+    expect(getRaidUnlock(db).t5Clears).toBe(5);
+  });
+
+  it("stamps the first clear's time and then leaves it alone", () => {
+    const first = bumpT5Clears(db, 1_000);
+    expect(first.firstT5At).toBe(1_000);
+    const later = bumpT5Clears(db, 9_999);
+    expect(later.firstT5At).toBe(1_000);
+    expect(later.updatedAt).toBe(9_999);
+  });
+
+  it("stays a single row no matter how many clears land", () => {
+    for (let i = 0; i < 10; i++) bumpT5Clears(db);
+    const rows = db
+      .prepare<[], { n: number }>("SELECT COUNT(*) AS n FROM raid_unlock")
+      .get();
+    expect(rows?.n).toBe(1);
+  });
+
+  it("survives the migration running again", () => {
+    bumpT5Clears(db);
+    migrateRaidTables(db);
+    expect(getRaidUnlock(db).t5Clears).toBe(1);
+  });
+
+  it("is independent of editions — the gate predates the first one", () => {
+    bumpT5Clears(db);
+    expect(getCurrentEdition(db)).toBeUndefined();
+    expect(getRaidUnlock(db).t5Clears).toBe(1);
   });
 });
 

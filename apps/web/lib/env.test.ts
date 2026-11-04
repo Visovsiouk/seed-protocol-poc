@@ -75,6 +75,75 @@ describe("getRealmRateLimits", () => {
   });
 });
 
+describe("getRaidEnv", () => {
+  const RAID_KEYS = [
+    "RAID_UNLOCK_T5_CLEARS",
+    "RAID_EDITION_HP",
+    "RAID_UNLOCK_OVERRIDE",
+  ] as const;
+
+  async function freshRaidEnv(over: Record<string, string | undefined>) {
+    for (const k of RAID_KEYS) delete process.env[k];
+    for (const [k, v] of Object.entries(over)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+    vi.resetModules();
+    return import("@/lib/env");
+  }
+
+  it("falls back to defaults on a bare environment", async () => {
+    const env = await freshRaidEnv({});
+    expect(env.getRaidEnv().RAID_UNLOCK_T5_CLEARS).toBe(25);
+    expect(env.getRaidEnv().RAID_EDITION_HP).toBe(10_214);
+    expect(env.raidUnlockOverridden()).toBe(false);
+  });
+
+  it("reads the override only for the exact string 'true'", async () => {
+    expect((await freshRaidEnv({ RAID_UNLOCK_OVERRIDE: "true" })).raidUnlockOverridden()).toBe(true);
+    expect((await freshRaidEnv({ RAID_UNLOCK_OVERRIDE: "false" })).raidUnlockOverridden()).toBe(false);
+  });
+
+  it("coerces numeric strings", async () => {
+    const env = await freshRaidEnv({
+      RAID_UNLOCK_T5_CLEARS: "7",
+      RAID_EDITION_HP: "500",
+    });
+    expect(env.getRaidEnv().RAID_UNLOCK_T5_CLEARS).toBe(7);
+    expect(env.getRaidEnv().RAID_EDITION_HP).toBe(500);
+  });
+
+  it("warns and defaults on an invalid value rather than throwing", async () => {
+    // `RAID_UNLOCK_OVERRIDE=TRUE` is present-and-invalid, which `.default()`
+    // does not cover — and this is read from inside a route that has already
+    // minted on chain, so a throw would turn a typo into a 500 on a
+    // successful clear.
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const env = await freshRaidEnv({ RAID_UNLOCK_OVERRIDE: "TRUE" });
+    expect(() => env.getRaidEnv()).not.toThrow();
+    expect(env.raidUnlockOverridden()).toBe(false);
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it("defaults rather than throwing on a non-positive threshold", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const env = await freshRaidEnv({ RAID_UNLOCK_T5_CLEARS: "0" });
+    expect(env.getRaidEnv().RAID_UNLOCK_T5_CLEARS).toBe(25);
+    warn.mockRestore();
+  });
+
+  it("does not couple to TRADER_PRIVATE_KEY", async () => {
+    // Same guarantee getRealmRateLimits has: the gate is read from
+    // /api/realm/boss-cleared, which must not start failing because an
+    // install has not run `pnpm seed:trader`.
+    stubServerEnv(ZERO_KEY);
+    const env = await freshRaidEnv({});
+    expect(() => env.getServerEnv()).toThrow();
+    expect(env.getRaidEnv().RAID_UNLOCK_T5_CLEARS).toBeGreaterThan(0);
+  });
+});
+
 describe("getStoryAiEnv", () => {
   const STORY_KEYS = [
     "STORY_AI_ENABLED",
