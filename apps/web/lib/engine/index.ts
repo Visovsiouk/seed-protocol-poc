@@ -59,8 +59,12 @@ export const BOSS_DEPTH = 6;
  * Derive a sub-seed from (rngSeed, depth, stepInRoom). XOR-in the salts
  * to the last 12 bytes of the seed — the cascade-mix loader in rng.ts
  * fans single-byte changes back across every lane.
+ *
+ * Exported so out-of-engine simulators can reproduce a fight turn-for-turn
+ * without re-deriving this by hand (`scripts/lib/raid-damage.ts` does). A
+ * copy would silently drift the moment this changes; an import can't.
  */
-function subSeed(
+export function subSeed(
   seed: `0x${string}`,
   depth: number,
   step: number,
