@@ -74,7 +74,7 @@ describe("raid-db", () => {
     expect(raid.raidBar()?.currentHp).toBe(1000);
     raid.submitAttempt({
       edition: 1,
-      entryTxHash: hash(1),
+      attemptId: hash(1),
       player: ALICE,
       damage: 400,
       turns: 30,
@@ -86,7 +86,7 @@ describe("raid-db", () => {
   it("does not move it again for a duplicate submission", () => {
     const input = {
       edition: 1,
-      entryTxHash: hash(2),
+      attemptId: hash(2),
       player: ALICE,
       damage: 100,
       turns: 10,
@@ -106,7 +106,7 @@ describe("raid-db", () => {
   it("reports the kill and then the successor edition", () => {
     raid.submitAttempt({
       edition: 1,
-      entryTxHash: hash(3),
+      attemptId: hash(3),
       player: ALICE,
       damage: 9999,
       turns: 12,
@@ -156,11 +156,80 @@ describe("raid-db", () => {
     expect(raid.defaultEditionHp()).toBe(10_214);
   });
 
+  it("refuses to issue an attempt the player has not earned", () => {
+    // The gate is open by now (the suite above crossed it) and edition 2
+    // stands, so a balance of zero is the only thing left to stop this.
+    expect(raid.playerAttemptBalance(ALICE)).toBe(0);
+    expect(() => raid.issueAttempt(ALICE)).toThrow(/no unspent attempts/);
+  });
+
+  it("grants on a clear and issues against the standing edition", () => {
+    expect(
+      raid.grantAttemptsForClear({
+        clearReceiptTokenId: 9001n,
+        player: ALICE,
+        realm: "0x0000000000000000000000000000000000000001",
+      }),
+    ).toBe(1);
+    expect(raid.playerAttemptBalance(ALICE)).toBe(1);
+
+    const issued = raid.issueAttempt(ALICE);
+    expect(issued.edition).toBe(2);
+    expect(issued.turnLimit).toBe(30);
+    expect(issued.editionHp).toBe(250);
+    expect(raid.playerAttemptBalance(ALICE)).toBe(0);
+  });
+
+  it("grants nothing for a replayed clear", () => {
+    expect(
+      raid.grantAttemptsForClear({
+        clearReceiptTokenId: 9001n,
+        player: ALICE,
+        realm: "0x0000000000000000000000000000000000000001",
+      }),
+    ).toBe(0);
+    expect(raid.playerAttemptBalance(ALICE)).toBe(0);
+  });
+
+  it("moves the bar when an issued attempt reports progress", () => {
+    raid.grantAttemptsForClear({
+      clearReceiptTokenId: 9002n,
+      player: ALICE,
+      realm: "0x0000000000000000000000000000000000000001",
+    });
+    const issued = raid.issueAttempt(ALICE);
+    expect(raid.raidBar()?.currentHp).toBe(250);
+
+    raid.advanceAttemptProgress({
+      edition: issued.edition,
+      attemptId: issued.attemptId,
+      player: ALICE,
+      cumulativeDamage: 60,
+      turns: 8,
+      survived: false,
+    });
+    expect(raid.raidBar()?.currentHp).toBe(190);
+
+    // Mid-fight top-up: the delta lands and the bar follows.
+    raid.advanceAttemptProgress({
+      edition: issued.edition,
+      attemptId: issued.attemptId,
+      player: ALICE,
+      cumulativeDamage: 100,
+      turns: 14,
+      survived: false,
+    });
+    expect(raid.raidBar()?.currentHp).toBe(150);
+  });
+
   it("keeps the contributor record of the felled edition", () => {
     const rows = raid.raidContributors(1);
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ player: ALICE, attempts: 3, damage: 1000 });
+    // Counts are per-edition. Edition 1's three survive untouched by the
+    // edition-2 attempts the tests above opened; an edition that never
+    // existed has none.
     expect(raid.raidPlayerAttempts(1, ALICE)).toBe(3);
-    expect(raid.raidPlayerAttempts(2, ALICE)).toBe(0);
+    expect(raid.raidPlayerAttempts(99, ALICE)).toBe(0);
   });
 });

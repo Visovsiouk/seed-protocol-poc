@@ -168,6 +168,26 @@ const raidSchema = z.object({
    */
   RAID_EDITION_HP: z.coerce.number().int().positive().default(10_214),
   /**
+   * Rounds a single attempt gets.
+   *
+   * Flat, not scaled by anything. The plan had an item's tier buy the limit,
+   * but the entry cost is gone (see `grantAttempt` in
+   * `lib/server/raid-store.ts`) and every figure S1 measured — including the
+   * HP default above — was measured at a *fixed* limit, so a constant is
+   * what the numbers already assume. 30 sits just above median survival for
+   * every T5 build against the recommended block, which keeps death the
+   * usual ending rather than the limit: below median, nobody ever dies and
+   * "dying contributes" becomes decoration.
+   *
+   * Copied onto each attempt at issue time, so changing this never alters a
+   * fight already in progress.
+   */
+  RAID_TURN_LIMIT: z.coerce.number().int().positive().default(30),
+  /**
+   * Attempts granted per T5-realm clear. One clear, one attempt.
+   */
+  RAID_ATTEMPTS_PER_CLEAR: z.coerce.number().int().positive().default(1),
+  /**
    * Force the gate open regardless of the counter.
    *
    * The gate is otherwise unreachable outside production: it needs a realm

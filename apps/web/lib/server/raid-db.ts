@@ -30,19 +30,25 @@ import "server-only";
 import { getRaidEnv, raidUnlockOverridden } from "@/lib/env";
 import {
   advanceAttempt,
+  attemptBalance,
   bumpT5Clears,
   countPlayerAttempts,
   getContribution,
   getCurrentEdition,
   getEdition,
   getRaidUnlock,
+  grantAttempt,
   listContributions,
   listContributors,
+  listGrants,
   migrateRaidTables,
+  openAttempt,
   openNextEdition,
   recordAttempt,
   type AdvanceAttemptInput,
+  type AttemptGrant,
   type ContributorTotal,
+  type IssuedAttempt,
   type RaidContribution,
   type RaidEdition,
   type RaidUnlock,
@@ -108,9 +114,9 @@ export function raidEdition(edition: number): RaidEdition | undefined {
 }
 
 export function raidContribution(
-  entryTxHash: `0x${string}`,
+  attemptId: `0x${string}`,
 ): RaidContribution | undefined {
-  return getContribution(db(), entryTxHash);
+  return getContribution(db(), attemptId);
 }
 
 export function raidContributions(edition: number): RaidContribution[] {
@@ -129,8 +135,8 @@ export function raidPlayerAttempts(
 }
 
 /**
- * Record a finished attempt against the pool, write-once on the entry tx
- * hash. A second submission is ignored whatever it claims.
+ * Record a finished attempt against the pool, write-once on the attempt id.
+ * A second submission is ignored whatever it claims.
  */
 export function submitAttempt(input: RecordAttemptInput): RecordAttemptResult {
   const res = recordAttempt(db(), input);
@@ -213,4 +219,74 @@ export function recordT5Clear(): RaidUnlock {
 /** HP the next edition opens at when the caller has no explicit figure. */
 export function defaultEditionHp(): number {
   return getRaidEnv().RAID_EDITION_HP;
+}
+
+// ---------------------------------------------------------------------------
+// Earned attempts
+// ---------------------------------------------------------------------------
+
+/**
+ * Credit a player for clearing a T5 realm.
+ *
+ * `RAID_ATTEMPTS_PER_CLEAR` lives here rather than in the store because the
+ * store is deliberately env-free — tests and scripts hand it numbers. More
+ * than one attempt per clear gets distinct grant keys suffixed off the
+ * clearReceipt token id, so each remains individually idempotent: a replayed
+ * clear re-presents the same N keys and grants nothing.
+ *
+ * Returns how many attempts this call actually granted — 0 for a replay.
+ */
+export function grantAttemptsForClear(args: {
+  clearReceiptTokenId: string | bigint;
+  player: `0x${string}`;
+  realm: `0x${string}`;
+}): number {
+  const perClear = getRaidEnv().RAID_ATTEMPTS_PER_CLEAR;
+  const handle = db();
+  let granted = 0;
+  for (let i = 0; i < perClear; i++) {
+    const key =
+      perClear === 1
+        ? String(args.clearReceiptTokenId)
+        : `${args.clearReceiptTokenId}#${i}`;
+    if (grantAttempt(handle, { ...args, grantKey: key })) granted += 1;
+  }
+  return granted;
+}
+
+/** Unspent attempts a player holds. */
+export function playerAttemptBalance(player: `0x${string}`): number {
+  return attemptBalance(db(), player);
+}
+
+export function playerGrants(player: `0x${string}`): AttemptGrant[] {
+  return listGrants(db(), player);
+}
+
+/**
+ * Spend one earned attempt against the standing edition and issue it.
+ *
+ * Throws when the raid is shut, no edition stands, or the player has nothing
+ * to spend — all three are conditions a caller has to report differently, so
+ * none of them is swallowed as a null.
+ */
+export function issueAttempt(player: `0x${string}`): IssuedAttempt {
+  const gate = raidGate();
+  if (!gate.unlocked) {
+    throw new Error(
+      `the raid is sealed — ${gate.remaining} more T5 clears needed`,
+    );
+  }
+  const edition = currentEdition();
+  if (!edition) throw new Error("no edition has been opened yet");
+  const issued = openAttempt(db(), {
+    edition: edition.edition,
+    player,
+    turnLimit: getRaidEnv().RAID_TURN_LIMIT,
+  });
+  // The attempt's row is a contribution at 0 damage, so the cached edition is
+  // untouched — but invalidate anyway rather than reasoning about it at every
+  // future call site.
+  invalidate();
+  return issued;
 }

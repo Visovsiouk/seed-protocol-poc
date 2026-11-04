@@ -17,11 +17,20 @@
  * ## The two invariants
  *
  * **The decrement is atomic and idempotent.** An attempt is keyed on its
- * entry tx hash, which is the payment that bought the attempt, so it is
- * already unique per attempt and already the thing a retry would repeat.
- * `recordAttempt` inserts the contribution and subtracts the HP inside one
- * `db.transaction()`; a duplicate hash collides on the primary key and the
- * whole transaction is skipped, so a double submission subtracts once.
+ * `attempt_id`, a server-issued opaque identifier handed out when the
+ * attempt is granted. `recordAttempt` inserts the contribution and subtracts
+ * the HP inside one `db.transaction()`; a duplicate id collides on the
+ * primary key and the whole transaction is skipped, so a double submission
+ * subtracts once.
+ *
+ * The id used to be the entry transaction's hash, back when an attempt was
+ * bought with a surrendered loot item. That cost is gone — it would have
+ * made the boss unattemptable on a fresh server, where the first players to
+ * reach the raid own exactly one good item and need thirty attempts — and
+ * attempts are earned by clearing T5 realms instead. Server-issued is
+ * strictly better than a tx hash anyway: it is unpredictable before issue,
+ * which is what closes the run-seed grinding the plan worried about, rather
+ * than merely making it unprofitable.
  *
  * **The pool only falls.** `current_hp` is clamped at 0, never restored
  * within an edition, and an attempt's recorded `damage` is the amount that
@@ -32,6 +41,7 @@
  * and the difference is not recoverable once discarded.
  */
 
+import { randomBytes } from "node:crypto";
 import type { Database as DatabaseType } from "better-sqlite3";
 
 /** A boss edition. One row per edition, newest highest. */
@@ -48,7 +58,7 @@ export type RaidEdition = {
 
 /** One verified attempt against an edition. */
 export type RaidContribution = {
-  entryTxHash: `0x${string}`;
+  attemptId: `0x${string}`;
   edition: number;
   player: `0x${string}`;
   /** HP this attempt actually removed from the pool (clamped at the remainder). */
@@ -59,12 +69,16 @@ export type RaidContribution = {
   survived: boolean;
   /** True for the single attempt that took the pool to 0. */
   killingBlow: boolean;
+  /** Rounds this attempt was allowed, fixed when it was issued. */
+  turnLimit: number;
+  /** Server-issued run seed, or null for an attempt not opened via `openAttempt`. */
+  rngSeed: `0x${string}` | null;
   createdAt: number;
 };
 
 export type RecordAttemptInput = {
   edition: number;
-  entryTxHash: `0x${string}`;
+  attemptId: `0x${string}`;
   player: `0x${string}`;
   damage: number;
   turns: number;
@@ -73,7 +87,7 @@ export type RecordAttemptInput = {
 
 export type AdvanceAttemptInput = {
   edition: number;
-  entryTxHash: `0x${string}`;
+  attemptId: `0x${string}`;
   player: `0x${string}`;
   /**
    * Total damage this attempt has dealt **since the fight began**, not since
@@ -108,7 +122,7 @@ type BossRow = {
 };
 
 type ContributionRow = {
-  entry_tx_hash: string;
+  attempt_id: string;
   edition: number;
   player: string;
   damage: number;
@@ -116,6 +130,8 @@ type ContributionRow = {
   turns: number;
   survived: number;
   killing_blow: number;
+  turn_limit: number;
+  rng_seed: string | null;
   created_at: number;
 };
 
@@ -144,7 +160,7 @@ const SCHEMA = `
   );
 
   CREATE TABLE IF NOT EXISTS raid_contribution (
-    entry_tx_hash  TEXT PRIMARY KEY,
+    attempt_id     TEXT PRIMARY KEY,
     edition        INTEGER NOT NULL REFERENCES raid_boss(edition),
     player         TEXT NOT NULL,
     damage         INTEGER NOT NULL CHECK (damage >= 0),
@@ -152,6 +168,14 @@ const SCHEMA = `
     turns          INTEGER NOT NULL CHECK (turns >= 0),
     survived       INTEGER NOT NULL CHECK (survived IN (0, 1)),
     killing_blow   INTEGER NOT NULL DEFAULT 0 CHECK (killing_blow IN (0, 1)),
+    -- Fixed when the attempt is issued, not read from config at submit time:
+    -- an operator retuning the limit mid-edition must not retroactively
+    -- change the rules of a fight already in progress.
+    turn_limit     INTEGER NOT NULL DEFAULT 30 CHECK (turn_limit > 0),
+    -- Server-issued, stored so the fight can be replayed later. S3 is
+    -- deferred, but the seed is the one input that cannot be reconstructed
+    -- afterwards, so discarding it would make replay permanently impossible.
+    rng_seed       TEXT,
     created_at     INTEGER NOT NULL
   );
 
@@ -159,6 +183,17 @@ const SCHEMA = `
     ON raid_contribution(edition, created_at);
   CREATE INDEX IF NOT EXISTS idx_raid_contribution_player
     ON raid_contribution(edition, player);
+
+  CREATE TABLE IF NOT EXISTS raid_attempt_grant (
+    grant_key  TEXT PRIMARY KEY,
+    player     TEXT NOT NULL,
+    realm      TEXT NOT NULL,
+    spent_on   TEXT,
+    created_at INTEGER NOT NULL
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_raid_grant_unspent
+    ON raid_attempt_grant(player, spent_on);
 
   CREATE TABLE IF NOT EXISTS raid_unlock (
     id         INTEGER PRIMARY KEY CHECK (id = 1),
@@ -195,7 +230,7 @@ function toEdition(r: BossRow): RaidEdition {
 
 function toContribution(r: ContributionRow): RaidContribution {
   return {
-    entryTxHash: r.entry_tx_hash as `0x${string}`,
+    attemptId: r.attempt_id as `0x${string}`,
     edition: r.edition,
     player: r.player as `0x${string}`,
     damage: r.damage,
@@ -203,6 +238,8 @@ function toContribution(r: ContributionRow): RaidContribution {
     turns: r.turns,
     survived: r.survived === 1,
     killingBlow: r.killing_blow === 1,
+    turnLimit: r.turn_limit,
+    rngSeed: (r.rng_seed as `0x${string}` | null) ?? null,
     createdAt: r.created_at,
   };
 }
@@ -364,21 +401,21 @@ export function advanceAttempt(
       `cumulativeDamage must be a non-negative integer, got ${input.cumulativeDamage}`,
     );
   }
-  const hash = input.entryTxHash.toLowerCase() as `0x${string}`;
+  const hash = input.attemptId.toLowerCase() as `0x${string}`;
   const player = input.player.toLowerCase() as `0x${string}`;
 
   const tx = db.transaction((): RecordAttemptResult => {
     const boss = requireStandingEdition(db, input.edition);
     const prior = db
       .prepare<[string], ContributionRow>(
-        "SELECT * FROM raid_contribution WHERE entry_tx_hash = ?",
+        "SELECT * FROM raid_contribution WHERE attempt_id = ?",
       )
       .get(hash);
     if (prior && prior.edition !== input.edition) {
       // The hash is the attempt, and an attempt belongs to one edition. A
       // collision across editions means the caller mismatched them.
       throw new Error(
-        `entry tx ${hash} already belongs to edition ${prior.edition}, not ${input.edition}`,
+        `attempt ${hash} already belongs to edition ${prior.edition}, not ${input.edition}`,
       );
     }
 
@@ -397,7 +434,7 @@ export function advanceAttempt(
                 turns          = ?,
                 survived       = ?,
                 killing_blow   = MAX(killing_blow, ?)
-          WHERE entry_tx_hash = ?`,
+          WHERE attempt_id = ?`,
       ).run(
         applied,
         input.cumulativeDamage,
@@ -409,7 +446,7 @@ export function advanceAttempt(
     } else {
       db.prepare(
         `INSERT INTO raid_contribution (
-           entry_tx_hash, edition, player, damage, damage_claimed,
+           attempt_id, edition, player, damage, damage_claimed,
            turns, survived, killing_blow, created_at
          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       ).run(
@@ -463,7 +500,7 @@ export function recordAttempt(
   if (!Number.isInteger(input.damage) || input.damage < 0) {
     throw new Error(`damage must be a non-negative integer, got ${input.damage}`);
   }
-  const hash = input.entryTxHash.toLowerCase() as `0x${string}`;
+  const hash = input.attemptId.toLowerCase() as `0x${string}`;
   const player = input.player.toLowerCase() as `0x${string}`;
 
   const tx = db.transaction((): RecordAttemptResult => {
@@ -479,7 +516,7 @@ export function recordAttempt(
     const res = db
       .prepare(
         `INSERT OR IGNORE INTO raid_contribution (
-           entry_tx_hash, edition, player, damage, damage_claimed,
+           attempt_id, edition, player, damage, damage_claimed,
            turns, survived, killing_blow, created_at
          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
@@ -560,13 +597,13 @@ export function correctCurrentHp(
 
 export function getContribution(
   db: DatabaseType,
-  entryTxHash: `0x${string}`,
+  attemptId: `0x${string}`,
 ): RaidContribution | undefined {
   const row = db
     .prepare<[string], ContributionRow>(
-      "SELECT * FROM raid_contribution WHERE entry_tx_hash = ?",
+      "SELECT * FROM raid_contribution WHERE attempt_id = ?",
     )
-    .get(entryTxHash.toLowerCase());
+    .get(attemptId.toLowerCase());
   return row ? toContribution(row) : undefined;
 }
 
@@ -621,6 +658,209 @@ export function listContributors(
       attempts: r.attempts,
       killingBlow: r.killing_blow === 1,
     }));
+}
+
+// ---------------------------------------------------------------------------
+// Earned attempts
+// ---------------------------------------------------------------------------
+
+/**
+ * Why attempts are earned rather than bought.
+ *
+ * The plan priced an attempt at one surrendered loot item, with its tier
+ * buying the turn limit. That was dropped: it would have made the boss
+ * unattemptable exactly when it matters, because the first players to reach
+ * the raid own one good item and need roughly thirty attempts, and T5 gear
+ * requires a T5 realm — fifty distinct clearers — so there is no stock of
+ * spare items to spend on a fresh server.
+ *
+ * A flat per-day cooldown has the mirror-image failure: thirty attempts at
+ * one a day is a month to fell edition 1, so the kill and the contributor
+ * list still never get exercised.
+ *
+ * Clearing a T5 realm grants an attempt instead. It paces itself against
+ * play rather than the clock, it is sybil-resistant for free — a burner
+ * wallet cannot farm fifty distinct clearers to get T5 gear in the first
+ * place — and it reuses the hook the unlock gate already needed, so it costs
+ * no chain work, no sink address, and loses no items to a failed credit.
+ */
+export type AttemptGrant = {
+  /** The clear that earned it; the clearReceipt tokenId. */
+  grantKey: string;
+  player: `0x${string}`;
+  realm: `0x${string}`;
+  /** The attempt that consumed it, or null while unspent. */
+  spentOn: string | null;
+  createdAt: number;
+};
+
+/**
+ * Credit a player with one attempt for clearing a T5 realm.
+ *
+ * `grantKey` must be the clearReceipt's tokenId, which is derived from
+ * (realm, player, runSeed) and is therefore unique per clear. Keying on it
+ * makes the grant idempotent **by construction** rather than by where the
+ * call sits: a retried or replayed clear re-presents the same token id,
+ * collides on the primary key, and grants nothing. The unlock counter next
+ * to it has no such key and has to lean on the route's early return, which
+ * is the weaker arrangement of the two.
+ *
+ * Returns whether this call was the one that granted.
+ */
+export function grantAttempt(
+  db: DatabaseType,
+  args: { grantKey: string | bigint; player: `0x${string}`; realm: `0x${string}` },
+  now = Math.floor(Date.now() / 1000),
+): boolean {
+  const res = db
+    .prepare(
+      `INSERT OR IGNORE INTO raid_attempt_grant
+         (grant_key, player, realm, spent_on, created_at)
+       VALUES (?, ?, ?, NULL, ?)`,
+    )
+    .run(
+      String(args.grantKey),
+      args.player.toLowerCase(),
+      args.realm.toLowerCase(),
+      now,
+    );
+  return res.changes > 0;
+}
+
+/** Unspent attempts a player holds. */
+export function attemptBalance(
+  db: DatabaseType,
+  player: `0x${string}`,
+): number {
+  const row = db
+    .prepare<[string], { n: number }>(
+      "SELECT COUNT(*) AS n FROM raid_attempt_grant WHERE player = ? AND spent_on IS NULL",
+    )
+    .get(player.toLowerCase());
+  return row?.n ?? 0;
+}
+
+export function listGrants(
+  db: DatabaseType,
+  player: `0x${string}`,
+): AttemptGrant[] {
+  return db
+    .prepare<
+      [string],
+      {
+        grant_key: string;
+        player: string;
+        realm: string;
+        spent_on: string | null;
+        created_at: number;
+      }
+    >(
+      "SELECT * FROM raid_attempt_grant WHERE player = ? ORDER BY created_at ASC",
+    )
+    .all(player.toLowerCase())
+    .map((r) => ({
+      grantKey: r.grant_key,
+      player: r.player as `0x${string}`,
+      realm: r.realm as `0x${string}`,
+      spentOn: r.spent_on,
+      createdAt: r.created_at,
+    }));
+}
+
+export type IssuedAttempt = {
+  attemptId: `0x${string}`;
+  /** Server-chosen run seed. The client never picks this — see below. */
+  rngSeed: `0x${string}`;
+  edition: number;
+  player: `0x${string}`;
+  turnLimit: number;
+  /** The pool as it stood when the attempt opened. */
+  startHp: number;
+  /** The edition total, which the fight passes as the boss's `baseHp`. */
+  editionHp: number;
+};
+
+/** 32 random bytes as hex — the shape `createRng` requires for a seed. */
+function randomHex32(): `0x${string}` {
+  return `0x${randomBytes(32).toString("hex")}` as `0x${string}`;
+}
+
+/**
+ * Spend one earned attempt and issue it.
+ *
+ * Both the id and the run seed are server-generated random 32-byte values,
+ * which is what closes the grinding hole the plan flagged: `deriveRunSeed`'s
+ * nonce was a client timestamp, so a client could brute-force nonces offline
+ * and submit its luckiest run — and replay would accept it, correctly,
+ * because it *was* a legitimate run. S1 measured that gain at 2.2x, small
+ * enough not to matter here, but an unpredictable server seed removes it for
+ * free rather than tolerating it. They are two independent randoms rather
+ * than one derived from the other so that knowing the public identifier tells
+ * you nothing about the seed before the fight starts.
+ *
+ * Spending and issuing happen in one transaction, so a crash between them
+ * cannot burn a grant without producing an attempt, or vice versa.
+ */
+export function openAttempt(
+  db: DatabaseType,
+  args: { edition: number; player: `0x${string}`; turnLimit: number },
+  now = Math.floor(Date.now() / 1000),
+): IssuedAttempt {
+  const player = args.player.toLowerCase() as `0x${string}`;
+  if (!Number.isInteger(args.turnLimit) || args.turnLimit <= 0) {
+    throw new Error(`turnLimit must be a positive integer, got ${args.turnLimit}`);
+  }
+
+  const tx = db.transaction((): IssuedAttempt => {
+    const boss = requireStandingEdition(db, args.edition);
+    const grant = db
+      .prepare<[string], { grant_key: string }>(
+        // `rowid` breaks ties: timestamps are whole seconds, so two clears in
+        // the same second would otherwise have undefined spend order.
+        `SELECT grant_key FROM raid_attempt_grant
+          WHERE player = ? AND spent_on IS NULL
+          ORDER BY created_at ASC, rowid ASC LIMIT 1`,
+      )
+      .get(player);
+    if (!grant) {
+      throw new Error(
+        `${player} has no unspent attempts — clear a T5 realm to earn one`,
+      );
+    }
+
+    const attemptId = randomHex32();
+    const rngSeed = randomHex32();
+
+    // Guarded on `spent_on IS NULL` as well as the key so the spend is the
+    // thing that fails if two issues race, rather than the grant silently
+    // being reused.
+    const spent = db
+      .prepare(
+        "UPDATE raid_attempt_grant SET spent_on = ? WHERE grant_key = ? AND spent_on IS NULL",
+      )
+      .run(attemptId, grant.grant_key);
+    if (spent.changes === 0) {
+      throw new Error(`grant ${grant.grant_key} was already spent`);
+    }
+
+    db.prepare(
+      `INSERT INTO raid_contribution (
+         attempt_id, edition, player, damage, damage_claimed,
+         turns, survived, killing_blow, turn_limit, rng_seed, created_at
+       ) VALUES (?, ?, ?, 0, 0, 0, 0, 0, ?, ?, ?)`,
+    ).run(attemptId, args.edition, player, args.turnLimit, rngSeed, now);
+
+    return {
+      attemptId,
+      rngSeed,
+      edition: args.edition,
+      player,
+      turnLimit: args.turnLimit,
+      startHp: boss.currentHp,
+      editionHp: boss.totalHp,
+    };
+  });
+  return tx();
 }
 
 // ---------------------------------------------------------------------------

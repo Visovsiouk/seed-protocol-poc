@@ -28,11 +28,12 @@
  * Usage (from `apps/web`):
  *
  *   pnpm raid:edition                      → show the current pool
- *   pnpm raid:edition --hp 10214           → open the next edition
- *   pnpm raid:edition --attempts 30        → measure, then open at that size
+ *   pnpm raid:edition --hp 2000            → open the next edition
+ *   pnpm raid:edition --attempts 6         → measure, then open at that size
  *   pnpm raid:edition --hp 40              → a rehearsal edition
  *   pnpm raid:edition --set-hp 5000 --edition 1    → correction
  *   pnpm raid:edition --contributors       → the current edition's record
+ *   pnpm raid:edition --grant 0xabc…       → hand a wallet an attempt (rehearsal)
  *
  * `--attempts` runs the S1 harness (`scripts/lib/raid-damage.ts`) to derive
  * the HP total rather than taking it on faith, and accepts `--profile`,
@@ -44,8 +45,11 @@
  */
 
 import {
+  attemptBalance,
   correctCurrentHp,
+  grantAttempt,
   getCurrentEdition,
+  getRaidUnlock,
   listContributors,
   listEditions,
   migrateRaidTables,
@@ -116,12 +120,24 @@ function describeEdition(e: RaidEdition): string {
 }
 
 function showStatus(db: ReturnType<typeof openRealmsDb>): void {
+  const unlock = getRaidUnlock(db);
+  console.log(
+    `gate: ${unlock.t5Clears} T5 clear(s) counted` +
+      (unlock.firstT5At === null
+        ? " — no realm has reached T5 yet"
+        : ` since ${new Date(unlock.firstT5At * 1000).toISOString()}`) +
+      `\n      threshold is RAID_UNLOCK_T5_CLEARS; RAID_UNLOCK_OVERRIDE=true forces it open\n`,
+  );
+
   const all = listEditions(db);
   if (all.length === 0) {
     console.log(
       "No editions yet. Open the first:\n" +
-        "  pnpm raid:edition --attempts 30      (measures, then opens)\n" +
-        "  pnpm raid:edition --hp 10214         (if you already have the number)",
+        "  pnpm raid:edition --attempts 6       (measures, then opens — a small first edition)\n" +
+        "  pnpm raid:edition --hp 2000          (if you already have the number)\n" +
+        "\nSize edition 1 low. Editions exist so that sizing low first is the safe\n" +
+        "mistake: an edition that never falls means the kill, the contributor list\n" +
+        "and the felled-editions record never get exercised.",
     );
     return;
   }
@@ -179,6 +195,33 @@ function showContributors(db: ReturnType<typeof openRealmsDb>): void {
         "That gap is the signature of a `--set-hp` correction having been applied.",
     );
   }
+}
+
+/**
+ * Hand a wallet an attempt without making it clear a T5 realm.
+ *
+ * The rehearsal counterpart to `RAID_UNLOCK_OVERRIDE`, and needed for the
+ * same reason: earning an attempt legitimately means clearing a realm with
+ * fifty distinct clearers, which no local chain has. Keys the grant on a
+ * timestamped manual id so it can never collide with a real clearReceipt
+ * token id, and so the record shows plainly that it was issued by hand.
+ */
+function grantManually(
+  db: ReturnType<typeof openRealmsDb>,
+  player: `0x${string}`,
+): void {
+  const key = `manual:${Date.now()}`;
+  const granted = grantAttempt(db, {
+    grantKey: key,
+    player,
+    realm: "0x0000000000000000000000000000000000000000",
+  });
+  console.log(
+    granted
+      ? `Granted 1 attempt to ${player} (${key}).`
+      : `Nothing granted — ${key} already exists.`,
+  );
+  console.log(`${player} now holds ${attemptBalance(db, player)} unspent attempt(s).`);
 }
 
 function sizeFromAttempts(argv: string[], attempts: number): number {
@@ -242,6 +285,15 @@ function main(): void {
       if (phaseFor(after.totalHp, after.currentHp) !== before.phase) {
         console.log(`  phase moved ${before.phase} → ${after.phase}`);
       }
+      return;
+    }
+
+    const grantTo = argv[argv.indexOf("--grant") + 1];
+    if (argv.includes("--grant")) {
+      if (!grantTo || !/^0x[0-9a-fA-F]{40}$/.test(grantTo)) {
+        throw new Error(`--grant requires a 0x address, got ${grantTo}`);
+      }
+      grantManually(db, grantTo.toLowerCase() as `0x${string}`);
       return;
     }
 

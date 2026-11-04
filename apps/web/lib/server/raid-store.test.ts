@@ -16,15 +16,19 @@ import Database, { type Database as DatabaseType } from "better-sqlite3";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   advanceAttempt,
+  attemptBalance,
   bumpT5Clears,
   correctCurrentHp,
   countPlayerAttempts,
   getContribution,
   getCurrentEdition,
   getRaidUnlock,
+  grantAttempt,
   listContributions,
   listContributors,
+  listGrants,
   migrateRaidTables,
+  openAttempt,
   openNextEdition,
   phaseFor,
   recordAttempt,
@@ -33,7 +37,7 @@ import {
 const ALICE = "0x00000000000000000000000000000000000000a1" as `0x${string}`;
 const BOB = "0x00000000000000000000000000000000000000b2" as `0x${string}`;
 
-/** Distinct, deterministic entry tx hashes. */
+/** Distinct, deterministic attempt ids. */
 function hash(n: number): `0x${string}` {
   return `0x${n.toString(16).padStart(64, "0")}` as `0x${string}`;
 }
@@ -74,7 +78,7 @@ describe("openNextEdition", () => {
     openNextEdition(db, 100);
     recordAttempt(db, {
       edition: 1,
-      entryTxHash: hash(1),
+      attemptId: hash(1),
       player: ALICE,
       damage: 100,
       turns: 10,
@@ -95,10 +99,10 @@ describe("openNextEdition", () => {
 describe("recordAttempt — idempotency", () => {
   beforeEach(() => openNextEdition(db, 1000));
 
-  it("subtracts once when the same entry tx hash is submitted twice", () => {
+  it("subtracts once when the same attempt id is submitted twice", () => {
     const input = {
       edition: 1,
-      entryTxHash: hash(7),
+      attemptId: hash(7),
       player: ALICE,
       damage: 300,
       turns: 30,
@@ -118,7 +122,7 @@ describe("recordAttempt — idempotency", () => {
   it("does not let a duplicate overwrite the original row", () => {
     const base = {
       edition: 1,
-      entryTxHash: hash(8),
+      attemptId: hash(8),
       player: ALICE,
       damage: 100,
       turns: 10,
@@ -134,10 +138,10 @@ describe("recordAttempt — idempotency", () => {
     expect(getCurrentEdition(db)?.currentHp).toBe(900);
   });
 
-  it("is case-insensitive on the hash, since a retry may re-checksum it", () => {
+  it("is case-insensitive on the id, since a client may re-case it", () => {
     recordAttempt(db, {
       edition: 1,
-      entryTxHash: hash(9),
+      attemptId: hash(9),
       player: ALICE,
       damage: 50,
       turns: 5,
@@ -146,7 +150,7 @@ describe("recordAttempt — idempotency", () => {
     const upper = ("0x" + hash(9).slice(2).toUpperCase()) as `0x${string}`;
     const again = recordAttempt(db, {
       edition: 1,
-      entryTxHash: upper,
+      attemptId: upper,
       player: ALICE,
       damage: 50,
       turns: 5,
@@ -162,7 +166,7 @@ describe("recordAttempt — the zero crossing", () => {
     openNextEdition(db, 500);
     recordAttempt(db, {
       edition: 1,
-      entryTxHash: hash(1),
+      attemptId: hash(1),
       player: ALICE,
       damage: 400,
       turns: 30,
@@ -171,7 +175,7 @@ describe("recordAttempt — the zero crossing", () => {
     // Overkill: 300 claimed into a pool with 100 left.
     const kill = recordAttempt(db, {
       edition: 1,
-      entryTxHash: hash(2),
+      attemptId: hash(2),
       player: BOB,
       damage: 300,
       turns: 12,
@@ -195,7 +199,7 @@ describe("recordAttempt — the zero crossing", () => {
     openNextEdition(db, 100);
     recordAttempt(db, {
       edition: 1,
-      entryTxHash: hash(1),
+      attemptId: hash(1),
       player: ALICE,
       damage: 100,
       turns: 9,
@@ -204,7 +208,7 @@ describe("recordAttempt — the zero crossing", () => {
     expect(() =>
       recordAttempt(db, {
         edition: 1,
-        entryTxHash: hash(2),
+        attemptId: hash(2),
         player: BOB,
         damage: 10,
         turns: 3,
@@ -217,7 +221,7 @@ describe("recordAttempt — the zero crossing", () => {
     openNextEdition(db, 100);
     const res = recordAttempt(db, {
       edition: 1,
-      entryTxHash: hash(3),
+      attemptId: hash(3),
       player: ALICE,
       damage: 0,
       turns: 2,
@@ -236,7 +240,7 @@ describe("recordAttempt — the zero crossing", () => {
     expect(() =>
       recordAttempt(db, {
         edition: 1,
-        entryTxHash: hash(4),
+        attemptId: hash(4),
         player: ALICE,
         damage: -50,
         turns: 1,
@@ -249,7 +253,7 @@ describe("recordAttempt — the zero crossing", () => {
     expect(() =>
       recordAttempt(db, {
         edition: 99,
-        entryTxHash: hash(5),
+        attemptId: hash(5),
         player: ALICE,
         damage: 10,
         turns: 1,
@@ -264,7 +268,7 @@ describe("advanceAttempt — incremental submission", () => {
 
   const base = {
     edition: 1,
-    entryTxHash: hash(42),
+    attemptId: hash(42),
     player: ALICE,
     survived: false,
   };
@@ -319,7 +323,7 @@ describe("advanceAttempt — incremental submission", () => {
     for (let i = 1; i <= 4; i++) {
       advanceAttempt(db, {
         edition: 1,
-        entryTxHash: hash(100 + i),
+        attemptId: hash(100 + i),
         player: i % 2 === 0 ? BOB : ALICE,
         cumulativeDamage: 50,
         turns: 3,
@@ -327,7 +331,7 @@ describe("advanceAttempt — incremental submission", () => {
       });
       advanceAttempt(db, {
         edition: 1,
-        entryTxHash: hash(100 + i),
+        attemptId: hash(100 + i),
         player: i % 2 === 0 ? BOB : ALICE,
         cumulativeDamage: 125,
         turns: 9,
@@ -365,7 +369,7 @@ describe("recordAttempt vs advanceAttempt — different promises", () => {
   it("recordAttempt ignores a larger resubmission; advanceAttempt credits it", () => {
     recordAttempt(db, {
       edition: 1,
-      entryTxHash: hash(1),
+      attemptId: hash(1),
       player: ALICE,
       damage: 100,
       turns: 10,
@@ -373,7 +377,7 @@ describe("recordAttempt vs advanceAttempt — different promises", () => {
     });
     recordAttempt(db, {
       edition: 1,
-      entryTxHash: hash(1),
+      attemptId: hash(1),
       player: ALICE,
       damage: 900,
       turns: 30,
@@ -383,7 +387,7 @@ describe("recordAttempt vs advanceAttempt — different promises", () => {
 
     advanceAttempt(db, {
       edition: 1,
-      entryTxHash: hash(2),
+      attemptId: hash(2),
       player: ALICE,
       cumulativeDamage: 100,
       turns: 10,
@@ -391,7 +395,7 @@ describe("recordAttempt vs advanceAttempt — different promises", () => {
     });
     advanceAttempt(db, {
       edition: 1,
-      entryTxHash: hash(2),
+      attemptId: hash(2),
       player: ALICE,
       cumulativeDamage: 900,
       turns: 30,
@@ -418,7 +422,7 @@ describe("phase transition", () => {
     for (let i = 1; i <= 3; i++) {
       const res = recordAttempt(db, {
         edition: 1,
-        entryTxHash: hash(i),
+        attemptId: hash(i),
         player: ALICE,
         damage: 200,
         turns: 30,
@@ -433,7 +437,7 @@ describe("phase transition", () => {
     openNextEdition(db, 1000);
     const a = recordAttempt(db, {
       edition: 1,
-      entryTxHash: hash(1),
+      attemptId: hash(1),
       player: ALICE,
       damage: 499,
       turns: 30,
@@ -444,7 +448,7 @@ describe("phase transition", () => {
 
     const b = recordAttempt(db, {
       edition: 1,
-      entryTxHash: hash(2),
+      attemptId: hash(2),
       player: ALICE,
       damage: 1,
       turns: 1,
@@ -467,7 +471,7 @@ describe("contributors", () => {
     for (const [n, player, damage] of attempts) {
       recordAttempt(db, {
         edition: 1,
-        entryTxHash: hash(n),
+        attemptId: hash(n),
         player,
         damage,
         turns: 30,
@@ -492,7 +496,7 @@ describe("contributors", () => {
   it("normalises player case, so one wallet is one contributor", () => {
     recordAttempt(db, {
       edition: 1,
-      entryTxHash: hash(5),
+      attemptId: hash(5),
       player: ("0x" + ALICE.slice(2).toUpperCase()) as `0x${string}`,
       damage: 100,
       turns: 30,
@@ -508,7 +512,7 @@ describe("contributors", () => {
     openNextEdition(db, 500);
     recordAttempt(db, {
       edition: 2,
-      entryTxHash: hash(6),
+      attemptId: hash(6),
       player: BOB,
       damage: 50,
       turns: 5,
@@ -533,7 +537,7 @@ describe("correctCurrentHp", () => {
   it("leaves contribution rows alone, so the mismatch is visible", () => {
     recordAttempt(db, {
       edition: 1,
-      entryTxHash: hash(1),
+      attemptId: hash(1),
       player: ALICE,
       damage: 200,
       turns: 30,
@@ -556,6 +560,151 @@ describe("correctCurrentHp", () => {
   it("refuses a value above the edition total or below zero", () => {
     expect(() => correctCurrentHp(db, 1, 1001)).toThrow(/exceeds/);
     expect(() => correctCurrentHp(db, 1, -1)).toThrow(/non-negative/);
+  });
+});
+
+describe("earned attempts", () => {
+  const REALM = "0x0000000000000000000000000000000000000001" as `0x${string}`;
+
+  it("grants one attempt per clear, idempotently on the token id", () => {
+    expect(grantAttempt(db, { grantKey: "tok-1", player: ALICE, realm: REALM })).toBe(true);
+    // A replayed clear re-presents the same token id and must grant nothing.
+    expect(grantAttempt(db, { grantKey: "tok-1", player: ALICE, realm: REALM })).toBe(false);
+    expect(attemptBalance(db, ALICE)).toBe(1);
+  });
+
+  it("keeps balances per player", () => {
+    grantAttempt(db, { grantKey: "a", player: ALICE, realm: REALM });
+    grantAttempt(db, { grantKey: "b", player: ALICE, realm: REALM });
+    grantAttempt(db, { grantKey: "c", player: BOB, realm: REALM });
+    expect(attemptBalance(db, ALICE)).toBe(2);
+    expect(attemptBalance(db, BOB)).toBe(1);
+  });
+
+  it("normalises player case, so one wallet is one balance", () => {
+    grantAttempt(db, { grantKey: "a", player: ALICE, realm: REALM });
+    const upper = ("0x" + ALICE.slice(2).toUpperCase()) as `0x${string}`;
+    grantAttempt(db, { grantKey: "b", player: upper, realm: REALM });
+    expect(attemptBalance(db, upper)).toBe(2);
+  });
+
+  describe("openAttempt", () => {
+    beforeEach(() => {
+      openNextEdition(db, 10_000);
+      grantAttempt(db, { grantKey: "tok-1", player: ALICE, realm: REALM });
+    });
+
+    it("spends a grant and issues an unpredictable id and seed", () => {
+      const a = openAttempt(db, { edition: 1, player: ALICE, turnLimit: 30 });
+      expect(a.attemptId).toMatch(/^0x[0-9a-f]{64}$/);
+      expect(a.rngSeed).toMatch(/^0x[0-9a-f]{64}$/);
+      // Two independent randoms — the public id must not reveal the seed.
+      expect(a.rngSeed).not.toBe(a.attemptId);
+      expect(a.turnLimit).toBe(30);
+      expect(attemptBalance(db, ALICE)).toBe(0);
+    });
+
+    it("hands the fight the pool and the edition total separately", () => {
+      const a = openAttempt(db, { edition: 1, player: ALICE, turnLimit: 30 });
+      expect(a.editionHp).toBe(10_000);
+      expect(a.startHp).toBe(10_000);
+
+      grantAttempt(db, { grantKey: "tok-2", player: ALICE, realm: REALM });
+      advanceAttempt(db, {
+        edition: 1,
+        attemptId: a.attemptId,
+        player: ALICE,
+        cumulativeDamage: 2_500,
+        turns: 30,
+        survived: false,
+      });
+      const b = openAttempt(db, { edition: 1, player: ALICE, turnLimit: 30 });
+      expect(b.startHp).toBe(7_500);
+      expect(b.editionHp).toBe(10_000);
+    });
+
+    it("refuses when the player has nothing to spend", () => {
+      openAttempt(db, { edition: 1, player: ALICE, turnLimit: 30 });
+      expect(() =>
+        openAttempt(db, { edition: 1, player: ALICE, turnLimit: 30 }),
+      ).toThrow(/no unspent attempts/);
+      expect(() =>
+        openAttempt(db, { edition: 1, player: BOB, turnLimit: 30 }),
+      ).toThrow(/no unspent attempts/);
+    });
+
+    it("records which attempt consumed which grant", () => {
+      const a = openAttempt(db, { edition: 1, player: ALICE, turnLimit: 30 });
+      const grants = listGrants(db, ALICE);
+      expect(grants).toHaveLength(1);
+      expect(grants[0]!.spentOn).toBe(a.attemptId);
+    });
+
+    it("spends the oldest grant first", () => {
+      // `tok-1` came from the beforeEach at the current time, so the newcomer
+      // needs a later stamp to be unambiguously second in line.
+      grantAttempt(db, { grantKey: "tok-later", player: ALICE, realm: REALM }, 9_000_000_000);
+      const a = openAttempt(db, { edition: 1, player: ALICE, turnLimit: 30 });
+      const spent = listGrants(db, ALICE).find((g) => g.spentOn === a.attemptId);
+      expect(spent?.grantKey).toBe("tok-1");
+    });
+
+    it("spends same-second grants in insertion order rather than arbitrarily", () => {
+      // Whole-second timestamps make ties routine, not exotic.
+      grantAttempt(db, { grantKey: "same-a", player: BOB, realm: REALM }, 5_000);
+      grantAttempt(db, { grantKey: "same-b", player: BOB, realm: REALM }, 5_000);
+      const first = openAttempt(db, { edition: 1, player: BOB, turnLimit: 30 });
+      const second = openAttempt(db, { edition: 1, player: BOB, turnLimit: 30 });
+      const grants = listGrants(db, BOB);
+      expect(grants.find((g) => g.grantKey === "same-a")!.spentOn).toBe(first.attemptId);
+      expect(grants.find((g) => g.grantKey === "same-b")!.spentOn).toBe(second.attemptId);
+    });
+
+    it("creates the attempt as a zero-damage contribution carrying its rules", () => {
+      const a = openAttempt(db, { edition: 1, player: ALICE, turnLimit: 17 });
+      const row = getContribution(db, a.attemptId)!;
+      expect(row).toMatchObject({
+        damage: 0,
+        damageClaimed: 0,
+        turns: 0,
+        turnLimit: 17,
+        rngSeed: a.rngSeed,
+        killingBlow: false,
+      });
+      // The pool has not moved just because an attempt opened.
+      expect(getCurrentEdition(db)?.currentHp).toBe(10_000);
+    });
+
+    it("lets the issued attempt then report damage", () => {
+      const a = openAttempt(db, { edition: 1, player: ALICE, turnLimit: 30 });
+      const res = advanceAttempt(db, {
+        edition: 1,
+        attemptId: a.attemptId,
+        player: ALICE,
+        cumulativeDamage: 400,
+        turns: 12,
+        survived: false,
+      });
+      expect(res.applied).toBe(400);
+      expect(getCurrentEdition(db)?.currentHp).toBe(9_600);
+      // Still one row — the attempt was already there.
+      expect(listContributions(db, 1)).toHaveLength(1);
+    });
+
+    it("does not burn a grant when the edition is felled", () => {
+      correctCurrentHp(db, 1, 0);
+      expect(() =>
+        openAttempt(db, { edition: 1, player: ALICE, turnLimit: 30 }),
+      ).toThrow(/was felled/);
+      // The transaction rolled back, so the grant survives for the next edition.
+      expect(attemptBalance(db, ALICE)).toBe(1);
+    });
+
+    it("rejects a non-positive turn limit", () => {
+      expect(() =>
+        openAttempt(db, { edition: 1, player: ALICE, turnLimit: 0 }),
+      ).toThrow(/positive integer/);
+    });
   });
 });
 
