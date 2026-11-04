@@ -15,6 +15,7 @@
 import Database, { type Database as DatabaseType } from "better-sqlite3";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
+  advanceAttempt,
   correctCurrentHp,
   countPlayerAttempts,
   getContribution,
@@ -253,6 +254,148 @@ describe("recordAttempt — the zero crossing", () => {
         survived: true,
       }),
     ).toThrow(/no such edition/);
+  });
+});
+
+describe("advanceAttempt — incremental submission", () => {
+  beforeEach(() => openNextEdition(db, 1000));
+
+  const base = {
+    edition: 1,
+    entryTxHash: hash(42),
+    player: ALICE,
+    survived: false,
+  };
+
+  it("applies only the growth past what is already claimed", () => {
+    expect(advanceAttempt(db, { ...base, cumulativeDamage: 100, turns: 5 }).applied).toBe(100);
+    expect(advanceAttempt(db, { ...base, cumulativeDamage: 250, turns: 12 }).applied).toBe(150);
+    expect(advanceAttempt(db, { ...base, cumulativeDamage: 300, turns: 18 }).applied).toBe(50);
+    expect(getCurrentEdition(db)?.currentHp).toBe(700);
+
+    // One row for the whole attempt, carrying the latest progress.
+    const rows = listContributions(db, 1);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ damage: 300, damageClaimed: 300, turns: 18 });
+  });
+
+  it("is idempotent: replaying the same cumulative total applies nothing", () => {
+    advanceAttempt(db, { ...base, cumulativeDamage: 200, turns: 10 });
+    const replay = advanceAttempt(db, { ...base, cumulativeDamage: 200, turns: 10 });
+    expect(replay.applied).toBe(0);
+    expect(replay.duplicate).toBe(true);
+    expect(getCurrentEdition(db)?.currentHp).toBe(800);
+  });
+
+  it("ignores a stale packet reporting less than is recorded", () => {
+    advanceAttempt(db, { ...base, cumulativeDamage: 400, turns: 20 });
+    const stale = advanceAttempt(db, { ...base, cumulativeDamage: 150, turns: 8 });
+    expect(stale.applied).toBe(0);
+    expect(getCurrentEdition(db)?.currentHp).toBe(600);
+    // Damage never walks backwards, even though `turns` takes the late value.
+    expect(listContributions(db, 1)[0]).toMatchObject({
+      damage: 400,
+      damageClaimed: 400,
+    });
+  });
+
+  it("clamps the final increment to the remainder and fells once", () => {
+    advanceAttempt(db, { ...base, cumulativeDamage: 900, turns: 28 });
+    const kill = advanceAttempt(db, { ...base, cumulativeDamage: 5000, turns: 30 });
+    expect(kill.applied).toBe(100);
+    expect(kill.felled).toBe(true);
+    expect(kill.edition.currentHp).toBe(0);
+
+    const row = listContributions(db, 1)[0]!;
+    expect(row.damage).toBe(1000);
+    expect(row.killingBlow).toBe(true);
+    // The inflated claim is preserved rather than clipped to what landed.
+    expect(row.damageClaimed).toBe(5000);
+  });
+
+  it("keeps the contributor sum equal to the pool across many partials", () => {
+    for (let i = 1; i <= 4; i++) {
+      advanceAttempt(db, {
+        edition: 1,
+        entryTxHash: hash(100 + i),
+        player: i % 2 === 0 ? BOB : ALICE,
+        cumulativeDamage: 50,
+        turns: 3,
+        survived: true,
+      });
+      advanceAttempt(db, {
+        edition: 1,
+        entryTxHash: hash(100 + i),
+        player: i % 2 === 0 ? BOB : ALICE,
+        cumulativeDamage: 125,
+        turns: 9,
+        survived: false,
+      });
+    }
+    const recorded = listContributions(db, 1).reduce((s, r) => s + r.damage, 0);
+    expect(recorded).toBe(1000 - getCurrentEdition(db)!.currentHp);
+    expect(recorded).toBe(500);
+  });
+
+  it("flips the phase mid-attempt, not only between attempts", () => {
+    expect(advanceAttempt(db, { ...base, cumulativeDamage: 400, turns: 20 }).edition.phase).toBe(1);
+    expect(advanceAttempt(db, { ...base, cumulativeDamage: 520, turns: 26 }).edition.phase).toBe(2);
+  });
+
+  it("refuses a hash that belongs to another edition", () => {
+    advanceAttempt(db, { ...base, cumulativeDamage: 1000, turns: 30 });
+    openNextEdition(db, 500);
+    expect(() =>
+      advanceAttempt(db, { ...base, edition: 2, cumulativeDamage: 1100, turns: 31 }),
+    ).toThrow(/already belongs to edition 1/);
+  });
+
+  it("rejects a negative cumulative total", () => {
+    expect(() =>
+      advanceAttempt(db, { ...base, cumulativeDamage: -1, turns: 1 }),
+    ).toThrow(/non-negative/);
+  });
+});
+
+describe("recordAttempt vs advanceAttempt — different promises", () => {
+  beforeEach(() => openNextEdition(db, 1000));
+
+  it("recordAttempt ignores a larger resubmission; advanceAttempt credits it", () => {
+    recordAttempt(db, {
+      edition: 1,
+      entryTxHash: hash(1),
+      player: ALICE,
+      damage: 100,
+      turns: 10,
+      survived: true,
+    });
+    recordAttempt(db, {
+      edition: 1,
+      entryTxHash: hash(1),
+      player: ALICE,
+      damage: 900,
+      turns: 30,
+      survived: true,
+    });
+    expect(getCurrentEdition(db)?.currentHp).toBe(900);
+
+    advanceAttempt(db, {
+      edition: 1,
+      entryTxHash: hash(2),
+      player: ALICE,
+      cumulativeDamage: 100,
+      turns: 10,
+      survived: true,
+    });
+    advanceAttempt(db, {
+      edition: 1,
+      entryTxHash: hash(2),
+      player: ALICE,
+      cumulativeDamage: 900,
+      turns: 30,
+      survived: true,
+    });
+    expect(getCurrentEdition(db)?.currentHp).toBe(0);
   });
 });
 

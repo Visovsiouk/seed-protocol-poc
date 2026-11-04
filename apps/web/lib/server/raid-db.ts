@@ -28,6 +28,7 @@ import "server-only";
  */
 
 import {
+  advanceAttempt,
   countPlayerAttempts,
   getContribution,
   getCurrentEdition,
@@ -37,6 +38,7 @@ import {
   migrateRaidTables,
   openNextEdition,
   recordAttempt,
+  type AdvanceAttemptInput,
   type ContributorTotal,
   type RaidContribution,
   type RaidEdition,
@@ -123,12 +125,27 @@ export function raidPlayerAttempts(
 }
 
 /**
- * Record a verified attempt against the pool. Idempotent on the entry tx
- * hash — see `recordAttempt` in the store for why the ordering inside the
- * transaction is what makes that true.
+ * Record a finished attempt against the pool, write-once on the entry tx
+ * hash. A second submission is ignored whatever it claims.
  */
 export function submitAttempt(input: RecordAttemptInput): RecordAttemptResult {
   const res = recordAttempt(db(), input);
+  invalidate();
+  return res;
+}
+
+/**
+ * Report an in-progress attempt's cumulative damage, applying the delta.
+ *
+ * This is the submission path for a fight that reports as it goes, which is
+ * what makes "dying contributes" true for an abandoned attempt as well as a
+ * lost one — the damage already landed. Safe to call every round; replaying a
+ * total already recorded applies nothing.
+ */
+export function advanceAttemptProgress(
+  input: AdvanceAttemptInput,
+): RecordAttemptResult {
+  const res = advanceAttempt(db(), input);
   invalidate();
   return res;
 }

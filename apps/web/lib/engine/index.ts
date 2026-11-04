@@ -26,6 +26,7 @@
 import type {
   ActionChoice,
   AssetCard,
+  BossDef,
   CombatState,
   Element,
   EncounterState,
@@ -175,7 +176,11 @@ function generateEncounter(
 
   // Boss room.
   if (state.depth >= state.bossDepth) {
-    const boss = bank.bosses[bossId];
+    // An injected boss wins over the flavor bank. The raid's Colophon is not
+    // in any bank and cannot be — its `baseHp` is the live edition total, so
+    // it is per-edition runtime data rather than static flavor.
+    const injected = RAID_BOSS_STORE.get(state);
+    const boss = injected?.boss ?? bank.bosses[bossId];
     if (!boss) throw new Error(`generateEncounter: unknown bossId "${bossId}"`);
     const player = playerStartHp(state.equipped);
     const combat = createBossEncounter({
@@ -185,6 +190,7 @@ function generateEncounter(
       playerHp: state.playerHp,
       playerMaxHp: state.playerMaxHp,
       playerAc: player.ac,
+      startHp: injected?.startHp,
     });
     lines.push({
       text: `${monsterTitle(boss)} blocks your path.`,
@@ -257,12 +263,51 @@ export type StartRunArgs = {
    * player finds a pilgrim's blade).
    */
   forcedFirstWeaponElement?: Exclude<Element, "none">;
+  /**
+   * Supply the boss definition directly instead of resolving `bossId`
+   * against the preset's flavor bank, and open it at `startHp` rather than
+   * at full health.
+   *
+   * This is how the shared-pool raid fight is built. The Colophon cannot
+   * live in a bank: its `baseHp` is the current edition's HP total, which is
+   * runtime state, and `startHp` is whatever the pool has been worn down to
+   * by everyone before you. Pair it with `bossDepth: 1` for a single-room
+   * fight with no descent and no extraction (`extractable: 1 < 1` is false).
+   *
+   * `bossId` is still required and still worth setting to something
+   * meaningful — narration and the codex key off it.
+   */
+  raidBoss?: { boss: BossDef; startHp: number };
 };
 
 /** Internal: schema info is needed by `step` for loot rolls; we stash it on state. */
 const SCHEMA_STORE = new WeakMap<RunState, RealmSchemas>();
 /** Internal: bossId stashed with the run so `advance` can regenerate the boss encounter. */
 const BOSS_STORE = new WeakMap<RunState, string>();
+/** Internal: an injected raid boss, so a regenerated encounter keeps the pool. */
+const RAID_BOSS_STORE = new WeakMap<
+  RunState,
+  { boss: BossDef; startHp: number }
+>();
+
+/**
+ * Copy the out-of-state bindings from a RunState to its successor.
+ *
+ * `RunState` is a plain value and every transition rebuilds it by spread, so
+ * anything held in a WeakMap keyed on the old object is lost unless it is
+ * re-pointed at the new one. Three such bindings exist and they always travel
+ * together; carrying them in one function means the next one cannot be
+ * forgotten at one of the eight transition sites — which is exactly how the
+ * raid boss would have gone missing on a regenerated encounter.
+ */
+function carryRunStores(from: RunState, to: RunState): void {
+  const schemas = SCHEMA_STORE.get(from);
+  if (schemas) SCHEMA_STORE.set(to, schemas);
+  const bossId = BOSS_STORE.get(from);
+  if (bossId) BOSS_STORE.set(to, bossId);
+  const raidBoss = RAID_BOSS_STORE.get(from);
+  if (raidBoss) RAID_BOSS_STORE.set(to, raidBoss);
+}
 
 /** Builds the initial RunState, depth 1, with the first encounter generated. */
 export function startRun(args: StartRunArgs): { state: RunState; lines: NarrationLine[] } {
@@ -286,10 +331,14 @@ export function startRun(args: StartRunArgs): { state: RunState; lines: Narratio
     forcedFirstWeaponElement: args.forcedFirstWeaponElement,
     firstWeaponDropped: false,
   };
+  // Bind the raid boss to `baseState` before generating, since
+  // `generateEncounter` reads it off the state it is handed.
+  if (args.raidBoss) RAID_BOSS_STORE.set(baseState, args.raidBoss);
   const gen = generateEncounter(baseState, args.bossId);
   const state: RunState = { ...baseState, encounter: gen.encounter };
   SCHEMA_STORE.set(state, args.schemas);
   BOSS_STORE.set(state, args.bossId);
+  if (args.raidBoss) RAID_BOSS_STORE.set(state, args.raidBoss);
   return { state, lines: gen.lines };
 }
 
@@ -387,9 +436,7 @@ export function step(state: RunState, choice: ActionChoice): StepResult {
           ? { bossClearedTimestamp: Date.now(), bossClearedTurns: combat.turn }
           : {}),
       };
-      SCHEMA_STORE.set(nextState, schemas);
-      const bossId = BOSS_STORE.get(state);
-      if (bossId) BOSS_STORE.set(nextState, bossId);
+      carryRunStores(state, nextState);
       return { state: nextState, outcome: lines, events, beats: result.beats };
     }
 
@@ -409,9 +456,7 @@ export function step(state: RunState, choice: ActionChoice): StepResult {
         defeatedAtDepth: state.depth,
         defeatedTurn: combat.turn,
       };
-      SCHEMA_STORE.set(nextState, schemas);
-      const bossId = BOSS_STORE.get(state);
-      if (bossId) BOSS_STORE.set(nextState, bossId);
+      carryRunStores(state, nextState);
       return { state: nextState, outcome: lines, events, beats: result.beats };
     }
 
@@ -419,9 +464,7 @@ export function step(state: RunState, choice: ActionChoice): StepResult {
       ...state,
       encounter: { ...enc, combat },
     };
-    SCHEMA_STORE.set(nextState, schemas);
-    const bossId = BOSS_STORE.get(state);
-    if (bossId) BOSS_STORE.set(nextState, bossId);
+    carryRunStores(state, nextState);
     return { state: nextState, outcome: lines, events, beats: result.beats };
   }
 
@@ -491,8 +534,7 @@ export function advance(
   const gen = generateEncounter(next, bossId);
   lines.push(...gen.lines);
   const out: RunState = { ...next, encounter: gen.encounter };
-  const schemas = SCHEMA_STORE.get(state);
-  if (schemas) SCHEMA_STORE.set(out, schemas);
+  carryRunStores(state, out);
   BOSS_STORE.set(out, bossId);
   return { state: out, lines };
 }
@@ -528,10 +570,7 @@ export function equipItem(
     playerHp: newHp,
     playerMaxHp: newMax,
   };
-  const schemas = SCHEMA_STORE.get(state);
-  if (schemas) SCHEMA_STORE.set(next, schemas);
-  const bossId = BOSS_STORE.get(state);
-  if (bossId) BOSS_STORE.set(next, bossId);
+  carryRunStores(state, next);
   return next;
 }
 
@@ -591,20 +630,14 @@ export function extract(
     extracted: true,
     extractable: false,
   };
-  const schemas = SCHEMA_STORE.get(state);
-  if (schemas) SCHEMA_STORE.set(next, schemas);
-  const bossId = BOSS_STORE.get(state);
-  if (bossId) BOSS_STORE.set(next, bossId);
+  carryRunStores(state, next);
   return { state: next, lines, events: [{ type: "Extracted", count }] };
 }
 
 /** Clear the delve `escrow` after the on-chain batch mint settles. */
 export function commitExtraction(state: RunState): RunState {
   const next: RunState = { ...state, escrow: [] };
-  const schemas = SCHEMA_STORE.get(state);
-  if (schemas) SCHEMA_STORE.set(next, schemas);
-  const bossId = BOSS_STORE.get(state);
-  if (bossId) BOSS_STORE.set(next, bossId);
+  carryRunStores(state, next);
   return next;
 }
 

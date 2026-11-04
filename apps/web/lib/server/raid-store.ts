@@ -71,6 +71,22 @@ export type RecordAttemptInput = {
   survived: boolean;
 };
 
+export type AdvanceAttemptInput = {
+  edition: number;
+  entryTxHash: `0x${string}`;
+  player: `0x${string}`;
+  /**
+   * Total damage this attempt has dealt **since the fight began**, not since
+   * the last call. Cumulative is what makes the write idempotent: resending
+   * a value already recorded applies nothing, so a retry, a double-click or
+   * a duplicated packet cannot double-count.
+   */
+  cumulativeDamage: number;
+  /** Rounds resolved so far. Latest call wins. */
+  turns: number;
+  survived: boolean;
+};
+
 export type RecordAttemptResult = {
   /** True when this hash had already been recorded and nothing was subtracted. */
   duplicate: boolean;
@@ -250,20 +266,184 @@ export function openNextEdition(
 }
 
 /**
- * Record a verified attempt and subtract its damage, exactly once.
+ * Fetch an edition that can still take attempts, or explain why not.
  *
- * The ordering inside the transaction is load-bearing: read the pool,
- * compute the clamped amount, `INSERT OR IGNORE` the contribution, and only
- * subtract if that insert actually landed. A repeat of the same entry tx
- * hash inserts 0 rows and returns before the `UPDATE`, so the pool is
- * untouched — which is what makes a retried or double-clicked submission
- * safe. `INSERT OR IGNORE` rather than catching a constraint error because
- * a duplicate here is an expected flow, not an exception.
+ * A felled edition throws rather than no-oping: someone mid-fight when the
+ * boss died is a real condition and the caller has to tell them something.
+ */
+function requireStandingEdition(
+  db: DatabaseType,
+  edition: number,
+): RaidEdition {
+  const boss = getEdition(db, edition);
+  if (!boss) throw new Error(`no such edition: ${edition}`);
+  if (boss.felledAt !== null) {
+    throw new Error(
+      `edition ${boss.edition} was felled at ${boss.felledAt}; it takes no more attempts`,
+    );
+  }
+  return boss;
+}
+
+/**
+ * Subtract from the pool, re-derive the phase, and stamp `felled_at` if this
+ * is the blow that ended it. The one place the pool is written, so the clamp
+ * and the phase rule cannot drift between the two submission paths.
+ */
+function applyToPool(
+  db: DatabaseType,
+  boss: RaidEdition,
+  applied: number,
+  remaining: number,
+  felled: boolean,
+  now: number,
+): void {
+  if (applied <= 0) return;
+  db.prepare(
+    `UPDATE raid_boss
+        SET current_hp = MAX(0, current_hp - ?),
+            phase      = ?,
+            felled_at  = CASE WHEN ? THEN ? ELSE felled_at END
+      WHERE edition = ?`,
+  ).run(applied, phaseFor(boss.totalHp, remaining), felled ? 1 : 0, now, boss.edition);
+}
+
+/**
+ * Advance an attempt's progress and subtract whatever is newly earned.
+ *
+ * ## The submission shape, settled
+ *
+ * The plan left this open with two options — submit once when the run
+ * resolves, or submit per swing — and flagged the cost of the first: closing
+ * the tab mid-fight would submit nothing, so "dying contributes" would be
+ * false for rage-quits specifically, which is the best line in the fiction
+ * made into a lie. Neither option is needed. **Submissions carry the
+ * attempt's cumulative damage and the server applies the delta.**
+ *
+ * That is a strict generalisation of both:
+ *
+ *   - Submitting once at the end is one call with the final total, which is
+ *     exactly the old behaviour (`recordAttempt` is now a wrapper).
+ *   - Submitting every round is N calls, and the pool moves live — which for
+ *     a *collaborative* boss is a feature, not just damage limitation: you
+ *     watch the bar move while you fight it.
+ *   - Anything between works too: every five rounds, on visibility change,
+ *     on unload. Abandonment then loses at most the rounds since the last
+ *     call rather than the whole attempt.
+ *
+ * Cumulative rather than incremental is what buys the idempotency. An
+ * increment (`+37 damage`) applied twice is wrong and there is no way to
+ * tell the second from a legitimate second increment of the same size. A
+ * cumulative total replayed is a no-op by construction, so retries,
+ * double-clicks and duplicated packets are all free. It is also monotonic:
+ * a submission reporting *less* than what is already recorded — a stale
+ * packet arriving late — applies nothing rather than crediting backwards.
  *
  * Throws when the edition is missing or already felled. An attempt against
  * a felled edition is a real condition (someone was mid-fight when the boss
  * died) and the caller has to decide what to tell them, so it must not be
  * silently swallowed as a no-op.
+ */
+export function advanceAttempt(
+  db: DatabaseType,
+  input: AdvanceAttemptInput,
+  now = Math.floor(Date.now() / 1000),
+): RecordAttemptResult {
+  if (!Number.isInteger(input.cumulativeDamage) || input.cumulativeDamage < 0) {
+    throw new Error(
+      `cumulativeDamage must be a non-negative integer, got ${input.cumulativeDamage}`,
+    );
+  }
+  const hash = input.entryTxHash.toLowerCase() as `0x${string}`;
+  const player = input.player.toLowerCase() as `0x${string}`;
+
+  const tx = db.transaction((): RecordAttemptResult => {
+    const boss = requireStandingEdition(db, input.edition);
+    const prior = db
+      .prepare<[string], ContributionRow>(
+        "SELECT * FROM raid_contribution WHERE entry_tx_hash = ?",
+      )
+      .get(hash);
+    if (prior && prior.edition !== input.edition) {
+      // The hash is the attempt, and an attempt belongs to one edition. A
+      // collision across editions means the caller mismatched them.
+      throw new Error(
+        `entry tx ${hash} already belongs to edition ${prior.edition}, not ${input.edition}`,
+      );
+    }
+
+    // Monotonic: only growth past what is already claimed can earn anything.
+    const priorClaimed = prior?.damage_claimed ?? 0;
+    const newClaim = Math.max(0, input.cumulativeDamage - priorClaimed);
+    const applied = Math.min(newClaim, boss.currentHp);
+    const remaining = boss.currentHp - applied;
+    const felled = remaining === 0;
+
+    if (prior) {
+      db.prepare(
+        `UPDATE raid_contribution
+            SET damage         = damage + ?,
+                damage_claimed = MAX(damage_claimed, ?),
+                turns          = ?,
+                survived       = ?,
+                killing_blow   = MAX(killing_blow, ?)
+          WHERE entry_tx_hash = ?`,
+      ).run(
+        applied,
+        input.cumulativeDamage,
+        input.turns,
+        input.survived ? 1 : 0,
+        felled ? 1 : 0,
+        hash,
+      );
+    } else {
+      db.prepare(
+        `INSERT INTO raid_contribution (
+           entry_tx_hash, edition, player, damage, damage_claimed,
+           turns, survived, killing_blow, created_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).run(
+        hash,
+        input.edition,
+        player,
+        applied,
+        input.cumulativeDamage,
+        input.turns,
+        input.survived ? 1 : 0,
+        felled ? 1 : 0,
+        now,
+      );
+    }
+
+    applyToPool(db, boss, applied, remaining, felled, now);
+
+    return {
+      duplicate: prior !== undefined && applied === 0,
+      applied,
+      felled: felled && applied > 0,
+      edition: getEdition(db, input.edition)!,
+    };
+  });
+  return tx();
+}
+
+/**
+ * Record a finished attempt in one write — **first submission wins, for
+ * good**.
+ *
+ * Deliberately *not* a wrapper over `advanceAttempt`, because the two make
+ * different promises and a caller has to pick one knowingly:
+ *
+ *   - This one is write-once. A second submission on the same hash is
+ *     ignored whatever it claims, including a larger number. Use it when the
+ *     attempt is submitted exactly once, at the end.
+ *   - `advanceAttempt` is write-many and monotonic. A larger number is
+ *     progress, by design — which means the hash alone no longer bounds what
+ *     an attempt can claim, and something else has to (the turn limit, and
+ *     S3's replay when it lands).
+ *
+ * Collapsing them would have silently converted every existing caller to the
+ * weaker guarantee.
  */
 export function recordAttempt(
   db: DatabaseType,
@@ -277,18 +457,15 @@ export function recordAttempt(
   const player = input.player.toLowerCase() as `0x${string}`;
 
   const tx = db.transaction((): RecordAttemptResult => {
-    const boss = getEdition(db, input.edition);
-    if (!boss) throw new Error(`no such edition: ${input.edition}`);
-    if (boss.felledAt !== null) {
-      throw new Error(
-        `edition ${boss.edition} was felled at ${boss.felledAt}; it takes no more attempts`,
-      );
-    }
-
+    const boss = requireStandingEdition(db, input.edition);
     const applied = Math.min(input.damage, boss.currentHp);
     const remaining = boss.currentHp - applied;
     const felled = remaining === 0;
 
+    // `INSERT OR IGNORE` first and subtract only if it landed: a repeat
+    // inserts 0 rows and returns before the pool is touched. Expressed as an
+    // ignored insert rather than a caught constraint error because a
+    // duplicate here is an expected flow, not an exception.
     const res = db
       .prepare(
         `INSERT OR IGNORE INTO raid_contribution (
@@ -311,21 +488,7 @@ export function recordAttempt(
     if (res.changes === 0) {
       return { duplicate: true, applied: 0, felled: false, edition: boss };
     }
-
-    db.prepare(
-      `UPDATE raid_boss
-          SET current_hp = MAX(0, current_hp - ?),
-              phase      = ?,
-              felled_at  = CASE WHEN ? THEN ? ELSE felled_at END
-        WHERE edition = ?`,
-    ).run(
-      applied,
-      phaseFor(boss.totalHp, remaining),
-      felled ? 1 : 0,
-      now,
-      input.edition,
-    );
-
+    applyToPool(db, boss, applied, remaining, felled, now);
     return {
       duplicate: false,
       applied,

@@ -94,7 +94,7 @@ import type {
 } from "../../lib/engine/types";
 import { createRng } from "../../lib/engine/rng";
 import { resolveRound, secondaryFor } from "../../lib/engine/combat";
-import { checkPhaseTransition } from "../../lib/engine/boss";
+import { checkPhaseTransition, createBossEncounter } from "../../lib/engine/boss";
 import { playerStartHp, subSeed } from "../../lib/engine/index";
 import { tierStats } from "../../lib/engine/tier";
 import { deriveRunSeed } from "../../lib/engine/run-seed";
@@ -460,30 +460,23 @@ export function simulateAttempt(args: AttemptArgs): Attempt {
   const equipped = { weapon: loadout.weapon, armor: loadout.armor };
   const start = playerStartHp(equipped);
 
-  // Same shape `createBossEncounter` builds, except `monsterHp` is the
-  // current shared pool rather than `boss.baseHp` — S6's startHp/baseHp
-  // split, which is what makes the phase transition fire on the *edition*
-  // crossing half rather than on each attempt.
-  let combat: CombatState = {
+  // S6's startHp/baseHp split: the *edition total* is `baseHp` and the
+  // *current pool* is `startHp`, so the phase transition fires when the
+  // collective crosses half rather than on each attempt.
+  //
+  // This used to hand-build the state and run `checkPhaseTransition` once up
+  // front, because the engine had no way to open a boss below full health.
+  // S6 added `startHp` and the opening-phase derivation to
+  // `createBossEncounter`, so the harness now goes through the real
+  // constructor — and the pinned values in the companion test are what
+  // prove the engine's version does the same thing this did.
+  let combat: CombatState = createBossEncounter({
+    boss: { ...boss, baseHp: args.editionHp },
     playerHp: start.hp,
     playerMaxHp: start.maxHp,
     playerAc: start.ac,
-    monster: { ...boss, baseHp: args.editionHp },
-    monsterHp: args.startHp,
-    bossPhase: 1,
-    bracedThisTurn: false,
-    guaranteedDodgeThisTurn: false,
-    regenDoubledThisTurn: false,
-    thornsDoubledThisTurn: false,
-    focusPrimed: false,
-    phase2PlayerBuffed: false,
-    bleedStacks: 0,
-    suppressedEffects: [],
-    turn: 0,
-  };
-  // An attempt opening at or below the threshold is already in phase 2.
-  const opening = checkPhaseTransition(combat);
-  if (opening.transitioned) combat = opening.state;
+    startHp: args.startHp,
+  });
 
   const damageAt = new Array<number>(checkpoints.length).fill(0);
   let outcome: AttemptOutcome = "capped";
