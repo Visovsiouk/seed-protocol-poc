@@ -186,7 +186,8 @@ const bosses = {
     id: "ai_core",
     preset: "scifi" as const,
     name: "The AI Core",
-    baseHp: 42,
+    // 42 → 18
+    baseHp: 18,
     attackDie: 6 as const,
     ac: 14,
     bakedEffects: ["multi_hit", "crit_chance"] as ["multi_hit", "crit_chance"],
@@ -201,7 +202,8 @@ const bosses = {
     id: "hive_queen",
     preset: "scifi" as const,
     name: "The Hive Queen",
-    baseHp: 44,
+    // 44 → 36
+    baseHp: 36,
     attackDie: 6 as const,
     ac: 14,
     bakedEffects: ["bleed", "regen"] as ["bleed", "regen"],
@@ -214,7 +216,8 @@ const bosses = {
     id: "void_prince",
     preset: "scifi" as const,
     name: "The Void Prince",
-    baseHp: 36,
+    // 36 → 54
+    baseHp: 54,
     attackDie: 6 as const,
     ac: 14,
     bakedEffects: ["dodge_chance", "armor_pierce"] as ["dodge_chance", "armor_pierce"],
@@ -228,7 +231,8 @@ const bosses = {
     id: "reactor_wyrm",
     preset: "scifi" as const,
     name: "The Reactor Wyrm",
-    baseHp: 38,
+    // 38 → 24
+    baseHp: 24,
     attackDie: 6 as const,
     ac: 15,
     bakedEffects: ["damage_reduction", "thorns"] as ["damage_reduction", "thorns"],
@@ -242,7 +246,8 @@ const bosses = {
     id: "oracle",
     preset: "scifi" as const,
     name: "The Oracle",
-    baseHp: 36,
+    // 36 → 46
+    baseHp: 46,
     attackDie: 6 as const,
     ac: 15,
     bakedEffects: ["lifesteal", "dodge_chance"] as ["lifesteal", "dodge_chance"],

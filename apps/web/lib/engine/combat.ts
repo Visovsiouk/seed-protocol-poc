@@ -6,13 +6,31 @@
  * Turn order, per round:
  *   1. preTurn hook  — regen on the player (doubled if Secondary→Steady fired)
  *   2. player action — Attack (default swing) or Secondary (defensive)
- *   3. monster attack — unless monster died on the player's swing
+ *   3. monster attack — regen, then 1+N swings; skipped if either side fell
  *   4. postTurn hook  — bleed DoT ticks down
  *   5. boss phase transition check (boss.ts, called by the caller of resolveRound)
  *
  * Secondary semantics depend on the equipped armor (see `secondaryFor`).
  * Trash mobs only show Attack; bosses show both. (The UI gates the button;
  * the resolver accepts either choice regardless — defensive coding.)
+ *
+ * ## Which catalog effects each side honours
+ *
+ * Player effects come off `equipped.weapon`/`equipped.armor` via
+ * `getActiveEffectValue`; monster effects come off `bakedEffects` via
+ * `getMonsterEffectValue`. All nine catalog names are live on the player
+ * side. Eight of the nine are live on the monster side:
+ *
+ *   armor_pierce · crit_chance · multi_hit · dodge_chance ·
+ *   damage_reduction · thorns · lifesteal · regen
+ *
+ * `bleed` is the one exception and is **deliberately** inert on the monster
+ * side: it needs a player-directed damage-over-time slot, and
+ * `CombatState.bleedStacks` is monster-directed only (see its doc in
+ * types.ts). A boss declaring `bleed` — the Lich and its two cross-bank
+ * counterparts — gets nothing from it. Adding it means adding state, not
+ * adding a call site; don't "fix" it by pointing the existing counter at
+ * the player, which would break the player's own bleed.
  *
  * Critical: `resolveRound` is a pure function over `(state, choice, rng)`.
  * No mutation of inputs; the returned state replaces the old one.
@@ -129,6 +147,18 @@ export type CombatTickResult = {
   beats: CombatBeat[];
 };
 
+/**
+ * The monster's maximum HP — the ceiling for monster-side `regen` and
+ * `lifesteal`. `MonsterDef` stores it as `hp`, `BossDef` as `baseHp`.
+ *
+ * Note for the raid path: callers that run a boss against a shared pool
+ * (rather than a per-encounter `baseHp`) overwrite `baseHp` with the pool
+ * total, so healing clamps to the pool and not to one attempt's slice.
+ */
+function monsterMaxHp(monster: MonsterDef | BossDef): number {
+  return "hp" in monster ? monster.hp : monster.baseHp;
+}
+
 export type PlayerSwing = {
   hit: boolean;
   damage: number;
@@ -137,6 +167,15 @@ export type PlayerSwing = {
   /** True on a natural-1 attack roll (auto-miss, regardless of bonuses). */
   fumble: boolean;
   pierced: boolean;
+  /**
+   * True when the monster's baked `dodge_chance` evaded the swing before
+   * any d20 was rolled. Distinct from `hit: false`, which is a rolled miss.
+   */
+  dodged: boolean;
+  /** Damage absorbed by the monster's baked `damage_reduction`. */
+  reducedBy: number;
+  /** Damage the monster's baked `thorns` reflects back at the player. */
+  thornsToPlayer: number;
   /** Element relationship that drove the damage multiplier. */
   elementTag: "weak" | "resist" | "neutral";
   /** Raw d20 attack roll (1–20). */
@@ -173,10 +212,21 @@ export type PlayerSwing = {
  *
  * Damage formula:
  *   damage = floor((dieRoll × critMult + damageBonus) × elemMult × flankMult)
+ *   then minus the monster's baked `damage_reduction`,
  *   clamped to a minimum of 1 on a hit.
  *
  * Element math:
  *   - Multiplier applied to (post-crit + bonus) damage. See `elementMultiplier`.
+ *
+ * Monster-side effects consulted here (all via `getMonsterEffectValue`, so
+ * only bosses with the name in `bakedEffects` have them):
+ *   - `dodge_chance` — rolls before the d20; an evaded swing is `dodged`,
+ *     not a miss. Mirrors the player's dodge in `rollMonsterAttack`.
+ *   - `armor_pierce` — already handled, via the boss's own AC being the
+ *     target; the *player's* pierce lowers it.
+ *   - `damage_reduction` — flat subtraction, after crit and element.
+ *   - `thorns` — reflected at the player on any landed swing; returned
+ *     rather than applied, because this function is pure over `state`.
  */
 function rollPlayerAttack(
   state: CombatState,
@@ -202,6 +252,33 @@ function rollPlayerAttack(
   const damageBonus = weapon?.damageBonus ?? 0;
   const pierce = getActiveEffectValue(state, equipped, "armor_pierce") > 0;
   const monsterAc = pierce ? Math.max(10, state.monster.ac - 2) : state.monster.ac;
+  // Thorns is read once up front so every `return` below can carry it; a
+  // dodged or missed swing reflects nothing, so it's only non-zero on a hit.
+  const monsterThorns = getMonsterEffectValue(state, "thorns");
+
+  // Monster-side dodge fires before the d20, exactly as the player's does in
+  // `rollMonsterAttack`. There is no boss-side equivalent of Secondary→Dodge,
+  // so unlike the player path this is the rolled chance only.
+  const monsterDodge = getMonsterEffectValue(state, "dodge_chance") / 100;
+  if (monsterDodge > 0 && rng.chance(monsterDodge)) {
+    return {
+      hit: false,
+      damage: 0,
+      crit: false,
+      fumble: false,
+      pierced: pierce,
+      dodged: true,
+      reducedBy: 0,
+      thornsToPlayer: 0,
+      elementTag: "neutral",
+      dieRoll: 0,
+      attackBonus,
+      targetAc: monsterAc,
+      damageDie,
+      damageRoll: 0,
+      damageBonus,
+    };
+  }
 
   const dieRoll = rng.rollDie(D20);
 
@@ -213,6 +290,9 @@ function rollPlayerAttack(
       crit: false,
       fumble: true,
       pierced: pierce,
+      dodged: false,
+      reducedBy: 0,
+      thornsToPlayer: 0,
       elementTag: "neutral",
       dieRoll,
       attackBonus,
@@ -234,6 +314,9 @@ function rollPlayerAttack(
       crit: false,
       fumble: false,
       pierced: pierce,
+      dodged: false,
+      reducedBy: 0,
+      thornsToPlayer: 0,
       elementTag: "neutral",
       dieRoll,
       attackBonus,
@@ -263,6 +346,17 @@ function rollPlayerAttack(
   if (modifiers.damageMult !== undefined) {
     damage = Math.floor(damage * modifiers.damageMult);
   }
+
+  // Monster-side damage_reduction. Deliberately asymmetric with the player's
+  // DR in `rollMonsterAttack`, which floors at 0: here the min-1-on-a-hit
+  // rule below wins, so a DR boss never becomes immune to a weak weapon.
+  // Without that, an unarmed (d4) player against `damage_reduction: 2` would
+  // deal 0 forever and the fight could not end — the stalemate the balance
+  // sweep's TURN_CAP exists to catch.
+  const monsterDr = getMonsterEffectValue(state, "damage_reduction");
+  const reducedBy = Math.min(monsterDr, Math.max(0, damage - 1));
+  damage -= reducedBy;
+
   // Damage is at least 1 on a hit (a successful attack always hurts).
   damage = Math.max(1, damage);
   return {
@@ -271,6 +365,9 @@ function rollPlayerAttack(
     crit,
     fumble: false,
     pierced: pierce,
+    dodged: false,
+    reducedBy,
+    thornsToPlayer: monsterThorns,
     elementTag,
     dieRoll,
     attackBonus,
@@ -316,6 +413,12 @@ export type MonsterSwing = {
   hit: boolean;
   damageToPlayer: number;
   thornsToMonster: number;
+  /**
+   * HP the monster's baked `lifesteal` drains from the damage it just
+   * dealt. Returned rather than applied, so the caller owns the clamp
+   * against the monster's max HP.
+   */
+  lifestealToMonster: number;
   dodged: boolean;
   reducedBy: number;
   /** True on nat-20 OR a successful crit_chance proc. */
@@ -334,7 +437,11 @@ export type MonsterSwing = {
   damageRoll?: number;
 };
 
-/** Monster swing → player. Honors dodge, damage_reduction, thorns, Brace, monster baked-in effects, element resist. */
+/**
+ * Monster swing → player. Honors the player's dodge, damage_reduction,
+ * thorns, Brace and element resist, and the monster's baked `armor_pierce`,
+ * `crit_chance` and `lifesteal`.
+ */
 function rollMonsterAttack(
   state: CombatState,
   equipped: { weapon?: AssetCard; armor?: AssetCard },
@@ -350,6 +457,7 @@ function rollMonsterAttack(
       hit: false,
       damageToPlayer: 0,
       thornsToMonster: 0,
+      lifestealToMonster: 0,
       dodged: true,
       reducedBy: 0,
       crit: false,
@@ -379,6 +487,7 @@ function rollMonsterAttack(
       hit: false,
       damageToPlayer: 0,
       thornsToMonster: 0,
+      lifestealToMonster: 0,
       dodged: false,
       reducedBy: 0,
       crit: false,
@@ -397,6 +506,7 @@ function rollMonsterAttack(
       hit: false,
       damageToPlayer: 0,
       thornsToMonster: 0,
+      lifestealToMonster: 0,
       dodged: false,
       reducedBy: 0,
       crit: false,
@@ -434,10 +544,21 @@ function rollMonsterAttack(
   const baseThorns = getActiveEffectValue(state, equipped, "thorns");
   const thorns = state.thornsDoubledThisTurn ? baseThorns * 2 : baseThorns;
 
+  // Monster-side lifesteal, on the damage that actually landed — so the
+  // player's damage_reduction and element ward cut the drain too. Same
+  // `min(value, floor(damage / 2))` shape as the player's in
+  // `applyPlayerDamage`; the caller clamps it to the monster's max HP.
+  const monsterLifestealVal = getMonsterEffectValue(state, "lifesteal");
+  const lifestealToMonster =
+    monsterLifestealVal > 0
+      ? Math.min(monsterLifestealVal, Math.floor(damage / 2))
+      : 0;
+
   return {
     hit: true,
     damageToPlayer: damage,
     thornsToMonster: thorns,
+    lifestealToMonster,
     dodged: false,
     reducedBy,
     crit,
@@ -479,6 +600,7 @@ function bonusFragment(n: number): string {
  * dice (per the formula in `rollPlayerAttack`).
  */
 function playerRollTag(swing: PlayerSwing): string {
+  if (swing.dodged) return ""; // evaded — no d20 was rolled
   if (swing.fumble) return ` [hit: d20 1 — fumble]`;
   const atkBonus = bonusFragment(swing.attackBonus);
   const atkTotal = swing.dieRoll + swing.attackBonus;
@@ -605,15 +727,16 @@ export function resolveRound(
         hit: swing.hit,
         crit: swing.crit,
         fumble: swing.fumble,
-        dodged: false,
+        dodged: swing.dodged,
         damage: swing.hit ? swing.damage : 0,
       });
       if (!swing.hit) {
         lines.push({
-          text:
-            (swing.fumble
-              ? "You fumble the swing."
-              : "Your strike goes wide.") + playerRollTag(swing),
+          text: swing.dodged
+            ? `${monsterTitle(s.monster)} slips aside.`
+            : (swing.fumble
+                ? "You fumble the swing."
+                : "Your strike goes wide.") + playerRollTag(swing),
           emphasis: "info",
         });
         continue;
@@ -622,6 +745,8 @@ export function resolveRound(
       s = applied.state;
       const critTag = swing.crit ? " — CRITICAL!" : "";
       const pierceTag = swing.pierced ? " (armor pierced)" : "";
+      const reducedTag =
+        swing.reducedBy > 0 ? ` (-${swing.reducedBy} absorbed)` : "";
       const elementTag =
         swing.elementTag === "weak"
           ? " (elementally weak)"
@@ -629,7 +754,7 @@ export function resolveRound(
             ? " (resisted)"
             : "";
       lines.push({
-        text: `You hit for ${swing.damage}${critTag}${pierceTag}${elementTag}.${playerRollTag(swing)}`,
+        text: `You hit for ${swing.damage}${critTag}${pierceTag}${elementTag}${reducedTag}.${playerRollTag(swing)}`,
         emphasis: swing.crit ? "drama" : "damage",
       });
       if (applied.lifesteal > 0) {
@@ -644,11 +769,27 @@ export function resolveRound(
           emphasis: "drama",
         });
       }
+
+      // Monster-side thorns: a landed swing costs the player HP. Mirrors the
+      // player's thorns in the monster-attack block below, including that it
+      // reflects even when the target just died — you cut the Warden down and
+      // still come away bleeding. Can kill, so it ends the swing sequence.
+      if (swing.thornsToPlayer > 0) {
+        s = {
+          ...s,
+          playerHp: Math.max(0, s.playerHp - swing.thornsToPlayer),
+        };
+        lines.push({
+          text: `${monsterTitle(s.monster)} bites back for ${swing.thornsToPlayer}.`,
+          emphasis: "damage",
+        });
+        if (s.playerHp <= 0) break;
+      }
     }
   }
 
   let monsterDefeated = s.monsterHp <= 0;
-  let playerDefeated = false;
+  let playerDefeated = s.playerHp <= 0;
 
   // --- 3. monster attack ---------------------------------------------------
   // Rebalance: monster-side `multi_hit` (baked into some bosses' bakedEffects,
@@ -658,7 +799,32 @@ export function resolveRound(
   // capped in `getMonsterEffectValue` so this is "+1 swing", not "+2".
   // Brace and other per-turn defensive flags persist across the swing
   // sequence (only consumed once at the end of the monster's turn).
-  if (!monsterDefeated) {
+  //
+  // The `!playerDefeated` guard matters now that boss `thorns` can kill
+  // during step 2: a dead player does not get swung at.
+  if (!monsterDefeated && !playerDefeated) {
+    // Monster-side regen, at the top of the monster's turn — the mirror of
+    // the player's regen at the top of theirs (step 1). It runs here rather
+    // than in the preTurn hook so a killing blow in step 2 is never undone
+    // by a heal the player then has to re-deal.
+    //
+    // `state.suppressedEffects` is deliberately NOT consulted: it is the
+    // *player's* suppression list (boss.ts narrates it as "Your X stops
+    // working"), which is why `getMonsterEffectValue` ignores it. A boss
+    // with `regen` baked and `phase2SuppressEffect: "regen"` — forest_hag —
+    // keeps healing in phase 2 while the player's regen armor goes quiet.
+    const monsterRegen = getMonsterEffectValue(s, "regen");
+    if (monsterRegen > 0) {
+      const heal = Math.min(monsterRegen, monsterMaxHp(s.monster) - s.monsterHp);
+      if (heal > 0) {
+        s = { ...s, monsterHp: s.monsterHp + heal };
+        lines.push({
+          text: `${monsterTitle(s.monster)} knits shut, recovering ${heal} HP.`,
+          emphasis: "heal",
+        });
+      }
+    }
+
     const monsterMulti = getMonsterEffectValue(s, "multi_hit");
     const monsterSwings = 1 + monsterMulti;
     for (let i = 0; i < monsterSwings; i++) {
@@ -691,6 +857,22 @@ export function resolveRound(
           text: `${monsterTitle(s.monster)} hits you for ${ma.damageToPlayer}${critTag}${resistTag}${reducedTag}.${monsterRollTag(ma)}`,
           emphasis: ma.crit ? "drama" : "damage",
         });
+
+        // Monster-side lifesteal, clamped to the monster's max HP. Applied
+        // before thorns so a reflected hit can still undo the drain.
+        if (ma.lifestealToMonster > 0) {
+          const drained = Math.min(
+            ma.lifestealToMonster,
+            monsterMaxHp(s.monster) - s.monsterHp,
+          );
+          if (drained > 0) {
+            s = { ...s, monsterHp: s.monsterHp + drained };
+            lines.push({
+              text: `${monsterTitle(s.monster)} drinks the wound, recovering ${drained} HP.`,
+              emphasis: "heal",
+            });
+          }
+        }
 
         // Thorns reflects regardless of whether the player just died.
         if (ma.thornsToMonster > 0) {

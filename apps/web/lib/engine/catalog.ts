@@ -9,11 +9,16 @@
  *   - apply catalog effects to a combat state at the right hook
  *     (`applyCatalogEffects`)
  *
- * The applier reads catalog values from *any* equipped asset and from boss
- * baked-in effects the same way — the engine treats both as "an
- * effect with a name and a value." Hook order is what makes "Brace" feel
- * Brace-y: `onIncoming` runs after the player has chosen Brace this turn,
- * so `damage_reduction` and `dodge_chance` stack with the +2 AC.
+ * Hook order is what makes "Brace" feel Brace-y: `onIncoming` runs after the
+ * player has chosen Brace this turn, so `damage_reduction` and
+ * `dodge_chance` stack with the +2 AC.
+ *
+ * Note the two lookups are not interchangeable. `getActiveEffectValue` and
+ * `applyCatalogEffects` walk `equipped.weapon`/`equipped.armor` and are
+ * therefore **player-side only** — passing a boss through them does nothing.
+ * Monster-side values come from `getMonsterEffectValue`, which reads
+ * `bakedEffects` off the monster and is the only path combat.ts should use
+ * for a boss's own effects.
  */
 
 import type {
@@ -276,6 +281,20 @@ export function getActiveEffectValue(
  * player's expected DPS at T1–T2 weapons). The new values are roughly
  * 40–60% of cap, tuned per-effect rather than uniformly.
  *
+ * Second history note, and the reason the numbers below are a *floor* on
+ * how punishing a boss is rather than a description of one: for a long
+ * stretch only three of these nine entries were ever read. `combat.ts`
+ * had monster-side call sites for `armor_pierce`, `crit_chance` and
+ * `multi_hit` and no others, so the six remaining values were tuned
+ * against a game that never consulted them — which is why the roster had
+ * drifted to a measured 9–97% win spread, with the dead-effect bosses at
+ * the top of it. Eight are live now; `bleed` is the holdout (no
+ * player-directed DoT slot — see the `combat.ts` module docblock).
+ *
+ * Changing a value here moves every boss carrying that effect at once.
+ * Re-run `scripts/balance-sweep.ts --bosses` afterwards; per-boss
+ * corrections belong in `baseHp` in the flavour banks, not here.
+ *
  * For Boolean effects (`armor_pierce`) the value is 1 — the effect's
  * presence is the effect.
  */
@@ -285,7 +304,7 @@ const MONSTER_EFFECT_STRENGTH: Readonly<Record<CatalogEffectName, number>> = {
   armor_pierce: 1, // boolean — keep
   crit_chance: 12, // was 25 (% chance)
   multi_hit: 1, // was 2 (extra swings — caps boss-side combos)
-  bleed: 2, // was 5 (DoT per turn, 3 turns)
+  bleed: 2, // was 5. Unreachable: no monster-side call site, by design.
   // armor-side
   regen: 1, // was 3 (HP / turn — the big offender pre-rebalance)
   thorns: 2, // was 5
@@ -300,6 +319,15 @@ const MONSTER_EFFECT_STRENGTH: Readonly<Record<CatalogEffectName, number>> = {
  *
  * Returns the value from `MONSTER_EFFECT_STRENGTH` rather than `spec.cap`
  * (which is intended as the *player* gear cap, not a boss baseline).
+ *
+ * Unlike `getActiveEffectValue`, this does **not** consult
+ * `state.suppressedEffects`. That list is the set of the *player's* effects
+ * a boss has switched off at phase 2 — boss.ts narrates it as "Your X stops
+ * working" — so applying it to the boss's own effects would make a boss
+ * suppress itself. forest_hag is the case that makes this visible: it bakes
+ * `regen` and sets `phase2SuppressEffect: "regen"`, which is one boss
+ * healing through phase 2 while the player's regen armor goes quiet, not a
+ * contradiction.
  */
 export function getMonsterEffectValue(
   state: CombatState,

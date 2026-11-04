@@ -516,7 +516,14 @@ const STARTER_BOSSES: Record<Preset, string> = {
  *   pnpm exec tsx scripts/balance-sweep.ts --bosses
  *     → every boss in every flavor bank at T2 only. Used for tuning
  *       the non-starter (player-realm) boss roster against the
- *        30–55% win-rate band.
+ *        30–55% win-rate band. All twelve currently measure 40.8–43.6%.
+ *
+ *       The three starter bosses are listed too but are NOT tuned to this
+ *       band and read ~82–88% here. They are the last room of the tutorial
+ *       run, so the condition that matters for them is `--mode=run`
+ *       completion (currently ~31–32% at T2), not a win rate measured from
+ *       full HP against a boss nobody meets at full HP. Tune those with
+ *       `--mode=run` and leave their numbers in this table alone.
  *
  *   pnpm exec tsx scripts/balance-sweep.ts --boss <preset>:<bossId>
  *     → one boss, T1+T2. Quick re-check after tweaking a single stat.
