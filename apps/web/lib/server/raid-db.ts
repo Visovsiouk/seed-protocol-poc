@@ -18,13 +18,27 @@ import "server-only";
  * serves SSR. A boss HP bar is the one value in this app that many clients
  * poll at once, and a db read per poll would put N clients × poll rate of
  * blocking reads on that thread for a number that changes only when an
- * attempt is submitted. One `next start` process is the only writer, so
- * invalidating on write is trivially coherent — there is no other process to
- * miss an update from.
+ * attempt is submitted.
  *
  * The cache is deliberately *not* time-based. A TTL would mean the bar can
  * be stale right after your own attempt landed, which is the one moment
  * anybody is looking at it.
+ *
+ * ## Why invalidate-on-write is not enough
+ *
+ * This file used to claim the server was the only writer, so clearing the
+ * cache on its own writes made it trivially coherent. **That was wrong.**
+ * `scripts/open-edition.ts` is a second writer by design — it is the entire
+ * succession path, plus the correction path and the rehearsal path — so the
+ * server's cache went stale at the exact moment it mattered most: an
+ * operator opens edition 2 and every client keeps being told edition 1 is
+ * still lying there felled. Observed, not theorised.
+ *
+ * So reads also check `PRAGMA data_version`, which SQLite bumps when
+ * *another connection* commits. It is a header read rather than a table
+ * read, so it costs nothing a poll would notice, and it does not move for
+ * this connection's own writes — which is why the explicit invalidation is
+ * still here rather than replaced by it.
  */
 
 import { getRaidEnv, raidUnlockOverridden } from "@/lib/env";
@@ -75,6 +89,34 @@ function invalidate(): void {
 }
 
 /**
+ * `PRAGMA data_version` as of the last cache fill.
+ *
+ * SQLite increments this whenever a *different* connection commits, and
+ * leaves it alone for writes made on this one. So comparing it detects the
+ * operator script's writes — opening an edition, correcting a pool, granting
+ * an attempt — without polling the tables themselves.
+ */
+let cachedDataVersion: number | undefined;
+
+function dataVersion(handle: ReturnType<typeof openRealmsDb>): number {
+  const rows = handle.pragma("data_version") as { data_version: number }[];
+  return rows[0]?.data_version ?? 0;
+}
+
+/**
+ * True when another process has committed since the cache was filled, so
+ * whatever is held is no longer trustworthy.
+ */
+function staleFromAnotherProcess(
+  handle: ReturnType<typeof openRealmsDb>,
+): boolean {
+  const version = dataVersion(handle);
+  if (cachedDataVersion === version) return false;
+  cachedDataVersion = version;
+  return true;
+}
+
+/**
  * The standing (or most recently felled) edition, served from memory.
  *
  * `undefined` in the cache slot means "not yet read"; `null` means "read,
@@ -83,8 +125,11 @@ function invalidate(): void {
  * cache exists to remove.
  */
 export function currentEdition(): RaidEdition | null {
-  if (currentCache !== undefined) return currentCache;
-  currentCache = getCurrentEdition(db()) ?? null;
+  const handle = db();
+  if (currentCache !== undefined && !staleFromAnotherProcess(handle)) {
+    return currentCache;
+  }
+  currentCache = getCurrentEdition(handle) ?? null;
   return currentCache;
 }
 

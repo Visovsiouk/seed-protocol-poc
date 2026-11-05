@@ -57,6 +57,48 @@ describe("migrateRaidTables", () => {
       migrateRaidTables(db);
     }).not.toThrow();
   });
+
+  it("adds columns a pre-existing database is missing", () => {
+    // A database created before `turn_limit`, `rng_seed` and `trace` were
+    // declared. `CREATE TABLE IF NOT EXISTS` does nothing to it, so without
+    // the ALTER pass every insert naming those columns fails — which is
+    // exactly what happened to a local db during development.
+    const old = new Database(":memory:");
+    old.exec(`
+      CREATE TABLE raid_boss (
+        edition INTEGER PRIMARY KEY, total_hp INTEGER NOT NULL,
+        current_hp INTEGER NOT NULL, phase INTEGER NOT NULL DEFAULT 1,
+        opened_at INTEGER NOT NULL, felled_at INTEGER
+      );
+      CREATE TABLE raid_contribution (
+        attempt_id TEXT PRIMARY KEY,
+        edition INTEGER NOT NULL REFERENCES raid_boss(edition),
+        player TEXT NOT NULL,
+        damage INTEGER NOT NULL,
+        damage_claimed INTEGER NOT NULL,
+        turns INTEGER NOT NULL,
+        survived INTEGER NOT NULL,
+        killing_blow INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL
+      );
+    `);
+
+    migrateRaidTables(old);
+
+    openNextEdition(old, 500);
+    grantAttempt(old, { grantKey: "k", player: ALICE, realm: ALICE });
+    const issued = openAttempt(old, {
+      edition: 1,
+      player: ALICE,
+      turnLimit: 25,
+    });
+    expect(getContribution(old, issued.attemptId)).toMatchObject({
+      turnLimit: 25,
+      rngSeed: issued.rngSeed,
+      trace: null,
+    });
+    old.close();
+  });
 });
 
 describe("openNextEdition", () => {

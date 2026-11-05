@@ -222,17 +222,47 @@ const SCHEMA = `
 `;
 
 /**
- * Create the raid tables if they are absent. Safe to call repeatedly;
- * callers gate it behind a module-local flag so it costs one no-op `exec`
- * per process rather than one per query.
+ * Columns added to `raid_contribution` after the table first existed.
  *
- * No `ALTER` block yet, unlike `player_realms` — these tables have never
- * shipped, so there is no deployed file to migrate *from*. The first column
- * added after the demo server has state needs the try/catch idiom from
- * `realm-db.ts`.
+ * `CREATE TABLE IF NOT EXISTS` does nothing to a table that is already
+ * there, so a database created before one of these columns was declared
+ * keeps the old shape and every insert naming the column fails. SQLite has
+ * no `ADD COLUMN IF NOT EXISTS`; a duplicate-column error just means it is
+ * already present, so that one case is swallowed and anything else rethrown
+ * — the same idiom `realm-db.ts` uses for `player_realms`.
+ *
+ * Worth having even though these tables have never shipped: that was the
+ * reasoning for leaving migrations out, and it was wrong in practice the
+ * moment a local database outlived a schema change during development.
+ */
+const CONTRIBUTION_ADDED_COLUMNS = [
+  "turn_limit INTEGER NOT NULL DEFAULT 30",
+  "rng_seed TEXT",
+  "trace TEXT",
+] as const;
+
+/**
+ * Create the raid tables if they are absent, and add any column a
+ * pre-existing database is missing. Safe to call repeatedly; callers gate it
+ * behind a module-local flag so it costs one no-op pass per process rather
+ * than one per query.
+ *
+ * Renames are deliberately *not* handled. `entry_tx_hash` became
+ * `attempt_id` while this was unshipped, and that column is the primary key
+ * — it cannot be added by `ALTER` — so a database from before that change is
+ * a development artifact to delete rather than something to migrate. If the
+ * schema ever changes a key after shipping, that needs a real table rebuild,
+ * not a line here.
  */
 export function migrateRaidTables(db: DatabaseType): void {
   db.exec(SCHEMA);
+  for (const col of CONTRIBUTION_ADDED_COLUMNS) {
+    try {
+      db.exec(`ALTER TABLE raid_contribution ADD COLUMN ${col}`);
+    } catch (err) {
+      if (!String(err).includes("duplicate column name")) throw err;
+    }
+  }
 }
 
 function toEdition(r: BossRow): RaidEdition {

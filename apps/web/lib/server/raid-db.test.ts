@@ -222,6 +222,30 @@ describe("raid-db", () => {
     expect(raid.raidBar()?.currentHp).toBe(150);
   });
 
+  it("notices a write made by another process", async () => {
+    // The operator script is a second writer by design — succession,
+    // correction and rehearsal all live there — so invalidate-on-write alone
+    // left the bar insisting edition 1 was felled while edition 2 stood.
+    // Observed in a browser, not theorised.
+    const before = raid.raidBar()!;
+    expect(before.felled).toBe(false);
+
+    const Database = (await import("better-sqlite3")).default;
+    const { correctCurrentHp, migrateRaidTables } = await import("./raid-store");
+    const outside = new Database(process.env.REALMS_DB_PATH!);
+    migrateRaidTables(outside);
+    correctCurrentHp(outside, before.edition, 7);
+    outside.close();
+
+    // Nothing in this process called invalidate(), so a cache relying only
+    // on its own writes would still be serving `before`. `PRAGMA
+    // data_version` is what catches it.
+    expect(raid.raidBar()).toMatchObject({
+      edition: before.edition,
+      currentHp: 7,
+    });
+  });
+
   it("keeps the contributor record of the felled edition", () => {
     const rows = raid.raidContributors(1);
     expect(rows).toHaveLength(1);
