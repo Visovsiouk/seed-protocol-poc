@@ -73,6 +73,8 @@ export type RaidContribution = {
   turnLimit: number;
   /** Server-issued run seed, or null for an attempt not opened via `openAttempt`. */
   rngSeed: `0x${string}` | null;
+  /** Action trace so far ('a'/'s' per round), or null if never reported. */
+  trace: string | null;
   createdAt: number;
 };
 
@@ -99,6 +101,11 @@ export type AdvanceAttemptInput = {
   /** Rounds resolved so far. Latest call wins. */
   turns: number;
   survived: boolean;
+  /**
+   * Action trace for the rounds resolved so far, one character per round.
+   * Optional, and only ever replaces a shorter one — see `advanceAttempt`.
+   */
+  trace?: string;
 };
 
 export type RecordAttemptResult = {
@@ -132,6 +139,7 @@ type ContributionRow = {
   killing_blow: number;
   turn_limit: number;
   rng_seed: string | null;
+  trace: string | null;
   created_at: number;
 };
 
@@ -176,6 +184,16 @@ const SCHEMA = `
     -- deferred, but the seed is the one input that cannot be reconstructed
     -- afterwards, so discarding it would make replay permanently impossible.
     rng_seed       TEXT,
+    -- The player's action trace, one character per round ('a' attack,
+    -- 's' secondary). ActionChoice is a two-member union, so a whole
+    -- fight's input is a bitstring and costs ~30 bytes.
+    --
+    -- Stored for the same reason as the seed: seed + trace is exactly what
+    -- S3's replay needs, and neither can be recovered after the fact. A
+    -- prefix of a trace is itself a valid trace, so a partial fight verifies
+    -- as happily as a finished one — which is what lets progress be reported
+    -- mid-fight without making replay a special case later.
+    trace          TEXT,
     created_at     INTEGER NOT NULL
   );
 
@@ -240,6 +258,7 @@ function toContribution(r: ContributionRow): RaidContribution {
     killingBlow: r.killing_blow === 1,
     turnLimit: r.turn_limit,
     rngSeed: (r.rng_seed as `0x${string}` | null) ?? null,
+    trace: r.trace ?? null,
     createdAt: r.created_at,
   };
 }
@@ -427,13 +446,23 @@ export function advanceAttempt(
     const felled = remaining === 0;
 
     if (prior) {
+      // The trace only ever grows: a shorter one is a stale packet, and
+      // keeping the longer is the same monotonic rule damage follows. Length
+      // rather than content, because a trace is append-only by construction —
+      // earlier rounds cannot change once resolved.
+      const nextTrace =
+        input.trace !== undefined &&
+        input.trace.length >= (prior.trace?.length ?? 0)
+          ? input.trace
+          : prior.trace;
       db.prepare(
         `UPDATE raid_contribution
             SET damage         = damage + ?,
                 damage_claimed = MAX(damage_claimed, ?),
                 turns          = ?,
                 survived       = ?,
-                killing_blow   = MAX(killing_blow, ?)
+                killing_blow   = MAX(killing_blow, ?),
+                trace          = ?
           WHERE attempt_id = ?`,
       ).run(
         applied,
@@ -441,14 +470,15 @@ export function advanceAttempt(
         input.turns,
         input.survived ? 1 : 0,
         felled ? 1 : 0,
+        nextTrace,
         hash,
       );
     } else {
       db.prepare(
         `INSERT INTO raid_contribution (
            attempt_id, edition, player, damage, damage_claimed,
-           turns, survived, killing_blow, created_at
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           turns, survived, killing_blow, trace, created_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       ).run(
         hash,
         input.edition,
@@ -458,6 +488,7 @@ export function advanceAttempt(
         input.turns,
         input.survived ? 1 : 0,
         felled ? 1 : 0,
+        input.trace ?? null,
         now,
       );
     }
@@ -846,8 +877,8 @@ export function openAttempt(
     db.prepare(
       `INSERT INTO raid_contribution (
          attempt_id, edition, player, damage, damage_claimed,
-         turns, survived, killing_blow, turn_limit, rng_seed, created_at
-       ) VALUES (?, ?, ?, 0, 0, 0, 0, 0, ?, ?, ?)`,
+         turns, survived, killing_blow, turn_limit, rng_seed, trace, created_at
+       ) VALUES (?, ?, ?, 0, 0, 0, 0, 0, ?, ?, NULL, ?)`,
     ).run(attemptId, args.edition, player, args.turnLimit, rngSeed, now);
 
     return {
