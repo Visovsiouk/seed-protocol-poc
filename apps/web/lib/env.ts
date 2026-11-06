@@ -161,12 +161,19 @@ const raidSchema = z.object({
   RAID_UNLOCK_T5_CLEARS: z.coerce.number().int().positive().default(25),
   /**
    * HP for the next edition opened without an explicit `--hp`/`--attempts`.
-   * The default is S1's measurement for the recommended block at a 30-round
-   * limit and 30 attempts; re-derive it with
-   * `scripts/colophon-damage.ts --target-attempts N` after any combat change
-   * rather than trusting this to have kept up.
+   *
+   * 2,000 ≈ 6 attempts against the recommended block at a 30-round limit,
+   * **not** the ~10,200 that 30 attempts measures to. Attempts are earned
+   * one per T5-realm clear, so attempt *supply* is the binding constraint
+   * rather than damage: a 30-attempt edition needs thirty T5 clears before
+   * it can possibly fall. Editions exist precisely so sizing low first is
+   * the safe mistake — a pool that never empties means the kill, the
+   * contributor list and the receipt flow never get exercised.
+   *
+   * Re-derive with `scripts/colophon-damage.ts --target-attempts N` after
+   * any combat change rather than trusting this to have kept up.
    */
-  RAID_EDITION_HP: z.coerce.number().int().positive().default(10_214),
+  RAID_EDITION_HP: z.coerce.number().int().positive().default(2_000),
   /**
    * Rounds a single attempt gets.
    *

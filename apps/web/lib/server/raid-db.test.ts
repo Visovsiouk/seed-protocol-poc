@@ -153,7 +153,7 @@ describe("raid-db", () => {
   });
 
   it("reports the configured edition HP", () => {
-    expect(raid.defaultEditionHp()).toBe(10_214);
+    expect(raid.defaultEditionHp()).toBe(2_000);
   });
 
   it("refuses to issue an attempt the player has not earned", () => {

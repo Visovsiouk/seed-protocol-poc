@@ -95,7 +95,7 @@ describe("getRaidEnv", () => {
   it("falls back to defaults on a bare environment", async () => {
     const env = await freshRaidEnv({});
     expect(env.getRaidEnv().RAID_UNLOCK_T5_CLEARS).toBe(25);
-    expect(env.getRaidEnv().RAID_EDITION_HP).toBe(10_214);
+    expect(env.getRaidEnv().RAID_EDITION_HP).toBe(2_000);
     expect(env.raidUnlockOverridden()).toBe(false);
   });
 
