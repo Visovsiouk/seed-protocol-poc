@@ -213,6 +213,33 @@ const SCHEMA = `
   CREATE INDEX IF NOT EXISTS idx_raid_grant_unspent
     ON raid_attempt_grant(player, spent_on);
 
+  -- One row per receipt owed, written when the pool hits 0 and cleared one
+  -- at a time as each mint confirms. Keyed on the recipient rather than the
+  -- contribution row: a contributor has many attempts and gets ONE receipt
+  -- for their total, so keying on attempts would mint thirty tokens to
+  -- someone who fought thirty times.
+  --
+  -- tx_hash IS NULL is the pending marker, which is what makes the queue
+  -- resumable: a crash mid-mint leaves the unfinished rows exactly as they
+  -- were, and the next pass picks them up. Nothing is deleted, so the table
+  -- is also the permanent record of who was paid for which edition.
+  CREATE TABLE IF NOT EXISTS raid_receipt (
+    edition      INTEGER NOT NULL REFERENCES raid_boss(edition),
+    player       TEXT NOT NULL,
+    token_id     TEXT NOT NULL,
+    damage       INTEGER NOT NULL CHECK (damage >= 0),
+    share_bps    INTEGER NOT NULL CHECK (share_bps >= 0),
+    attempts     INTEGER NOT NULL CHECK (attempts > 0),
+    killing_blow INTEGER NOT NULL DEFAULT 0 CHECK (killing_blow IN (0, 1)),
+    tx_hash      TEXT,
+    enqueued_at  INTEGER NOT NULL,
+    minted_at    INTEGER,
+    PRIMARY KEY (edition, player)
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_raid_receipt_pending
+    ON raid_receipt(edition, tx_hash);
+
   CREATE TABLE IF NOT EXISTS raid_unlock (
     id         INTEGER PRIMARY KEY CHECK (id = 1),
     t5_clears  INTEGER NOT NULL DEFAULT 0 CHECK (t5_clears >= 0),
@@ -922,6 +949,171 @@ export function openAttempt(
     };
   });
   return tx();
+}
+
+// ---------------------------------------------------------------------------
+// Kill receipts — enqueued on the fall, minted one at a time
+// ---------------------------------------------------------------------------
+
+export type RaidReceipt = {
+  edition: number;
+  player: `0x${string}`;
+  /** Decimal string: a uint256 overflows JS `number`. */
+  tokenId: string;
+  damage: number;
+  shareBps: number;
+  attempts: number;
+  killingBlow: boolean;
+  /** Null while the mint has not landed — the pending marker. */
+  txHash: `0x${string}` | null;
+  enqueuedAt: number;
+  mintedAt: number | null;
+};
+
+type ReceiptRow = {
+  edition: number;
+  player: string;
+  token_id: string;
+  damage: number;
+  share_bps: number;
+  attempts: number;
+  killing_blow: number;
+  tx_hash: string | null;
+  enqueued_at: number;
+  minted_at: number | null;
+};
+
+function toReceipt(r: ReceiptRow): RaidReceipt {
+  return {
+    edition: r.edition,
+    player: r.player as `0x${string}`,
+    tokenId: r.token_id,
+    damage: r.damage,
+    shareBps: r.share_bps,
+    attempts: r.attempts,
+    killingBlow: r.killing_blow === 1,
+    txHash: (r.tx_hash as `0x${string}` | null) ?? null,
+    enqueuedAt: r.enqueued_at,
+    mintedAt: r.minted_at ?? null,
+  };
+}
+
+/**
+ * Write the receipt queue for a felled edition.
+ *
+ * **Receipts mint when he falls, not per attempt.** Per-attempt minting
+ * would be a transaction per fight for no benefit — the thing worth
+ * recording is a contributor's share of the whole kill, which is not known
+ * until the pool is empty.
+ *
+ * Takes a `tokenIdFor` callback rather than importing the deriver, so this
+ * module stays free of `viem` and the queue can be tested without it. The
+ * real caller passes `deriveRaidReceiptTokenId`.
+ *
+ * Idempotent on `(edition, player)`: calling it twice for the same edition
+ * inserts nothing the second time and — importantly — does **not** reset the
+ * `tx_hash` of anything already minted. So a second kill notification, or a
+ * retry after a partial run, cannot cause a double mint.
+ *
+ * Refuses an edition that still stands. Enqueuing early would snapshot
+ * shares against an incomplete pool and quietly pay everyone the wrong
+ * amount, which is worse than failing.
+ */
+export function enqueueKillReceipts(
+  db: DatabaseType,
+  edition: number,
+  tokenIdFor: (args: { edition: number; player: `0x${string}` }) => bigint,
+  shareFor: (damage: number, editionHp: number) => number,
+  now = Math.floor(Date.now() / 1000),
+): RaidReceipt[] {
+  const tx = db.transaction((): RaidReceipt[] => {
+    const boss = getEdition(db, edition);
+    if (!boss) throw new Error(`no such edition: ${edition}`);
+    if (boss.felledAt === null) {
+      throw new Error(
+        `edition ${edition} still stands (${boss.currentHp}/${boss.totalHp}) — ` +
+          "receipts are owed only once it has fallen",
+      );
+    }
+
+    for (const c of listContributors(db, edition)) {
+      // Zero-damage contributors get nothing. Dying for nothing is still
+      // recorded as a contribution row, but a receipt claiming a 0% share
+      // is a worse memento than no receipt.
+      if (c.damage <= 0) continue;
+      db.prepare(
+        `INSERT OR IGNORE INTO raid_receipt (
+           edition, player, token_id, damage, share_bps, attempts,
+           killing_blow, tx_hash, enqueued_at, minted_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, NULL)`,
+      ).run(
+        edition,
+        c.player,
+        tokenIdFor({ edition, player: c.player }).toString(),
+        c.damage,
+        shareFor(c.damage, boss.totalHp),
+        c.attempts,
+        c.killingBlow ? 1 : 0,
+        now,
+      );
+    }
+    return listReceipts(db, edition);
+  });
+  return tx();
+}
+
+export function listReceipts(db: DatabaseType, edition: number): RaidReceipt[] {
+  return db
+    .prepare<[number], ReceiptRow>(
+      // Killing blow first, then heaviest — the order a reader wants, and
+      // the order the mints should go out in if only some of them land.
+      `SELECT * FROM raid_receipt WHERE edition = ?
+        ORDER BY killing_blow DESC, damage DESC, player ASC`,
+    )
+    .all(edition)
+    .map(toReceipt);
+}
+
+/** Receipts still owed for an edition, in the order they should be minted. */
+export function pendingReceipts(
+  db: DatabaseType,
+  edition: number,
+): RaidReceipt[] {
+  return listReceipts(db, edition).filter((r) => r.txHash === null);
+}
+
+/**
+ * Mark one receipt minted.
+ *
+ * Guarded on `tx_hash IS NULL` so the first write wins: if two passes
+ * somehow overlap, the second cannot overwrite the recorded transaction
+ * with its own and leave two hashes claiming to be the mint.
+ */
+export function markReceiptMinted(
+  db: DatabaseType,
+  edition: number,
+  player: `0x${string}`,
+  txHash: `0x${string}`,
+  now = Math.floor(Date.now() / 1000),
+): boolean {
+  const res = db
+    .prepare(
+      `UPDATE raid_receipt SET tx_hash = ?, minted_at = ?
+        WHERE edition = ? AND player = ? AND tx_hash IS NULL`,
+    )
+    .run(txHash, now, edition, player.toLowerCase());
+  return res.changes > 0;
+}
+
+/** Editions with receipts still owed — what a resuming worker asks for. */
+export function editionsWithPendingReceipts(db: DatabaseType): number[] {
+  return db
+    .prepare<[], { edition: number }>(
+      `SELECT DISTINCT edition FROM raid_receipt
+        WHERE tx_hash IS NULL ORDER BY edition ASC`,
+    )
+    .all()
+    .map((r) => r.edition);
 }
 
 // ---------------------------------------------------------------------------

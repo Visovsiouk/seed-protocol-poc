@@ -7,6 +7,7 @@ import {
   raidBar,
   raidContributors,
   raidGate,
+  raidReceipts,
 } from "@/lib/server/raid-db";
 import { withRealmGuards } from "@/lib/server/realm-guards";
 import { isHexAddress } from "@/lib/validation/schemas";
@@ -59,6 +60,22 @@ async function handleRaidState(req: Request) {
   // rather than behind another round trip.
   const contributors = bar ? raidContributors(bar.edition) : [];
 
+  // Receipts only exist once he has fallen, and only then are they worth a
+  // query. Reported with their mint state rather than filtered to the minted
+  // ones: "owed, not yet paid" is a real state the surface should be able to
+  // show honestly instead of implying nobody was credited.
+  const receipts =
+    bar && bar.felled
+      ? raidReceipts(bar.edition).map((r) => ({
+          player: r.player,
+          damage: r.damage,
+          shareBps: r.shareBps,
+          attempts: r.attempts,
+          killingBlow: r.killingBlow,
+          minted: r.txHash !== null,
+        }))
+      : [];
+
   return NextResponse.json({
     ok: true as const,
     gate,
@@ -69,6 +86,7 @@ async function handleRaidState(req: Request) {
       attempts: c.attempts,
       killingBlow: c.killingBlow,
     })),
+    receipts,
     attemptsAvailable: playerParam
       ? playerAttemptBalance(playerParam)
       : null,

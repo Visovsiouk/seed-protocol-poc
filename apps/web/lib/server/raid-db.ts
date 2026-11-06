@@ -42,11 +42,13 @@ import "server-only";
  */
 
 import { getRaidEnv, raidUnlockOverridden } from "@/lib/env";
+import { enqueueForEdition } from "@/lib/raid/receipt-queue";
 import {
   advanceAttempt,
   attemptBalance,
   bumpT5Clears,
   countPlayerAttempts,
+  editionsWithPendingReceipts,
   getContribution,
   getCurrentEdition,
   getEdition,
@@ -54,6 +56,7 @@ import {
   grantAttempt,
   listContributions,
   listContributors,
+  listReceipts,
   listGrants,
   migrateRaidTables,
   openAttempt,
@@ -65,6 +68,7 @@ import {
   type IssuedAttempt,
   type RaidContribution,
   type RaidEdition,
+  type RaidReceipt,
   type RaidUnlock,
   type RecordAttemptInput,
   type RecordAttemptResult,
@@ -202,7 +206,32 @@ export function advanceAttemptProgress(
 ): RecordAttemptResult {
   const res = advanceAttempt(db(), input);
   invalidate();
+  if (res.felled) queueKillReceipts(res.edition.edition);
   return res;
+}
+
+/**
+ * Write the receipt queue the moment an edition falls.
+ *
+ * Done here rather than left to a worker's next sweep so that what is owed
+ * is durable immediately — it is a local synchronous write and costs the
+ * killing blow's request almost nothing. Minting is the slow, failure-prone
+ * half and stays separate (`drainReceipts`).
+ *
+ * Never throws. The pool is already at zero and the kill is already real by
+ * the time this runs; failing the request that landed the final blow would
+ * be the worst possible response to a bookkeeping problem. A lost queue is
+ * recoverable — `enqueueKillReceipts` is idempotent, so any later pass
+ * rebuilds it from the contribution rows.
+ */
+function queueKillReceipts(edition: number): void {
+  try {
+    enqueueForEdition(db(), edition);
+  } catch (e) {
+    console.warn(
+      `[raid] failed to queue receipts for edition ${edition}: ${e instanceof Error ? e.message : String(e)}`,
+    );
+  }
 }
 
 /**
@@ -259,6 +288,16 @@ export function raidGate(): RaidGate {
  */
 export function recordT5Clear(): RaidUnlock {
   return bumpT5Clears(db());
+}
+
+/** Receipts owed or paid for an edition — the kill's permanent record. */
+export function raidReceipts(edition: number): RaidReceipt[] {
+  return listReceipts(db(), edition);
+}
+
+/** Editions with receipts still owed, for a resuming worker. */
+export function raidEditionsOwedReceipts(): number[] {
+  return editionsWithPendingReceipts(db());
 }
 
 /** HP the next edition opens at when the caller has no explicit figure. */

@@ -52,6 +52,7 @@ import {
   getRaidUnlock,
   listContributors,
   listEditions,
+  listReceipts,
   migrateRaidTables,
   openNextEdition,
   phaseFor,
@@ -186,6 +187,22 @@ function showContributors(db: ReturnType<typeof openRealmsDb>): void {
       `\n${rows.length} contributor(s), ${recorded.toLocaleString("en-US")} damage recorded.`,
     );
   }
+  const receipts = listReceipts(db, current.edition);
+  if (receipts.length > 0) {
+    const paid = receipts.filter((r) => r.txHash !== null).length;
+    console.log(
+      `\nreceipts: ${paid} / ${receipts.length} minted` +
+        (paid === receipts.length
+          ? ""
+          : " — the rest are still owed; a drain pass will send them"),
+    );
+  } else if (current.felledAt !== null) {
+    console.log(
+      "\nreceipts: none queued. Enqueueing is idempotent, so a drain pass" +
+        " can rebuild them from the contribution rows.",
+    );
+  }
+
   if (recorded !== takenOffPool) {
     // Only reachable through `--set-hp`. Say so rather than letting the two
     // numbers quietly disagree.
