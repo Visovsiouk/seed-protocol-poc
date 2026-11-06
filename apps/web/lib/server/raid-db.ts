@@ -207,8 +207,70 @@ export function advanceAttemptProgress(
 ): RecordAttemptResult {
   const res = advanceAttempt(db(), input);
   invalidate();
-  if (res.felled) queueKillReceipts(res.edition.edition);
+  if (res.felled) {
+    queueKillReceipts(res.edition.edition);
+    void drainOwedReceipts();
+  }
   return res;
+}
+
+/**
+ * Mint the receipts an edition owes, in the background.
+ *
+ * **In this process, deliberately.** `withSignerLock` is an in-process
+ * mutex, and these mints are signed by the same owner key that
+ * `/api/realm/boss-cleared` uses for starter-realm clear receipts. Running
+ * the drain from a separate script would put two processes on one key with
+ * no shared lock between them, and the nonce collision would look like a
+ * random dropped transaction. That is why there is no `raid:receipts` mint
+ * script — `scripts/drain-receipts.ts` can only inspect.
+ *
+ * Not awaited by the caller: the request that landed the final blow should
+ * not hold a connection open through N transactions. Losing the kick costs
+ * nothing durable — the queue is already written, every receipt is still
+ * owed, and the next kill or an operator retry picks it up.
+ */
+async function drainOwedReceipts(): Promise<void> {
+  // Every edition that owes anything, not only the one that just fell.
+  // A drain that failed — RPC down, chain unseeded, a reverted mint — would
+  // otherwise never be retried: the kill is the only trigger, and it has
+  // already happened. Sweeping the backlog makes each kill the retry for
+  // every earlier one, which is the cheapest self-healing available
+  // without adding a scheduler.
+  let editions: number[];
+  try {
+    editions = editionsWithPendingReceipts(db());
+  } catch {
+    return;
+  }
+  if (editions.length === 0) return;
+
+  try {
+    const { createRaidReceiptChain } = await import("./raid-receipt-chain");
+    const { drainReceipts } = await import("@/lib/raid/receipt-queue");
+    const chain = createRaidReceiptChain();
+    for (const edition of editions) {
+      const boss = getEdition(db(), edition);
+      if (!boss || boss.felledAt === null) continue;
+      // One lock for the whole edition rather than one per mint: these
+      // share a nonce sequence, so another mint interleaving mid-drain
+      // would leave the next send reading a stale pending count.
+      const res = await chain.locked(() =>
+        drainReceipts(db(), edition, chain, boss.totalHp, boss.felledAt!),
+      );
+      console.log(
+        `[raid] edition ${edition} receipts: minted ${res.minted}, reconciled ${res.skipped}, failed ${res.failed.length}, owed ${res.remaining}`,
+      );
+      for (const f of res.failed) {
+        console.warn(`[raid] receipt for ${f.player} failed: ${f.message}`);
+      }
+    }
+  } catch (e) {
+    // The queue survives, so this is a delay rather than a loss.
+    console.warn(
+      `[raid] receipt drain failed: ${e instanceof Error ? e.message : String(e)}`,
+    );
+  }
 }
 
 /**

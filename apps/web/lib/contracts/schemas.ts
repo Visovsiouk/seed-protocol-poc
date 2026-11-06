@@ -79,6 +79,30 @@ export const SCHEMAS = {
       field("sourceRealm", FieldType.Address),
     ] satisfies SchemaField[],
   },
+  /**
+   * The Colophon's kill receipt — one per contributor when an edition falls.
+   *
+   * Carries the *share* as well as the damage, because damage is meaningless
+   * without the pool it came out of and a token should still be readable on
+   * its own years later with no server to ask.
+   *
+   * Registered on every realm like the other two even though the raid is
+   * global: minting needs an `EcosystemTemplate` to mint *from*, and reusing
+   * a starter realm's existing minter delegate is far less machinery than
+   * giving the raid an ecosystem of its own.
+   */
+  killReceipt: {
+    name: "Realms.KillReceipt",
+    metadataURI: "ipfs://placeholder/kill-receipt.json",
+    fields: [
+      field("player", FieldType.Address),
+      field("edition", FieldType.Uint),
+      field("damage", FieldType.Uint),
+      field("shareBps", FieldType.Uint),
+      field("attempts", FieldType.Uint),
+      field("felledAt", FieldType.Uint),
+    ] satisfies SchemaField[],
+  },
 } as const;
 
 export type SchemaKey = keyof typeof SCHEMAS;
@@ -88,5 +112,16 @@ export type SchemaKey = keyof typeof SCHEMAS;
  * array — and only this array — so the on-chain registration order is
  * deterministic. Idempotent recovery from `SchemaRegistered` event logs
  * relies on this ordering matching `seededRealms.schemas` JSON keys.
+ *
+ * **Append, never insert.** Ids are handed out sequentially as schemas are
+ * registered, so adding `killReceipt` at the end leaves every existing id
+ * where it was and the seeder's log recovery assigns the new one the next
+ * free number. Inserting it in the middle would renumber the schemas an
+ * already-deployed chain had issued, and every persisted `schemaId` —
+ * including the ones on minted tokens — would then point at the wrong thing.
  */
-export const SCHEMA_ORDER: readonly SchemaKey[] = ["clearReceipt", "loot"];
+export const SCHEMA_ORDER: readonly SchemaKey[] = [
+  "clearReceipt",
+  "loot",
+  "killReceipt",
+];

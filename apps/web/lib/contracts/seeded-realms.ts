@@ -21,7 +21,15 @@ import type { Preset } from "@/lib/engine/types";
 import { ZERO_ADDRESS } from "./realm-picker";
 import data from "./generated/realms.json";
 
-type SchemaPair = { clearReceipt: string; loot: string };
+/**
+ * `killReceipt` is optional because a chain seeded before it was added has
+ * no entry for it, and this reads whatever JSON is on disk.
+ */
+type SchemaPair = {
+  clearReceipt: string;
+  loot: string;
+  killReceipt?: string;
+};
 
 type SeededChainEntry = {
   realms: Record<Preset, string>;
@@ -60,14 +68,21 @@ export function getSeededRealm(preset: Preset): `0x${string}` {
 export function getSeededSchemaIds(preset: Preset): {
   clearReceipt: bigint;
   loot: bigint;
+  killReceipt: bigint;
 } {
+  // `killReceipt` defaults to 0n rather than being required, because a chain
+  // seeded before it existed has no entry for it. 0n is the same "not
+  // seeded" sentinel the other two already use, and callers already check
+  // for it — see the `schema_not_seeded` branch in /api/realm/boss-cleared.
+  const none = { clearReceipt: 0n, loot: 0n, killReceipt: 0n };
   const e = entry();
-  if (!e) return { clearReceipt: 0n, loot: 0n };
+  if (!e) return none;
   const pair = e.schemas[preset];
-  if (!pair) return { clearReceipt: 0n, loot: 0n };
+  if (!pair) return none;
   return {
     clearReceipt: BigInt(pair.clearReceipt),
     loot: BigInt(pair.loot),
+    killReceipt: BigInt(pair.killReceipt ?? "0"),
   };
 }
 

@@ -44,11 +44,22 @@ import {
 /** What the worker needs from the chain, supplied by the caller. */
 export type ReceiptChain = {
   /**
-   * True when this tokenId already exists on chain. Should read at
-   * `blockTag: "pending"` so a mint still in the mempool counts — otherwise
-   * a retry inside one block re-sends it.
+   * True when this receipt already exists on chain.
+   *
+   * Takes the recipient as well as the id because the on-chain question is
+   * `balanceOf(holder, tokenId)` — there is no "does this token exist"
+   * without an address to ask about. Passing it explicitly keeps the probe
+   * honest about what it reads; an implementation that asked about the
+   * minter's balance instead would read zero forever and re-send every
+   * receipt on every pass.
+   *
+   * Should read at `blockTag: "pending"` so a mint still in the mempool
+   * counts — otherwise a resumed pass re-sends what the last one broadcast.
    */
-  alreadyMinted: (tokenId: bigint) => Promise<boolean>;
+  alreadyMinted: (args: {
+    tokenId: bigint;
+    recipient: `0x${string}`;
+  }) => Promise<boolean>;
   /** Mint it. Resolves with the transaction hash once it has confirmed. */
   mint: (args: {
     tokenId: bigint;
@@ -116,7 +127,7 @@ export async function drainReceipts(
   for (const receipt of queue) {
     const tokenId = BigInt(receipt.tokenId);
     try {
-      if (await chain.alreadyMinted(tokenId)) {
+      if (await chain.alreadyMinted({ tokenId, recipient: receipt.player })) {
         // On chain but not recorded — the db write was lost after the mint
         // landed. Record it rather than minting again; there is no hash to
         // store, so a sentinel marks it reconciled.
