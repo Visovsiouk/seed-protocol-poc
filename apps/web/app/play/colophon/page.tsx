@@ -77,6 +77,22 @@ type RaidState = {
     attempts: number;
     killingBlow: boolean;
   }[];
+  receipts: {
+    player: string;
+    damage: number;
+    shareBps: number;
+    attempts: number;
+    killingBlow: boolean;
+    minted: boolean;
+  }[];
+  editions: {
+    edition: number;
+    totalHp: number;
+    currentHp: number;
+    felledAt: number | null;
+    openedAt: number;
+  }[];
+  recordEdition: number | null;
   attemptsAvailable: number | null;
 };
 
@@ -99,11 +115,14 @@ type Issued = {
  * to show. The server answers from an in-memory value invalidated on write
  * (see `raid-db.ts`), so a poll costs no database read.
  */
-function useRaidState(player?: `0x${string}`) {
+function useRaidState(player?: `0x${string}`, edition?: number | null) {
   return useQuery<RaidState>({
-    queryKey: ["raid", "state", player ?? null],
+    queryKey: ["raid", "state", player ?? null, edition ?? null],
     queryFn: async () => {
-      const qs = player ? `?player=${player}` : "";
+      const params = new URLSearchParams();
+      if (player) params.set("player", player);
+      if (edition != null) params.set("edition", String(edition));
+      const qs = params.size > 0 ? `?${params}` : "";
       const res = await fetch(`/api/raid/state${qs}`);
       const body = (await res.json()) as RaidState | { ok: false; message: string };
       if (!("ok" in body) || !body.ok) {
@@ -180,9 +199,98 @@ function Contributors({ rows }: { rows: RaidState["contributors"] }) {
   );
 }
 
+/**
+ * The kill's payout record.
+ *
+ * Shows owed receipts as owed rather than hiding them until they mint. A
+ * surface that only listed minted ones would imply nobody was credited
+ * during the window between the fall and the last transaction confirming —
+ * which is exactly when people will be looking.
+ */
+function Receipts({ rows }: { rows: RaidState["receipts"] }) {
+  if (rows.length === 0) return null;
+  const owed = rows.filter((r) => !r.minted).length;
+  return (
+    <div className="space-y-2 text-sm">
+      <h3 className="opacity-70">
+        Receipts{owed > 0 ? ` — ${owed} still being written` : ""}
+      </h3>
+      <ul className="space-y-1">
+        {rows.map((r) => (
+          <li key={r.player} className="flex justify-between font-mono text-xs">
+            <span>
+              {short(r.player)}
+              {r.killingBlow ? " ✦" : ""}
+            </span>
+            <span className="opacity-70">
+              {(r.shareBps / 100).toFixed(2)}%
+              {r.minted ? "" : " · pending"}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/**
+ * Every edition, felled or standing.
+ *
+ * This is why editions exist rather than one permanent kill: each fall stays
+ * on the record, dated, instead of being replaced by the next boss. A
+ * one-shot boss falls once on a demo server and every later visitor arrives
+ * at a plaque — this way they arrive at a plaque *and* a fight.
+ */
+function Editions({
+  rows,
+  showing,
+  onShow,
+}: {
+  rows: RaidState["editions"];
+  showing: number | null;
+  onShow: (edition: number) => void;
+}) {
+  const felled = rows.filter((e) => e.felledAt !== null);
+  if (felled.length === 0) return null;
+  return (
+    <div className="space-y-2 text-sm">
+      <h3 className="opacity-70">Felled</h3>
+      <ul className="space-y-1">
+        {felled.map((e) => (
+          <li key={e.edition}>
+            <button
+              type="button"
+              onClick={() => onShow(e.edition)}
+              aria-current={showing === e.edition}
+              className={`flex w-full justify-between text-xs hover:opacity-100 ${
+                showing === e.edition ? "opacity-100" : "opacity-70"
+              }`}
+            >
+              <span>
+                Edition {e.edition}
+                {showing === e.edition ? " — shown below" : ""}
+              </span>
+              <span className="font-mono">
+                {e.totalHp.toLocaleString()} ·{" "}
+                {new Date(e.felledAt! * 1000).toISOString().slice(0, 10)}
+              </span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 export default function ColophonPage() {
   const { address } = useAccount();
-  const { data, error, refetch } = useRaidState(address);
+  /**
+   * Which edition's record is on screen. `null` means "whatever is current",
+   * so the page follows the live pool until someone deliberately looks back
+   * at a past kill.
+   */
+  const [viewing, setViewing] = useState<number | null>(null);
+  const { data, error, refetch } = useRaidState(address, viewing);
 
   const [issued, setIssued] = useState<Issued | null>(null);
   const [run, setRun] = useState<RunState | null>(null);
@@ -371,7 +479,26 @@ export default function ColophonPage() {
                   permanent.
                 </p>
               ) : null}
+              {data?.recordEdition != null &&
+              data.recordEdition !== boss.edition ? (
+                <p className="text-xs opacity-60">
+                  Showing edition {data.recordEdition}&apos;s record.{" "}
+                  <button
+                    type="button"
+                    onClick={() => setViewing(null)}
+                    className="underline"
+                  >
+                    Back to the one standing
+                  </button>
+                </p>
+              ) : null}
               <Contributors rows={data?.contributors ?? []} />
+              <Receipts rows={data?.receipts ?? []} />
+              <Editions
+                rows={data?.editions ?? []}
+                showing={data?.recordEdition ?? null}
+                onShow={setViewing}
+              />
             </div>
           </Panel>
         ) : gate?.unlocked ? (

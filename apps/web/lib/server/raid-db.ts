@@ -56,6 +56,7 @@ import {
   grantAttempt,
   listContributions,
   listContributors,
+  listEditions,
   listReceipts,
   listGrants,
   migrateRaidTables,
@@ -288,6 +289,11 @@ export function raidGate(): RaidGate {
  */
 export function recordT5Clear(): RaidUnlock {
   return bumpT5Clears(db());
+}
+
+/** Every edition, oldest first — the record of what has been felled. */
+export function raidEditions(): RaidEdition[] {
+  return listEditions(db());
 }
 
 /** Receipts owed or paid for an edition — the kill's permanent record. */
