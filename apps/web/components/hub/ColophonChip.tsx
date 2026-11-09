@@ -22,6 +22,8 @@
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 
+import { Chip } from "@/components/ui";
+
 type RaidChipState = {
   ok: true;
   gate: { unlocked: boolean; remaining: number };
@@ -50,18 +52,26 @@ export function ColophonChip() {
   const { gate, boss } = data;
   if (!boss && gate.unlocked) return null;
 
-  const label = !gate.unlocked
-    ? `The Colophon · sealed, ${gate.remaining} to go`
-    : boss!.felled
-      ? `The Colophon · edition ${boss!.edition} felled`
-      : `The Colophon · ${boss!.currentHp.toLocaleString()} left`;
-
+  // Same `Chip` the Signet and Codex pills on this strip are built from. It
+  // used to be a hand-rolled `border-white/15` lozenge sitting between two of
+  // them — the one item on the row that didn't re-theme with the preset.
+  // Felled reads as a win, so it borrows the Signet's colour; standing (and
+  // sealed, which is a countdown rather than a loss) stays on the accent.
   return (
-    <Link
-      href="/play/colophon"
-      className="rounded-full border border-white/15 px-2.5 py-1 tabular-nums opacity-70 transition hover:opacity-100"
-    >
-      {label}
+    <Link href="/play/colophon" className="opacity-80 transition-opacity hover:opacity-100">
+      <Chip
+        color={
+          boss?.felled ? "var(--color-ok)" : "var(--color-preset-accent)"
+        }
+        label="The Colophon"
+        sub={
+          !gate.unlocked
+            ? `sealed, ${gate.remaining} to go`
+            : boss!.felled
+              ? `edition ${boss!.edition} felled`
+              : `${boss!.currentHp.toLocaleString()} left`
+        }
+      />
     </Link>
   );
 }
