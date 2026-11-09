@@ -202,6 +202,30 @@ const LORE: Record<string, Omit<BookmarkLore, "borrower">> = {
       "It keeps reading you the ending it could not stop reading. Knowing the " +
       "last line is not the same as writing your own.",
   },
+
+  // ── Not a bookmark at all ───────────────────────────────────────────────
+  //
+  // The one entry here that is not a filed borrower. Every other boss in
+  // this table *was* somebody; he is the one who filed them. Without his own
+  // lines he took the fallback, which opens "Another borrower who got this
+  // far and was filed here" — precisely, exactly backwards, and shown in the
+  // breath before the only fight the story is actually about.
+  //
+  // No `borrower` resolves for him either, so no "· filed <year>" line
+  // appears, which is correct: he is the hand that writes those dates.
+  the_colophon: {
+    intro:
+      "Not a bookmark. The hand that set every other one. Two hundred years " +
+      "of other people's margins, bound and standing, and the only thing he " +
+      "wants is to write the last line and close you in.",
+    turn:
+      "Something gives in the binding — a sound like a spine deciding. He " +
+      "does not surface, because there is nobody in him to surface. He only " +
+      "leans harder on the page.",
+    fell:
+      "The edition stops. Not finished — stopped, which is the whole of what " +
+      "anyone wanted. Your name is on the list of the hands that did it.",
+  },
 };
 
 /**

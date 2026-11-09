@@ -57,6 +57,16 @@ const TAGS: Readonly<Record<string, Family>> = {
   "fantasy:dragon": "winged",
   "fantasy:warden": "hulk",
   "fantasy:vampire": "undead",
+  // The raid boss. Not a flavor-bank entry — he is built by
+  // `lib/raid/colophon.ts` as a factory over the edition's HP — so the
+  // totality test below cannot see him and would never have reported him
+  // missing. Untagged he fell to the hash fallback and drew a family at
+  // random, which is fine for a realm somebody deploys later and wrong for
+  // the one boss the whole story is about.
+  //
+  // `hulk`, matching the warden whose baked pair he borrows: the shape is
+  // the weight of two hundred years, something you hit and that absorbs it.
+  "fantasy:the_colophon": "hulk",
 
   // ── scifi ──────────────────────────────────────────────────────────────────
   "scifi:drone": "winged",
