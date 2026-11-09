@@ -116,27 +116,40 @@ function inferSlot(args: {
 }
 
 /**
- * True when the decoded metadata belongs to a `clearReceipt` asset (boss-clear
- * proof), regardless of which realm minted it. Detected by content marker, not
- * schemaId: every receipt carries `seed_protocol.schema === "clearReceipt"` and
- * a `Schema` attribute suffixed `:clearReceipt`. Loot/translated assets use a
- * numeric `Schema` suffix and have no `seed_protocol.schema`, so they never
- * match. Used by the inventory read to drop receipts before they're shoehorned
- * into the weapon/armor tabs.
+ * Receipt schema names, lowercased.
+ *
+ * **Every new receipt schema must be added here.** `killReceipt` was
+ * registered in `lib/contracts/schemas.ts` and minted without reaching this
+ * set, which produced exactly the failure this filter exists to prevent: kill
+ * receipts carry schemaId 7, the parity heuristic below files odd ids under
+ * *weapon*, and the trophy became an equippable sword that rolls no damage.
  */
-export function isClearReceiptMetadata(metadataURI: string): boolean {
+const RECEIPT_SCHEMAS = new Set(["clearreceipt", "killreceipt"]);
+
+/**
+ * True when the decoded metadata belongs to a receipt asset — a boss-clear
+ * proof or a Colophon kill receipt — regardless of which realm minted it.
+ *
+ * Detected by content marker, not schemaId: every receipt carries
+ * `seed_protocol.schema` and a `Schema` attribute suffixed with that same
+ * name. Loot/translated assets use a numeric `Schema` suffix and have no
+ * `seed_protocol.schema`, so they never match. Used by the inventory read to
+ * drop receipts before they're shoehorned into the weapon/armor tabs.
+ */
+export function isReceiptMetadata(metadataURI: string): boolean {
   try {
     const decoded = decodeMetadataURI(metadataURI);
     const sp = decoded.json.seed_protocol as { schema?: string } | undefined;
-    if (sp?.schema === "clearReceipt") return true;
+    if (sp?.schema && RECEIPT_SCHEMAS.has(sp.schema.toLowerCase())) return true;
     for (const attr of decoded.json.attributes ?? []) {
       if (
-        String(attr.trait_type).toLowerCase() === "schema" &&
-        typeof attr.value === "string" &&
-        attr.value.split(":")[1]?.toLowerCase() === "clearreceipt"
+        String(attr.trait_type).toLowerCase() !== "schema" ||
+        typeof attr.value !== "string"
       ) {
-        return true;
+        continue;
       }
+      const suffix = attr.value.split(":")[1]?.toLowerCase();
+      if (suffix && RECEIPT_SCHEMAS.has(suffix)) return true;
     }
     return false;
   } catch {

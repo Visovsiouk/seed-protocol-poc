@@ -1,9 +1,10 @@
 import { describe, it, expect } from "vitest";
 import {
   buildAssetCardFromMetadata,
-  isClearReceiptMetadata,
+  isReceiptMetadata,
 } from "./asset-card";
 import { buildClearReceiptMetadataURI } from "@/lib/contracts/clear-receipt-derive";
+import { buildRaidReceiptMetadataURI } from "@/lib/raid/receipt-derive";
 import { b64 } from "@/lib/utils";
 
 const SVG = '<svg xmlns="http://www.w3.org/2000/svg"><rect/></svg>';
@@ -224,7 +225,7 @@ describe("buildAssetCardFromMetadata", () => {
   });
 });
 
-describe("isClearReceiptMetadata", () => {
+describe("isReceiptMetadata", () => {
   it("detects a clearReceipt URI (any realm)", () => {
     const uri = buildClearReceiptMetadataURI({
       preset: "fantasy",
@@ -236,7 +237,27 @@ describe("isClearReceiptMetadata", () => {
       finalHp: 12,
       clearedAt: 1_700_000_000,
     });
-    expect(isClearReceiptMetadata(uri)).toBe(true);
+    expect(isReceiptMetadata(uri)).toBe(true);
+  });
+
+  /**
+   * Regression. A kill receipt reached the inventory as an *equippable
+   * weapon*: this filter matched only `clearReceipt`, so the receipt fell
+   * through to the schemaId-parity heuristic, and killReceipt's id 7 is odd
+   * — so the trophy rendered in the weapon slot with no damage die and
+   * could be equipped in place of a real sword.
+   */
+  it("detects a Colophon killReceipt URI", () => {
+    const uri = buildRaidReceiptMetadataURI({
+      edition: 1,
+      player: "0x0000000000000000000000000000000000000b01",
+      damage: 350,
+      editionHp: 700,
+      attempts: 2,
+      killingBlow: true,
+      felledAt: 1_700_000_000,
+    });
+    expect(isReceiptMetadata(uri)).toBe(true);
   });
 
   it("does not flag a normal loot URI", () => {
@@ -248,10 +269,10 @@ describe("isClearReceiptMetadata", () => {
         ],
       }),
     );
-    expect(isClearReceiptMetadata(uri)).toBe(false);
+    expect(isReceiptMetadata(uri)).toBe(false);
   });
 
   it("returns false for a malformed / non-renderer URI", () => {
-    expect(isClearReceiptMetadata("https://cdn.example/x.png")).toBe(false);
+    expect(isReceiptMetadata("https://cdn.example/x.png")).toBe(false);
   });
 });
