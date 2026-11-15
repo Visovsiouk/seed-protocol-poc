@@ -301,7 +301,76 @@ async function handleBossCleared(req: Request) {
     });
   }
 
+  // Only player realms carry the earned-tier curve, so only they can feed
+  // the gate or earn an attempt. A starter realm is the tutorial and has no
+  // tier to reach.
+  if (playerRow) {
+    await creditT5Clear({ realm, clearReceiptSchemaId, player, tokenId });
+  }
+
   return reply(200, { ok: true, tokenId: tokenId.toString(), txHash: hash });
+}
+
+/**
+ * The raid's two forward-counted side effects of clearing a T5 realm: one
+ * tick toward the unlock gate, and one earned attempt for the clearer.
+ *
+ * Both are counted forward rather than queried. Answering "how many T5
+ * clears have there been" by query would mean an **uncapped** `AssetMinted`
+ * scan across every realm in the registry, because that is what
+ * `fetchRealmActivityCounts` does on a cache miss. At the moment a clear is
+ * minted the realm is already known, so its tier comes off the same 15s memo
+ * the loot cap uses and the rest is integer writes.
+ *
+ * The two have *different* idempotency, which is worth not confusing:
+ *
+ *   - The **grant** is keyed on the clearReceipt token id, which is derived
+ *     from (realm, player, runSeed) and is therefore unique per clear. It is
+ *     idempotent by construction, wherever it is called from.
+ *   - The **counter** has no such key and relies on sitting after the
+ *     `already_minted` early return, so a replayed clear never reaches it.
+ *
+ * Note there is deliberately no "stop once the gate is open" shortcut. The
+ * counter stops mattering after unlock, but grants never do — short-circuiting
+ * on `unlocked` would quietly stop handing out attempts the moment the raid
+ * became playable, which is the worst possible time.
+ *
+ * **Never throws.** The receipt is already minted on chain by the time this
+ * runs, so a failure here must not turn a successful clear into an error
+ * response. The cost of losing one is a tick of a tunable counter or one
+ * un-granted attempt, against a player whose receipt is real either way.
+ */
+async function creditT5Clear(args: {
+  realm: `0x${string}`;
+  clearReceiptSchemaId: bigint;
+  player: `0x${string}`;
+  tokenId: bigint;
+}): Promise<void> {
+  try {
+    const [
+      { countDistinctClearers, playerRealmMaxTier },
+      { grantAttemptsForClear, raidGate, recordT5Clear },
+    ] = await Promise.all([
+      import("@/lib/reads/realm-tier"),
+      import("@/lib/server/raid-db"),
+    ]);
+    const distinctClearers = await countDistinctClearers({
+      realm: args.realm,
+      clearReceiptSchemaId: args.clearReceiptSchemaId,
+    });
+    if (playerRealmMaxTier(distinctClearers) < 5) return;
+
+    if (!raidGate().unlocked) recordT5Clear();
+    grantAttemptsForClear({
+      clearReceiptTokenId: args.tokenId,
+      player: args.player,
+      realm: args.realm,
+    });
+  } catch (e) {
+    console.warn(
+      `[raid] failed to credit a T5 clear for ${args.realm}: ${e instanceof Error ? e.message : String(e)}`,
+    );
+  }
 }
 
 // Rate limit + JSON-guaranteed error envelope. See lib/server/realm-guards.ts.

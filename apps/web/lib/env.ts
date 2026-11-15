@@ -140,6 +140,107 @@ export function getRealmRateLimits(): RealmRateLimits {
 }
 
 /**
+ * The Colophon raid (S5's unlock gate, S4's edition sizing).
+ *
+ * Parsed SEPARATELY from `serverSchema`, for the reason spelled out in
+ * `realmRateLimitSchema`'s docblock: `getServerEnv()` rejects the all-zeros
+ * `TRADER_PRIVATE_KEY` placeholder, and the raid gate is read from
+ * `/api/realm/boss-cleared`, which must not start failing because an
+ * unrelated secret is unset. Every field is defaulted, so this cannot throw
+ * on a bare environment.
+ */
+const raidSchema = z.object({
+  /**
+   * How many clears of T5 realms open the raid.
+   *
+   * Counted forward, never scanned — see `bumpT5Clears` in
+   * `lib/server/raid-store.ts` for why. The number is arbitrary and meant to
+   * be tuned once there is traffic to tune against; what matters is that the
+   * gate is a single integer read.
+   */
+  RAID_UNLOCK_T5_CLEARS: z.coerce.number().int().positive().default(25),
+  /**
+   * HP for the next edition opened without an explicit `--hp`/`--attempts`.
+   *
+   * 2,000 ≈ 6 attempts against the recommended block at a 30-round limit,
+   * **not** the ~10,200 that 30 attempts measures to. Attempts are earned
+   * one per T5-realm clear, so attempt *supply* is the binding constraint
+   * rather than damage: a 30-attempt edition needs thirty T5 clears before
+   * it can possibly fall. Editions exist precisely so sizing low first is
+   * the safe mistake — a pool that never empties means the kill, the
+   * contributor list and the receipt flow never get exercised.
+   *
+   * Re-derive with `scripts/colophon-damage.ts --target-attempts N` after
+   * any combat change rather than trusting this to have kept up.
+   */
+  RAID_EDITION_HP: z.coerce.number().int().positive().default(2_000),
+  /**
+   * Rounds a single attempt gets.
+   *
+   * Flat, not scaled by anything. The plan had an item's tier buy the limit,
+   * but the entry cost is gone (see `grantAttempt` in
+   * `lib/server/raid-store.ts`) and every figure S1 measured — including the
+   * HP default above — was measured at a *fixed* limit, so a constant is
+   * what the numbers already assume. 30 sits just above median survival for
+   * every T5 build against the recommended block, which keeps death the
+   * usual ending rather than the limit: below median, nobody ever dies and
+   * "dying contributes" becomes decoration.
+   *
+   * Copied onto each attempt at issue time, so changing this never alters a
+   * fight already in progress.
+   */
+  RAID_TURN_LIMIT: z.coerce.number().int().positive().default(30),
+  /**
+   * Attempts granted per T5-realm clear. One clear, one attempt.
+   */
+  RAID_ATTEMPTS_PER_CLEAR: z.coerce.number().int().positive().default(1),
+  /**
+   * Force the gate open regardless of the counter.
+   *
+   * The gate is otherwise unreachable outside production: it needs a realm
+   * at T5, which needs 50 distinct clearers, which no local chain has and no
+   * demo server will plausibly reach. Without this the raid could only be
+   * exercised by editing the db by hand.
+   */
+  RAID_UNLOCK_OVERRIDE: z.enum(["true", "false"]).default("false"),
+});
+
+export type RaidEnv = z.infer<typeof raidSchema>;
+
+let cachedRaidEnv: RaidEnv | null = null;
+
+/**
+ * Lazily parse raid env. Cannot throw — on a bare environment or an invalid
+ * one.
+ *
+ * Warns and falls back to defaults rather than propagating, same as
+ * `getStoryAiEnv` below and for the same reason: this is read from inside a
+ * route that mints on chain, and a throw would turn a typo'd env var into a
+ * 500 on the request that was supposed to record a clear.
+ */
+export function getRaidEnv(): RaidEnv {
+  if (cachedRaidEnv) return cachedRaidEnv;
+  const parsed = raidSchema.safeParse(process.env);
+  if (parsed.success) {
+    cachedRaidEnv = parsed.data;
+  } else {
+    const keys = [
+      ...new Set(parsed.error.issues.map((i) => String(i.path[0]))),
+    ].join(", ");
+    console.warn(
+      `[raid] ignoring invalid env (${keys}) — falling back to defaults, so the gate stays shut. Valid values: RAID_UNLOCK_OVERRIDE=true|false, the rest positive integers.`,
+    );
+    cachedRaidEnv = raidSchema.parse({});
+  }
+  return cachedRaidEnv;
+}
+
+/** True when the operator has forced the gate open. */
+export function raidUnlockOverridden(): boolean {
+  return getRaidEnv().RAID_UNLOCK_OVERRIDE === "true";
+}
+
+/**
  * Story AI (`/api/story/*`). Default OFF.
  *
  * Parsed SEPARATELY from `serverSchema`, for the same reason

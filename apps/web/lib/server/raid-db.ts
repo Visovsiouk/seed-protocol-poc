@@ -1,0 +1,444 @@
+import "server-only";
+
+/**
+ * App-facing raid state: the singleton connection, the schema guard, and the
+ * cached HP bar.
+ *
+ * All SQL lives in `raid-store.ts`, which takes its db handle as an argument
+ * and carries no `server-only` marker so operator scripts can reach it. This
+ * file is the half that only the running server should touch — it binds the
+ * store to the one real `realms.db` and adds the read cache.
+ *
+ * NEVER import this from a "use client" file, and never from a `tsx` script
+ * (`server-only` is unresolvable outside Next's bundler — see `sqlite.ts`).
+ *
+ * ## Why the HP bar is cached in memory
+ *
+ * `better-sqlite3` is synchronous, so every read blocks the thread that also
+ * serves SSR. A boss HP bar is the one value in this app that many clients
+ * poll at once, and a db read per poll would put N clients × poll rate of
+ * blocking reads on that thread for a number that changes only when an
+ * attempt is submitted.
+ *
+ * The cache is deliberately *not* time-based. A TTL would mean the bar can
+ * be stale right after your own attempt landed, which is the one moment
+ * anybody is looking at it.
+ *
+ * ## Why invalidate-on-write is not enough
+ *
+ * This file used to claim the server was the only writer, so clearing the
+ * cache on its own writes made it trivially coherent. **That was wrong.**
+ * `scripts/open-edition.ts` is a second writer by design — it is the entire
+ * succession path, plus the correction path and the rehearsal path — so the
+ * server's cache went stale at the exact moment it mattered most: an
+ * operator opens edition 2 and every client keeps being told edition 1 is
+ * still lying there felled. Observed, not theorised.
+ *
+ * So reads also check `PRAGMA data_version`, which SQLite bumps when
+ * *another connection* commits. It is a header read rather than a table
+ * read, so it costs nothing a poll would notice, and it does not move for
+ * this connection's own writes — which is why the explicit invalidation is
+ * still here rather than replaced by it.
+ */
+
+import { getRaidEnv, raidUnlockOverridden } from "@/lib/env";
+import { enqueueForEdition } from "@/lib/raid/receipt-queue";
+import {
+  advanceAttempt,
+  attemptBalance,
+  bumpT5Clears,
+  countPlayerAttempts,
+  editionsWithPendingReceipts,
+  getContribution,
+  getCurrentEdition,
+  getEdition,
+  getRaidUnlock,
+  grantAttempt,
+  listContributions,
+  listContributors,
+  listEditions,
+  listReceipts,
+  listGrants,
+  migrateRaidTables,
+  openAttempt,
+  openNextEdition,
+  recordAttempt,
+  type AdvanceAttemptInput,
+  type AttemptGrant,
+  type ContributorTotal,
+  type IssuedAttempt,
+  type RaidContribution,
+  type RaidEdition,
+  type RaidReceipt,
+  type RaidUnlock,
+  type RecordAttemptInput,
+  type RecordAttemptResult,
+} from "./raid-store";
+import { openRealmsDb } from "./sqlite";
+
+let migrated = false;
+let currentCache: RaidEdition | null | undefined;
+
+function db() {
+  const handle = openRealmsDb();
+  if (!migrated) {
+    migrateRaidTables(handle);
+    migrated = true;
+  }
+  return handle;
+}
+
+/** Drop the cached edition. Called after every write in this module. */
+function invalidate(): void {
+  currentCache = undefined;
+}
+
+/**
+ * `PRAGMA data_version` as of the last cache fill.
+ *
+ * SQLite increments this whenever a *different* connection commits, and
+ * leaves it alone for writes made on this one. So comparing it detects the
+ * operator script's writes — opening an edition, correcting a pool, granting
+ * an attempt — without polling the tables themselves.
+ */
+let cachedDataVersion: number | undefined;
+
+function dataVersion(handle: ReturnType<typeof openRealmsDb>): number {
+  const rows = handle.pragma("data_version") as { data_version: number }[];
+  return rows[0]?.data_version ?? 0;
+}
+
+/**
+ * True when another process has committed since the cache was filled, so
+ * whatever is held is no longer trustworthy.
+ */
+function staleFromAnotherProcess(
+  handle: ReturnType<typeof openRealmsDb>,
+): boolean {
+  const version = dataVersion(handle);
+  if (cachedDataVersion === version) return false;
+  cachedDataVersion = version;
+  return true;
+}
+
+/**
+ * The standing (or most recently felled) edition, served from memory.
+ *
+ * `undefined` in the cache slot means "not yet read"; `null` means "read,
+ * and there is no edition" — without that distinction a pre-first-edition
+ * server would re-query on every poll, which is exactly the load this
+ * cache exists to remove.
+ */
+export function currentEdition(): RaidEdition | null {
+  const handle = db();
+  if (currentCache !== undefined && !staleFromAnotherProcess(handle)) {
+    return currentCache;
+  }
+  currentCache = getCurrentEdition(handle) ?? null;
+  return currentCache;
+}
+
+/** The HP bar's payload. `null` before the first edition is opened. */
+export type RaidBarState = {
+  edition: number;
+  totalHp: number;
+  currentHp: number;
+  phase: 1 | 2;
+  felled: boolean;
+};
+
+export function raidBar(): RaidBarState | null {
+  const e = currentEdition();
+  if (!e) return null;
+  return {
+    edition: e.edition,
+    totalHp: e.totalHp,
+    currentHp: e.currentHp,
+    phase: e.phase,
+    felled: e.felledAt !== null,
+  };
+}
+
+export function raidEdition(edition: number): RaidEdition | undefined {
+  return getEdition(db(), edition);
+}
+
+export function raidContribution(
+  attemptId: `0x${string}`,
+): RaidContribution | undefined {
+  return getContribution(db(), attemptId);
+}
+
+export function raidContributions(edition: number): RaidContribution[] {
+  return listContributions(db(), edition);
+}
+
+export function raidContributors(edition: number): ContributorTotal[] {
+  return listContributors(db(), edition);
+}
+
+export function raidPlayerAttempts(
+  edition: number,
+  player: `0x${string}`,
+): number {
+  return countPlayerAttempts(db(), edition, player);
+}
+
+/**
+ * Record a finished attempt against the pool, write-once on the attempt id.
+ * A second submission is ignored whatever it claims.
+ */
+export function submitAttempt(input: RecordAttemptInput): RecordAttemptResult {
+  const res = recordAttempt(db(), input);
+  invalidate();
+  return res;
+}
+
+/**
+ * Report an in-progress attempt's cumulative damage, applying the delta.
+ *
+ * This is the submission path for a fight that reports as it goes, which is
+ * what makes "dying contributes" true for an abandoned attempt as well as a
+ * lost one — the damage already landed. Safe to call every round; replaying a
+ * total already recorded applies nothing.
+ */
+export function advanceAttemptProgress(
+  input: AdvanceAttemptInput,
+): RecordAttemptResult {
+  const res = advanceAttempt(db(), input);
+  invalidate();
+  if (res.felled) {
+    queueKillReceipts(res.edition.edition);
+    void drainOwedReceipts();
+  }
+  return res;
+}
+
+/**
+ * Mint the receipts an edition owes, in the background.
+ *
+ * **In this process, deliberately.** `withSignerLock` is an in-process
+ * mutex, and these mints are signed by the same owner key that
+ * `/api/realm/boss-cleared` uses for starter-realm clear receipts. Running
+ * the drain from a separate script would put two processes on one key with
+ * no shared lock between them, and the nonce collision would look like a
+ * random dropped transaction. That is why there is no `raid:receipts` mint
+ * script — `scripts/drain-receipts.ts` can only inspect.
+ *
+ * Not awaited by the caller: the request that landed the final blow should
+ * not hold a connection open through N transactions. Losing the kick costs
+ * nothing durable — the queue is already written, every receipt is still
+ * owed, and the next kill or an operator retry picks it up.
+ */
+async function drainOwedReceipts(): Promise<void> {
+  // Every edition that owes anything, not only the one that just fell.
+  // A drain that failed — RPC down, chain unseeded, a reverted mint — would
+  // otherwise never be retried: the kill is the only trigger, and it has
+  // already happened. Sweeping the backlog makes each kill the retry for
+  // every earlier one, which is the cheapest self-healing available
+  // without adding a scheduler.
+  let editions: number[];
+  try {
+    editions = editionsWithPendingReceipts(db());
+  } catch {
+    return;
+  }
+  if (editions.length === 0) return;
+
+  try {
+    const { createRaidReceiptChain } = await import("./raid-receipt-chain");
+    const { drainReceipts } = await import("@/lib/raid/receipt-queue");
+    const chain = createRaidReceiptChain();
+    for (const edition of editions) {
+      const boss = getEdition(db(), edition);
+      if (!boss || boss.felledAt === null) continue;
+      // One lock for the whole edition rather than one per mint: these
+      // share a nonce sequence, so another mint interleaving mid-drain
+      // would leave the next send reading a stale pending count.
+      const res = await chain.locked(() =>
+        drainReceipts(db(), edition, chain, boss.totalHp, boss.felledAt!),
+      );
+      console.log(
+        `[raid] edition ${edition} receipts: minted ${res.minted}, reconciled ${res.skipped}, failed ${res.failed.length}, owed ${res.remaining}`,
+      );
+      for (const f of res.failed) {
+        console.warn(`[raid] receipt for ${f.player} failed: ${f.message}`);
+      }
+    }
+  } catch (e) {
+    // The queue survives, so this is a delay rather than a loss.
+    console.warn(
+      `[raid] receipt drain failed: ${e instanceof Error ? e.message : String(e)}`,
+    );
+  }
+}
+
+/**
+ * Write the receipt queue the moment an edition falls.
+ *
+ * Done here rather than left to a worker's next sweep so that what is owed
+ * is durable immediately — it is a local synchronous write and costs the
+ * killing blow's request almost nothing. Minting is the slow, failure-prone
+ * half and stays separate (`drainReceipts`).
+ *
+ * Never throws. The pool is already at zero and the kill is already real by
+ * the time this runs; failing the request that landed the final blow would
+ * be the worst possible response to a bookkeeping problem. A lost queue is
+ * recoverable — `enqueueKillReceipts` is idempotent, so any later pass
+ * rebuilds it from the contribution rows.
+ */
+function queueKillReceipts(edition: number): void {
+  try {
+    enqueueForEdition(db(), edition);
+  } catch (e) {
+    console.warn(
+      `[raid] failed to queue receipts for edition ${edition}: ${e instanceof Error ? e.message : String(e)}`,
+    );
+  }
+}
+
+/**
+ * Open the next edition. The operator path proper is
+ * `scripts/open-edition.ts`; this exists so a route could do it too, and so
+ * the cache is invalidated either way when the server is the one opening it.
+ */
+export function openEdition(totalHp: number): RaidEdition {
+  const e = openNextEdition(db(), totalHp);
+  invalidate();
+  return e;
+}
+
+// ---------------------------------------------------------------------------
+// The unlock gate
+// ---------------------------------------------------------------------------
+
+export type RaidGate = {
+  unlocked: boolean;
+  t5Clears: number;
+  required: number;
+  /** Clears still needed, or 0 once open. */
+  remaining: number;
+  /** True when `RAID_UNLOCK_OVERRIDE` forced it rather than the counter. */
+  overridden: boolean;
+};
+
+/**
+ * Is the raid open? A single integer read plus an env threshold.
+ *
+ * The override is reported rather than hidden: a gate that is open because
+ * an operator forced it is a materially different state from one the players
+ * opened, and a surface that cannot tell them apart will eventually claim
+ * the community achieved something it didn't.
+ */
+export function raidGate(): RaidGate {
+  const required = getRaidEnv().RAID_UNLOCK_T5_CLEARS;
+  const { t5Clears } = getRaidUnlock(db());
+  const overridden = raidUnlockOverridden();
+  return {
+    unlocked: overridden || t5Clears >= required,
+    t5Clears,
+    required,
+    remaining: Math.max(0, required - t5Clears),
+    overridden,
+  };
+}
+
+/**
+ * Record a T5-realm clear against the gate.
+ *
+ * Callers must only invoke this for a receipt their own request minted — see
+ * `bumpT5Clears` in the store for where the idempotency actually lives.
+ */
+export function recordT5Clear(): RaidUnlock {
+  return bumpT5Clears(db());
+}
+
+/** Every edition, oldest first — the record of what has been felled. */
+export function raidEditions(): RaidEdition[] {
+  return listEditions(db());
+}
+
+/** Receipts owed or paid for an edition — the kill's permanent record. */
+export function raidReceipts(edition: number): RaidReceipt[] {
+  return listReceipts(db(), edition);
+}
+
+/** Editions with receipts still owed, for a resuming worker. */
+export function raidEditionsOwedReceipts(): number[] {
+  return editionsWithPendingReceipts(db());
+}
+
+/** HP the next edition opens at when the caller has no explicit figure. */
+export function defaultEditionHp(): number {
+  return getRaidEnv().RAID_EDITION_HP;
+}
+
+// ---------------------------------------------------------------------------
+// Earned attempts
+// ---------------------------------------------------------------------------
+
+/**
+ * Credit a player for clearing a T5 realm.
+ *
+ * `RAID_ATTEMPTS_PER_CLEAR` lives here rather than in the store because the
+ * store is deliberately env-free — tests and scripts hand it numbers. More
+ * than one attempt per clear gets distinct grant keys suffixed off the
+ * clearReceipt token id, so each remains individually idempotent: a replayed
+ * clear re-presents the same N keys and grants nothing.
+ *
+ * Returns how many attempts this call actually granted — 0 for a replay.
+ */
+export function grantAttemptsForClear(args: {
+  clearReceiptTokenId: string | bigint;
+  player: `0x${string}`;
+  realm: `0x${string}`;
+}): number {
+  const perClear = getRaidEnv().RAID_ATTEMPTS_PER_CLEAR;
+  const handle = db();
+  let granted = 0;
+  for (let i = 0; i < perClear; i++) {
+    const key =
+      perClear === 1
+        ? String(args.clearReceiptTokenId)
+        : `${args.clearReceiptTokenId}#${i}`;
+    if (grantAttempt(handle, { ...args, grantKey: key })) granted += 1;
+  }
+  return granted;
+}
+
+/** Unspent attempts a player holds. */
+export function playerAttemptBalance(player: `0x${string}`): number {
+  return attemptBalance(db(), player);
+}
+
+export function playerGrants(player: `0x${string}`): AttemptGrant[] {
+  return listGrants(db(), player);
+}
+
+/**
+ * Spend one earned attempt against the standing edition and issue it.
+ *
+ * Throws when the raid is shut, no edition stands, or the player has nothing
+ * to spend — all three are conditions a caller has to report differently, so
+ * none of them is swallowed as a null.
+ */
+export function issueAttempt(player: `0x${string}`): IssuedAttempt {
+  const gate = raidGate();
+  if (!gate.unlocked) {
+    throw new Error(
+      `the raid is sealed — ${gate.remaining} more T5 clears needed`,
+    );
+  }
+  const edition = currentEdition();
+  if (!edition) throw new Error("no edition has been opened yet");
+  const issued = openAttempt(db(), {
+    edition: edition.edition,
+    player,
+    turnLimit: getRaidEnv().RAID_TURN_LIMIT,
+  });
+  // The attempt's row is a contribution at 0 damage, so the cached edition is
+  // untouched — but invalidate anyway rather than reasoning about it at every
+  // future call site.
+  invalidate();
+  return issued;
+}

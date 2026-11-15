@@ -25,33 +25,61 @@
 import type { BossDef, CombatState, NarrationLine } from "./types";
 import { monsterTitle } from "./narration";
 
+/** The phase threshold, in one place: `monsterHp <= floor(baseHp / 2)`. */
+export function phaseThreshold(baseHp: number): number {
+  return Math.floor(baseHp / 2);
+}
+
 /**
  * Builds the initial CombatState for a boss encounter. `playerAc` includes
  * any equipped-armor bonus the caller has already summed in. The boss always
  * carries both of its baked-in catalog effects.
+ *
+ * `startHp` exists for the shared-pool raid, where the boss is not met at
+ * full health. Pass the **edition total** as `boss.baseHp` and the **current
+ * pool** as `startHp`: the transition then fires when the collective crosses
+ * half rather than when one player does, so he changes for everyone at once.
+ * Omit it and the boss opens at `baseHp`, which is every ordinary encounter.
+ *
+ * An encounter opening at or below the threshold starts **in phase 2**,
+ * already buffed and already suppressing. Deriving that here rather than
+ * leaving it to the caller is the point: a caller that forgot would hand the
+ * player a phase-1 fight against a half-dead boss, and the bug would look
+ * like a balance problem rather than a missing branch. No transition
+ * narration is emitted — for a player arriving mid-pool the boss was already
+ * like this, and `checkPhaseTransition`'s lines announce a change that did
+ * not just happen.
  */
 export function createBossEncounter(args: {
   boss: BossDef;
   playerHp: number;
   playerMaxHp: number;
   playerAc: number;
+  /** Current pool for a shared-pool fight. Defaults to `boss.baseHp`. */
+  startHp?: number;
 }): CombatState {
   const boss = args.boss;
+  const monsterHp = args.startHp ?? boss.baseHp;
+  // `> 0` so a pool already at zero does not read as a live phase-2 fight.
+  const openInPhase2 = monsterHp > 0 && monsterHp <= phaseThreshold(boss.baseHp);
   return {
     playerHp: args.playerHp,
     playerMaxHp: args.playerMaxHp,
     playerAc: args.playerAc,
     monster: boss,
-    monsterHp: boss.baseHp,
-    bossPhase: 1,
+    monsterHp,
+    bossPhase: openInPhase2 ? 2 : 1,
     bracedThisTurn: false,
     guaranteedDodgeThisTurn: false,
     regenDoubledThisTurn: false,
     thornsDoubledThisTurn: false,
     focusPrimed: false,
-    phase2PlayerBuffed: false,
+    phase2PlayerBuffed: openInPhase2,
     bleedStacks: 0,
-    suppressedEffects: [],
+    suppressedEffects:
+      openInPhase2 && boss.phase2SuppressEffect
+        ? [boss.phase2SuppressEffect]
+        : [],
     turn: 0,
   };
 }
@@ -88,7 +116,7 @@ export function checkPhaseTransition(state: CombatState): PhaseTransition {
   }
   // Defensive: bosses always have bossPhase set in `createBossEncounter`.
   // If for any reason it's missing, treat the boss as phase 1.
-  const threshold = Math.floor(monster.baseHp / 2);
+  const threshold = phaseThreshold(monster.baseHp);
   if (state.monsterHp > threshold) {
     return { state, transitioned: false, lines: [] };
   }

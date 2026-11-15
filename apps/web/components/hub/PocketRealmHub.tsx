@@ -53,6 +53,7 @@ import { Panel, Button, Chip, Stamp, Rule } from "@/components/ui";
 import { useCodexStatus } from "@/lib/codex/use-codex";
 import { LoadoutStaging } from "./LoadoutStaging";
 import { onHubStation } from "./station-event";
+import { ColophonChip } from "./ColophonChip";
 
 type Station = "doors" | "market" | "altar" | "forge";
 
@@ -191,6 +192,7 @@ function HideoutHeader({
           />
         )}
         <span className="tabular-nums opacity-70">{ownedCount} owned</span>
+        <ColophonChip />
       </div>
     </Panel>
   );

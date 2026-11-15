@@ -288,7 +288,11 @@ const SEEDED_FILE = resolve(
   "realms.json",
 );
 
-type SchemaPair = { clearReceipt: string; loot: string };
+// Keyed by SCHEMA_ORDER rather than a fixed pair: adding a schema should
+// mean adding it to that array and nothing else. It previously named
+// clearReceipt and loot at six separate sites, so `killReceipt` registered
+// on chain but never reached the JSON.
+type SchemaPair = Record<SchemaKey, string>;
 type SeededEntry = {
   realms: Record<Preset, string>;
   schemas: Record<Preset, SchemaPair>;
@@ -352,10 +356,15 @@ async function main() {
     scifi: "0x0000000000000000000000000000000000000000",
     cyberpunk: "0x0000000000000000000000000000000000000000",
   };
-  const schemasOut: Record<Preset, { clearReceipt: bigint; loot: bigint }> = {
-    fantasy: { clearReceipt: 0n, loot: 0n },
-    scifi: { clearReceipt: 0n, loot: 0n },
-    cyberpunk: { clearReceipt: 0n, loot: 0n },
+  const zeroed = (): Record<SchemaKey, bigint> =>
+    Object.fromEntries(SCHEMA_ORDER.map((k) => [k, 0n])) as Record<
+      SchemaKey,
+      bigint
+    >;
+  const schemasOut: Record<Preset, Record<SchemaKey, bigint>> = {
+    fantasy: zeroed(),
+    scifi: zeroed(),
+    cyberpunk: zeroed(),
   };
 
   for (const preset of PRESETS) {
@@ -438,10 +447,9 @@ async function main() {
       console.log(
         `  [C] schemas already registered (${existing.length}) — reuse [${existing.join(", ")}]`,
       );
-      schemasOut[preset] = {
-        clearReceipt: existing[0]!,
-        loot: existing[1]!,
-      };
+      schemasOut[preset] = Object.fromEntries(
+        SCHEMA_ORDER.map((k, i) => [k, existing[i]!]),
+      ) as Record<SchemaKey, bigint>;
     } else {
       const ids: bigint[] = [...existing];
       for (let i = existing.length; i < SCHEMA_ORDER.length; i++) {
@@ -449,10 +457,9 @@ async function main() {
         console.log(`  [C] owner.realm.registerSchema(${key})`);
         ids.push(await registerSchema(publicClient, owner, realm, key));
       }
-      schemasOut[preset] = {
-        clearReceipt: ids[0]!,
-        loot: ids[1]!,
-      };
+      schemasOut[preset] = Object.fromEntries(
+        SCHEMA_ORDER.map((k, i) => [k, ids[i]!]),
+      ) as Record<SchemaKey, bigint>;
     }
   }
 
@@ -468,20 +475,14 @@ async function main() {
       scifi: realmsOut.scifi,
       cyberpunk: realmsOut.cyberpunk,
     },
-    schemas: {
-      fantasy: {
-        clearReceipt: schemasOut.fantasy.clearReceipt.toString(),
-        loot: schemasOut.fantasy.loot.toString(),
-      },
-      scifi: {
-        clearReceipt: schemasOut.scifi.clearReceipt.toString(),
-        loot: schemasOut.scifi.loot.toString(),
-      },
-      cyberpunk: {
-        clearReceipt: schemasOut.cyberpunk.clearReceipt.toString(),
-        loot: schemasOut.cyberpunk.loot.toString(),
-      },
-    },
+    schemas: Object.fromEntries(
+      PRESETS.map((preset) => [
+        preset,
+        Object.fromEntries(
+          SCHEMA_ORDER.map((k) => [k, schemasOut[preset][k].toString()]),
+        ),
+      ]),
+    ) as Record<Preset, SchemaPair>,
     seededAt: new Date().toISOString(),
   };
   writeSeededFile(doc);

@@ -17,13 +17,17 @@ import "server-only";
  * is created once at first open. No migrations system yet — is
  * the only writer.
  *
+ * The connection itself now lives in `sqlite.ts`, shared with the raid
+ * tables in `raid-store.ts`, which are in this same file rather than a
+ * second one. `player_realms` is still owned here: each module creates its
+ * own tables behind its own guard.
+ *
  * NEVER import this from a "use client" file.
  */
 
-import { existsSync, mkdirSync } from "node:fs";
-import { dirname, resolve } from "node:path";
-import Database, { type Database as DatabaseType } from "better-sqlite3";
+import type { Database as DatabaseType } from "better-sqlite3";
 import type { Preset } from "@/lib/engine/types";
+import { openRealmsDb } from "./sqlite";
 
 /**
  * BIP-44 indices 0–3 are reserved for the admin + 3 starter-realm
@@ -95,23 +99,17 @@ type Row = {
   lore_source: string | null;
 };
 
-let cached: DatabaseType | undefined;
+let migrated = false;
 
-function dbPath(): string {
-  // `process.cwd()` in Next.js (both `next dev` and `next build`) is the
-  // app root (`apps/web`). Pin to an absolute path so the file lives in
-  // the same place regardless of where the dev server was invoked from.
-  return resolve(process.cwd(), "data", "realms.db");
-}
-
+/**
+ * The connection and its path now live in `sqlite.ts`, shared with
+ * `raid-store.ts` so raid state lands in this same file rather than a
+ * second one (see Correction 1 in the raid plan). Schema creation stays
+ * here, behind `migrated`, so each module owns its own tables.
+ */
 function open(): DatabaseType {
-  if (cached) return cached;
-  const path = dbPath();
-  const dir = dirname(path);
-  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-  const db = new Database(path);
-  db.pragma("journal_mode = WAL");
-  db.pragma("foreign_keys = ON");
+  const db = openRealmsDb();
+  if (migrated) return db;
   db.exec(`
     CREATE TABLE IF NOT EXISTS player_realms (
       address      TEXT PRIMARY KEY,
@@ -151,7 +149,7 @@ function open(): DatabaseType {
       if (!String(err).includes("duplicate column name")) throw err;
     }
   }
-  cached = db;
+  migrated = true;
   return db;
 }
 

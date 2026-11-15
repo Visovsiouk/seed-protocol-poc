@@ -27,7 +27,7 @@
 import type { AssetCard } from "@/lib/engine/types";
 import {
   buildAssetCardFromMetadata,
-  isClearReceiptMetadata,
+  isReceiptMetadata,
 } from "@/lib/metadata/asset-card";
 import { fetchInventory } from "./inventory";
 import { fetchAssetSummary } from "./provenance";
@@ -37,13 +37,14 @@ import { fetchAssetSummary } from "./provenance";
  * accessory-slot assets — the PoC engine equips weapon/armor only, and
  * the drawer's tabbed UI doesn't have a third slot anyway.
  *
- * Also drops clearReceipts (boss-clear proofs). They have no slot/stats, so
- * `buildAssetCardFromMetadata` would fall back to the schemaId-parity heuristic
- * and route them into weapon/armor as phantom "d / +0 attack" entries. We
- * filter by metadata content (`isClearReceiptMetadata`) rather than schemaId so
- * receipts from *player-created* realms — which register their own clearReceipt
- * schemaIds, not the seeded ones — are dropped too. The receipt tokens are
- * still tracked separately via `useBossClears`.
+ * Also drops receipts — boss-clear proofs and Colophon kill receipts alike.
+ * They have no slot/stats, so `buildAssetCardFromMetadata` would fall back to
+ * the schemaId-parity heuristic and route them into weapon/armor as phantom
+ * "d / +0 attack" entries. We filter by metadata content
+ * (`isReceiptMetadata`) rather than schemaId so receipts from
+ * *player-created* realms — which register their own schemaIds, not the
+ * seeded ones — are dropped too. The receipt tokens are still tracked
+ * separately via `useBossClears`.
  */
 export async function fetchInventoryCards(
   player: `0x${string}`,
@@ -57,7 +58,7 @@ export async function fetchInventoryCards(
 
   const cards: AssetCard[] = [];
   for (const summary of summaries) {
-    if (isClearReceiptMetadata(summary.metadataURI)) continue;
+    if (isReceiptMetadata(summary.metadataURI)) continue;
     const card = buildAssetCardFromMetadata({
       tokenId: summary.tokenId,
       tier: summary.tier,
